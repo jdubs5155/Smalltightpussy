@@ -35,10 +35,3 @@
     </PreferenceCategory>
 
 </PreferenceScreen>
----services_enabled">false</bool>
-<!-- Default screen orientation --> <string name="screen_orientation">portrait</string>
-<!-- Enable or disable background data usage --> <bool name="background_data_enabled">true</bool>
-
-
-</resources>
-
