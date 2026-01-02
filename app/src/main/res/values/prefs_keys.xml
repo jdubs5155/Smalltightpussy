@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pref_qb_enabled">pref_qb_enabled</string>
+    <string name="pref_qb_base_url">pref_qb_base_url</string>
+    <string name="pref_qb_username">pref_qb_username</string>
+    <string name="pref_qb_password">pref_qb_password</string>
+</resources>
