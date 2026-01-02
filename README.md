@@ -1,0 +1,2 @@
+# JackettProwlarrClient
+My app
