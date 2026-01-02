@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <SwitchPreferenceCompat
+        android:key="notifications"
+        android:title="Enable Notifications"
+        android:defaultValue="true" />
+
+    <EditTextPreference
+        android:key="username"
+        android:title="Username"
+        android:dialogTitle="Enter your username"
+        android:defaultValue="" />
+
+    <ListPreference
+        android:key="sync_frequency"
+        android:title="Sync Frequency"
+        android:entries="@array/sync_frequency_entries"
+        android:entryValues="@array/sync_frequency_values"
+        android:defaultValue="15" />
+
+    <PreferenceCategory android:title="Advanced Settings">
+
+        <SwitchPreferenceCompat
+            android:key="enable_logging"
+            android:title="Enable Logging"
+            android:defaultValue="false" />
+
+        <EditTextPreference
+            android:key="log_level"
+            android:title="Log Level"
+            android:dialogTitle="Set log level (e.g., DEBUG, INFO, WARN, ERROR)"
+            android:defaultValue="INFO" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>
+---services_enabled">true</bool>
+<!-- Default screen orientation --> <string name="screen_orientation">portrait</string>
+<!-- Enable or disable background data usage --> <bool name="background_data_enabled">true</bool>
+
+
+</resources>
