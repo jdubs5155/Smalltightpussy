@@ -33,6 +33,13 @@ class MainActivity : AppCompatActivity() {
 
     private val PROWLARR_BASE_URL = "http://192.168.1.175:9696"
     private val PROWLARR_API_KEY = "11e5676f4c3444479cea3671a6c0c55b"
+    
+    // Torznab services
+    private lateinit var jackettService: TorznabService
+    private lateinit var prowlarrService: TorznabService
+    
+    // Download history manager
+    private lateinit var historyManager: DownloadHistoryManager
 
     enum class Source {
         JACKETT,
@@ -44,6 +51,13 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        
+        // Initialize Torznab services
+        jackettService = TorznabService(JACKETT_BASE_URL, JACKETT_API_KEY)
+        prowlarrService = TorznabService(PROWLARR_BASE_URL, PROWLARR_API_KEY)
+        
+        // Initialize download history manager
+        historyManager = DownloadHistoryManager(this)
 
         setupRecyclerView()
         setupListeners()
@@ -80,10 +94,10 @@ class MainActivity : AppCompatActivity() {
                 val source = lastSource
                 if (!query.isNullOrEmpty() && source != null) {
                     try {
-                        val xml = fetchTorznabResults(query, source)
-                        val results = parseTorznab(xml)
+                        val service = if (source == Source.JACKETT) jackettService else prowlarrService
+                        val results = service.search(query, TorznabService.SearchType.SEARCH, limit = 100)
                         launch(Dispatchers.Main) {
-                            adapter?.updateData(results)
+                            adapter?.updateData(results.sortedByDescending { it.seeders })
                             binding.textStatus.text =
                                 "$status | Refreshed: ${results.size} result(s)."
                         }
@@ -144,10 +158,10 @@ class MainActivity : AppCompatActivity() {
         uiScope.launch(Dispatchers.IO) {
             try {
                 val allResults = mutableSetOf<TorrentResult>()
+                val service = if (source == Source.JACKETT) jackettService else prowlarrService
                 
-                // Primary search
-                val xml = fetchTorznabResults(query, source)
-                allResults.addAll(parseTorznab(xml))
+                // Primary search using TorznabService
+                allResults.addAll(service.search(query, TorznabService.SearchType.SEARCH, limit = 100))
                 
                 // If smart search is enabled, also search for keywords
                 if (useSmartSearch) {
@@ -155,8 +169,7 @@ class MainActivity : AppCompatActivity() {
                     for (keyword in keywords) {
                         if (keyword.length > 2) { // Only search meaningful keywords
                             try {
-                                val kwXml = fetchTorznabResults(keyword, source)
-                                allResults.addAll(parseTorznab(kwXml))
+                                allResults.addAll(service.search(keyword, TorznabService.SearchType.SEARCH, limit = 50))
                             } catch (_: Exception) {
                                 // Ignore errors from individual keyword searches
                             }
@@ -203,13 +216,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun getConnectionStatus(): String {
         val jackettOk = try {
-            pingService(JACKETT_BASE_URL, JACKETT_API_KEY)
+            jackettService.testConnection()
         } catch (_: Exception) {
             false
         }
 
         val prowlarrOk = try {
-            pingService(PROWLARR_BASE_URL, PROWLARR_API_KEY)
+            prowlarrService.testConnection()
         } catch (_: Exception) {
             false
         }
@@ -222,118 +235,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun pingService(baseUrl: String, apiKey: String): Boolean {
-        val url = baseUrl.trimEnd('/') +
-                "/api/v2.0/indexers/all/results/torznab/api" +
-                "?t=caps&apikey=$apiKey"
-
-        val request = Request.Builder()
-            .url(url)
-            .get()
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            return response.isSuccessful
-        }
-    }
-
-    private fun fetchTorznabResults(query: String, source: Source): String {
-        val (baseUrl, apiKey) = when (source) {
-            Source.JACKETT -> JACKETT_BASE_URL to JACKETT_API_KEY
-            Source.PROWLARR -> PROWLARR_BASE_URL to PROWLARR_API_KEY
-        }
-
-        val url = baseUrl.trimEnd('/') +
-                "/api/v2.0/indexers/all/results/torznab/api" +
-                "?t=search&q=${Uri.encode(query)}&apikey=$apiKey"
-
-        val request = Request.Builder()
-            .url(url)
-            .get()
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw RuntimeException("HTTP ${response.code}")
-            }
-            return response.body?.string() ?: throw RuntimeException("Empty response")
-        }
-    }
-
-    private fun parseTorznab(xml: String): List<TorrentResult> {
-        val results = mutableListOf<TorrentResult>()
-
-        val factory = XmlPullParserFactory.newInstance()
-        val parser = factory.newPullParser()
-        parser.setInput(xml.reader())
-
-        var event = parser.eventType
-
-        var title = ""
-        var link = ""
-        var size = 0L
-        var seeders = 0
-        var indexer: String? = null
-
-        while (event != XmlPullParser.END_DOCUMENT) {
-            when (event) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "item" -> {
-                            title = ""
-                            link = ""
-                            size = 0L
-                            seeders = 0
-                            indexer = null
-                        }
-
-                        "title" -> {
-                            title = parser.nextText()
-                        }
-
-                        "link" -> {
-                            link = parser.nextText()
-                        }
-
-                        "size" -> {
-                            size = parser.nextText().toLongOrNull() ?: 0L
-                        }
-
-                        "attr" -> {
-                            val nameAttr = parser.getAttributeValue(null, "name")
-                            val valueAttr = parser.getAttributeValue(null, "value")
-                            when (nameAttr) {
-                                "seeders" -> seeders = valueAttr.toIntOrNull() ?: 0
-                                "indexer", "jackett_indexer" -> indexer = valueAttr
-                            }
-                        }
-                    }
-                }
-
-                XmlPullParser.END_TAG -> {
-                    if (parser.name == "item") {
-                        if (title.isNotEmpty() && link.isNotEmpty()) {
-                            results.add(
-                                TorrentResult(
-                                    title = title,
-                                    link = link,
-                                    sizeBytes = size,
-                                    seeders = seeders,
-                                    indexer = indexer
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-            event = parser.next()
-        }
-
-        return results
-    }
-
     private fun showTorrentClientChooser(result: TorrentResult) {
-        saveDownloadHistory(result)
+        // Save to history
+        historyManager.addDownload(result)
 
         val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
         val qbEnabled = prefs.getBoolean(getString(R.string.pref_qb_enabled), false)
@@ -481,7 +385,7 @@ class MainActivity : AppCompatActivity() {
     )
 
     private fun openTorrentLink(result: TorrentResult) {
-        saveDownloadHistory(result)
+        historyManager.addDownload(result)
 
         val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
         val enabled = prefs.getBoolean(getString(R.string.pref_qb_enabled), false)
@@ -532,15 +436,6 @@ class MainActivity : AppCompatActivity() {
             existing.add(query)
             prefs.edit().putStringSet("saved_searches", existing).apply()
         }
-    }
-
-    private fun saveDownloadHistory(result: TorrentResult) {
-        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
-        val existing = prefs.getStringSet("download_history", mutableSetOf())?.toMutableSet()
-            ?: mutableSetOf()
-        val entry = "${result.title}|||${result.indexer ?: "unknown"}"
-        existing.add(entry)
-        prefs.edit().putStringSet("download_history", existing).apply()
     }
 
     override fun onDestroy() {

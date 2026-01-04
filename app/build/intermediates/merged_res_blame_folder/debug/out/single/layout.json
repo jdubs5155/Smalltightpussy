@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "com.zim.jackettprowler.app-mergeDebugResources-31:/layout/activity_indexer_management.xml",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_indexer_management.xml"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-mergeDebugResources-31:/layout/item_torrent.xml",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/item_torrent.xml"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-mergeDebugResources-31:/layout/activity_settings.xml",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_settings.xml"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-mergeDebugResources-31:/layout/activity_main.xml",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_main.xml"
+    }
+]
