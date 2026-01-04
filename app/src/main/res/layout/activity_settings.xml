@@ -1,37 +1,81 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
 
-    <SwitchPreferenceCompat
-        android:key="notifications"
-        android:title="Enable Notifications"
-        android:defaultValue="true" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-    <EditTextPreference
-        android:key="username"
-        android:title="Username"
-        android:dialogTitle="Enter your username"
-        android:defaultValue="" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_title"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp" />
 
-    <ListPreference
-        android:key="sync_frequency"
-        android:title="Sync Frequency"
-        android:entries="@array/sync_frequency_entries"
-        android:entryValues="@array/sync_frequency_values"
-        android:defaultValue="15" />
+        <CheckBox
+            android:id="@+id/checkEnableQb"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/qb_enabled_label"
+            android:layout_marginBottom="8dp" />
 
-    <PreferenceCategory android:title="Advanced Settings">
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/qb_base_url_label"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp" />
 
-        <SwitchPreferenceCompat
-            android:key="enable_logging"
-            android:title="Enable Logging"
-            android:defaultValue="false" />
+        <EditText
+            android:id="@+id/editQbBaseUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="http://192.168.1.100:8080"
+            android:inputType="textUri"
+            android:layout_marginBottom="8dp" />
 
-        <EditTextPreference
-            android:key="log_level"
-            android:title="Log Level"
-            android:dialogTitle="Set log level (e.g., DEBUG, INFO, WARN, ERROR)"
-            android:defaultValue="INFO" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/qb_username_label"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp" />
 
-    </PreferenceCategory>
+        <EditText
+            android:id="@+id/editQbUsername"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="admin"
+            android:inputType="text"
+            android:layout_marginBottom="8dp" />
 
-</PreferenceScreen>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/qb_password_label"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/editQbPassword"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="password"
+            android:inputType="textPassword"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/buttonSaveSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/save_button" />
+
+    </LinearLayout>
+
+</ScrollView>

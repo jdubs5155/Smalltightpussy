@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Top bar: source selector + settings -->
+    <!-- Top bar: source selector + refresh + settings -->
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="0dp"
@@ -22,6 +22,15 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:entries="@array/source_array" />
+
+        <ImageButton
+            android:id="@+id/buttonRefresh"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Refresh Connection"
+            android:src="@android:drawable/ic_menu_rotate" />
 
         <ImageButton
             android:id="@+id/buttonSettings"
@@ -57,16 +66,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toBottomOf="@id/topBar" />
 
-    <Button
-        android:id="@+id/buttonRefresh"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="16dp"
-        android:text="Refresh"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/buttonSearch" />
-
     <TextView
         android:id="@+id/textStatus"
         android:layout_width="0dp"
@@ -76,7 +75,7 @@
         android:textSize="14sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/buttonRefresh" />
+        app:layout_constraintTop_toBottomOf="@id/buttonSearch" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerViewResults"

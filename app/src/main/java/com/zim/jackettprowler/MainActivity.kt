@@ -300,7 +300,7 @@ class MainActivity : AppCompatActivity() {
             val password = prefs.getString(getString(R.string.pref_qb_password), "") ?: ""
 
             if (baseUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank()) {
-                GlobalScope.launch(Dispatchers.IO) {
+                uiScope.launch(Dispatchers.IO) {
                     try {
                         val qb = QbittorrentClient(baseUrl, username, password)
                         qb.addTorrentFromUrl(result.link)
