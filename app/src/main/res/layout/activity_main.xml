@@ -52,8 +52,19 @@
         android:hint="Search..."
         android:imeOptions="actionSearch"
         android:inputType="text"
-        app:layout_constraintEnd_toStartOf="@id/buttonSearch"
+        app:layout_constraintEnd_toStartOf="@id/toggleDescriptiveSearch"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/topBar" />
+
+    <CheckBox
+        android:id="@+id/toggleDescriptiveSearch"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        android:text="Smart"
+        android:textSize="12sp"
+        app:layout_constraintEnd_toStartOf="@id/buttonSearch"
         app:layout_constraintTop_toBottomOf="@id/topBar" />
 
     <Button

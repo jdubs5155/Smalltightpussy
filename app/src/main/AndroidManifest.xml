@@ -12,6 +12,10 @@
         android:theme="@style/Theme.JackettProwlarrClient">
 
         <activity
+            android:name=".IndexerManagementActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".SettingsActivity"
             android:exported="false" />
 

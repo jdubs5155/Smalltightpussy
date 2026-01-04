@@ -1,5 +1,6 @@
 package com.zim.jackettprowler
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.zim.jackettprowler.databinding.ActivitySettingsBinding
@@ -43,6 +44,11 @@ class SettingsActivity : AppCompatActivity() {
                 )
                 .apply()
             finish()
+        }
+
+        binding.buttonManageIndexers.setOnClickListener {
+            val intent = Intent(this, IndexerManagementActivity::class.java)
+            startActivity(intent)
         }
     }
 }
