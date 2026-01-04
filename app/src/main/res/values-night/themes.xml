@@ -2,9 +2,9 @@
 <resources>
 
     <style name="Theme.JackettProwlarrClient" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorAccent">@color/teal_200</item>
+        <item name="colorPrimary">#3700B3</item> <!-- Darker purple -->
+        <item name="colorPrimaryVariant">#290073</item> <!-- Even darker -->
+        <item name="colorAccent">#018786</item> <!-- Muted teal -->
     </style>
 
 </resources>
