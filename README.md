@@ -1,18 +1,30 @@
 # JackettProwlarrClient
 
-A powerful Android BitTorrent client that uses the Torznab API to search and download torrents from Jackett and Prowlarr indexers.
+A powerful Android BitTorrent client that uses the Torznab API to search and download torrents from Jackett and Prowlarr indexers, with 61+ built-in providers.
+
+## 📥 Download APK
+
+### From GitHub Actions (Recommended)
+1. Go to the [Actions tab](https://github.com/zimbiss/JackettProwlarrClient/actions)
+2. Click on the latest successful workflow run
+3. Scroll down to "Artifacts" section
+4. Download `JackettProwlarr-debug-apk`
+5. Extract the ZIP file and install the APK on your device
+
+The APK is automatically built on every push to the main branch and is available for 30 days.
 
 ## Features
 
-### 🔍 **Torznab API Integration**
-- Full Torznab API support for both Jackett and Prowlarr
-- Search across all configured indexers simultaneously
-- Support for multiple search types:
-  - General search (`t=search`)
-  - TV show search (`t=tvsearch`)
-  - Movie search (`t=movie`)
-  - Music search (`t=music`)
-  - Book search (`t=book`)
+### 🔍 **Multi-Source Search**
+- **Torznab API Integration**: Connect to Jackett and Prowlarr servers
+- **61+ Built-in Providers**: Pre-configured torrent indexers including:
+  - 13 Public Indexers (1337x, The Pirate Bay, RARBG, YTS, Nyaa, etc.)
+  - 8 Private Trackers (IPTorrents, TorrentLeech, PassThePopcorn, etc.)
+  - 16 Adult Content Sites (Empornium, Sukebei, JAVTorrent, etc.)
+  - 8 International Sites (Rutracker, Torrent9, BTDigg, etc.)
+  - 16 Specialized DHT/Meta Search Engines
+- **Custom URL Support**: Add your own clearnet or .onion torrent sites
+- **Mass Import**: Bulk import all indexers from Jackett/Prowlarr with one click
 
 ### 📊 **Advanced Torrent Details**
 - **Health Status**: Visual health indicators (Excellent, Good, Fair, Poor, Dead)
@@ -27,6 +39,7 @@ A powerful Android BitTorrent client that uses the Torznab API to search and dow
 - **Keyword Extraction**: Automatically searches for individual keywords
 - **Duplicate Removal**: Intelligent deduplication of results
 - **Relevance Sorting**: Results sorted by seeder count
+- **Multi-Source Aggregation**: Search across all enabled sources simultaneously
 
 ### 📥 **Multi-Client Download Support**
 - **qBittorrent Integration**: Send torrents directly to qBittorrent
@@ -42,10 +55,22 @@ A powerful Android BitTorrent client that uses the Torznab API to search and dow
 - **Download History**: Track all downloaded torrents with timestamps
 
 ### 🛠️ **Configuration**
-- Manage individual indexers (enable/disable)
-- Configure qBittorrent server connection
-- Connection status monitoring
-- Support for both HTTP and HTTPS
+- **Built-in Providers**: Load 61+ pre-configured providers with one click
+- **Custom Sites**: Add custom torrent sites with CSS selector configuration
+- **Tor Support**: Access .onion sites via Orbot integration
+- **Indexer Management**: Enable/disable individual indexers
+- **qBittorrent Setup**: Configure remote qBittorrent server
+- **Connection Monitoring**: Real-time connection status
+- **Mass Import**: Import all Jackett/Prowlarr indexers at once
+
+## Hardcoded API Credentials
+
+For development/testing, the app has hardcoded Jackett/Prowlarr credentials:
+
+- **Jackett**: `http://192.168.1.175:9117` (API Key: `sfbizvj42r5h41a2aojb2t29zouqgd3s`)
+- **Prowlarr**: `http://192.168.1.175:9696` (API Key: `11e5676f4c3444479cea3671a6c0c55b`)
+
+Change these in [MainActivity.kt](app/src/main/java/com/zim/jackettprowler/MainActivity.kt) for your local setup.
 
 ## Technical Implementation
 
