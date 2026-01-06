@@ -22,6 +22,9 @@ public final class ActivitySettingsBinding implements ViewBinding {
   private final ScrollView rootView;
 
   @NonNull
+  public final Button buttonAddCustomURLs;
+
+  @NonNull
   public final Button buttonManageIndexers;
 
   @NonNull
@@ -39,11 +42,12 @@ public final class ActivitySettingsBinding implements ViewBinding {
   @NonNull
   public final EditText editQbUsername;
 
-  private ActivitySettingsBinding(@NonNull ScrollView rootView,
+  private ActivitySettingsBinding(@NonNull ScrollView rootView, @NonNull Button buttonAddCustomURLs,
       @NonNull Button buttonManageIndexers, @NonNull Button buttonSaveSettings,
       @NonNull CheckBox checkEnableQb, @NonNull EditText editQbBaseUrl,
       @NonNull EditText editQbPassword, @NonNull EditText editQbUsername) {
     this.rootView = rootView;
+    this.buttonAddCustomURLs = buttonAddCustomURLs;
     this.buttonManageIndexers = buttonManageIndexers;
     this.buttonSaveSettings = buttonSaveSettings;
     this.checkEnableQb = checkEnableQb;
@@ -79,6 +83,12 @@ public final class ActivitySettingsBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      id = R.id.buttonAddCustomURLs;
+      Button buttonAddCustomURLs = ViewBindings.findChildViewById(rootView, id);
+      if (buttonAddCustomURLs == null) {
+        break missingId;
+      }
+
       id = R.id.buttonManageIndexers;
       Button buttonManageIndexers = ViewBindings.findChildViewById(rootView, id);
       if (buttonManageIndexers == null) {
@@ -115,8 +125,9 @@ public final class ActivitySettingsBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivitySettingsBinding((ScrollView) rootView, buttonManageIndexers,
-          buttonSaveSettings, checkEnableQb, editQbBaseUrl, editQbPassword, editQbUsername);
+      return new ActivitySettingsBinding((ScrollView) rootView, buttonAddCustomURLs,
+          buttonManageIndexers, buttonSaveSettings, checkEnableQb, editQbBaseUrl, editQbPassword,
+          editQbUsername);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

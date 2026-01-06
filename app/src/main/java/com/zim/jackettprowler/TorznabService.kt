@@ -13,11 +13,18 @@ import java.util.concurrent.TimeUnit
 class TorznabService(
     private val baseUrl: String,
     private val apiKey: String,
+    private val serviceType: ServiceType = ServiceType.AUTO_DETECT,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 ) {
+
+    enum class ServiceType {
+        JACKETT,
+        PROWLARR,
+        AUTO_DETECT
+    }
 
     enum class SearchType {
         SEARCH,    // t=search - general search
@@ -149,7 +156,23 @@ class TorznabService(
     }
 
     private fun buildUrl(function: String, params: Map<String, String>): String {
-        val url = "${baseUrl.trimEnd('/')}/api/v2.0/indexers/all/results/torznab/api"
+        // Determine the correct API path based on service type
+        val apiPath = when (serviceType) {
+            ServiceType.JACKETT -> "/api"
+            ServiceType.PROWLARR -> "/api/v2.0/indexers/all/results/torznab/api"
+            ServiceType.AUTO_DETECT -> {
+                // Auto-detect based on base URL
+                if (baseUrl.contains(":9117") || baseUrl.contains("jackett", ignoreCase = true)) {
+                    "/api"
+                } else if (baseUrl.contains(":9696") || baseUrl.contains("prowlarr", ignoreCase = true)) {
+                    "/api/v2.0/indexers/all/results/torznab/api"
+                } else {
+                    "/api" // Default to Jackett style
+                }
+            }
+        }
+        
+        val url = "${baseUrl.trimEnd('/')}$apiPath"
         val uri = Uri.parse(url).buildUpon()
             .appendQueryParameter("t", function)
             .appendQueryParameter("apikey", apiKey)

@@ -20,15 +20,36 @@ public final class ItemTorrentBinding implements ViewBinding {
   private final CardView rootView;
 
   @NonNull
-  public final TextView textSubtitle;
+  public final TextView textCategory;
+
+  @NonNull
+  public final TextView textHealth;
+
+  @NonNull
+  public final TextView textIndexer;
+
+  @NonNull
+  public final TextView textLeechers;
+
+  @NonNull
+  public final TextView textSeeders;
+
+  @NonNull
+  public final TextView textSize;
 
   @NonNull
   public final TextView textTitle;
 
-  private ItemTorrentBinding(@NonNull CardView rootView, @NonNull TextView textSubtitle,
-      @NonNull TextView textTitle) {
+  private ItemTorrentBinding(@NonNull CardView rootView, @NonNull TextView textCategory,
+      @NonNull TextView textHealth, @NonNull TextView textIndexer, @NonNull TextView textLeechers,
+      @NonNull TextView textSeeders, @NonNull TextView textSize, @NonNull TextView textTitle) {
     this.rootView = rootView;
-    this.textSubtitle = textSubtitle;
+    this.textCategory = textCategory;
+    this.textHealth = textHealth;
+    this.textIndexer = textIndexer;
+    this.textLeechers = textLeechers;
+    this.textSeeders = textSeeders;
+    this.textSize = textSize;
     this.textTitle = textTitle;
   }
 
@@ -59,9 +80,39 @@ public final class ItemTorrentBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
-      id = R.id.textSubtitle;
-      TextView textSubtitle = ViewBindings.findChildViewById(rootView, id);
-      if (textSubtitle == null) {
+      id = R.id.textCategory;
+      TextView textCategory = ViewBindings.findChildViewById(rootView, id);
+      if (textCategory == null) {
+        break missingId;
+      }
+
+      id = R.id.textHealth;
+      TextView textHealth = ViewBindings.findChildViewById(rootView, id);
+      if (textHealth == null) {
+        break missingId;
+      }
+
+      id = R.id.textIndexer;
+      TextView textIndexer = ViewBindings.findChildViewById(rootView, id);
+      if (textIndexer == null) {
+        break missingId;
+      }
+
+      id = R.id.textLeechers;
+      TextView textLeechers = ViewBindings.findChildViewById(rootView, id);
+      if (textLeechers == null) {
+        break missingId;
+      }
+
+      id = R.id.textSeeders;
+      TextView textSeeders = ViewBindings.findChildViewById(rootView, id);
+      if (textSeeders == null) {
+        break missingId;
+      }
+
+      id = R.id.textSize;
+      TextView textSize = ViewBindings.findChildViewById(rootView, id);
+      if (textSize == null) {
         break missingId;
       }
 
@@ -71,7 +122,8 @@ public final class ItemTorrentBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ItemTorrentBinding((CardView) rootView, textSubtitle, textTitle);
+      return new ItemTorrentBinding((CardView) rootView, textCategory, textHealth, textIndexer,
+          textLeechers, textSeeders, textSize, textTitle);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

@@ -40,10 +40,14 @@ class MainActivity : AppCompatActivity() {
     
     // Download history manager
     private lateinit var historyManager: DownloadHistoryManager
+    
+    // Torrent aggregator
+    private lateinit var aggregator: TorrentAggregator
 
     enum class Source {
         JACKETT,
-        PROWLARR
+        PROWLARR,
+        ALL_SOURCES  // New option for aggregated search
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,6 +62,9 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize download history manager
         historyManager = DownloadHistoryManager(this)
+        
+        // Initialize torrent aggregator
+        aggregator = TorrentAggregator(this)
 
         setupRecyclerView()
         setupListeners()
@@ -132,12 +139,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun getSelectedSource(): Source {
         val pos = binding.spinnerSource.selectedItemPosition
-        return if (pos == 0) Source.JACKETT else Source.PROWLARR
+        return when (pos) {
+            0 -> Source.JACKETT
+            1 -> Source.PROWLARR
+            2 -> Source.ALL_SOURCES  // New aggregated option
+            else -> Source.JACKETT
+        }
     }
 
     private fun performSearch(query: String, source: Source) {
         lastQuery = query
         lastSource = source
+
+        // For ALL_SOURCES, use the aggregator
+        if (source == Source.ALL_SOURCES) {
+            performAggregatedSearch(query)
+            return
+        }
 
         // Check if this source's indexers are enabled
         val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
@@ -189,6 +207,52 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
                 launch(Dispatchers.Main) {
                     binding.textStatus.text = "Search error on $source: ${e.message}"
+                }
+            }
+        }
+    }
+    
+    /**
+     * Perform aggregated search across all sources
+     */
+    private fun performAggregatedSearch(query: String) {
+        binding.textStatus.text = "Searching all sources for \"$query\"..."
+        adapter?.updateData(emptyList())
+
+        uiScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+                val includeOnion = prefs.getBoolean("enable_onion_sites", false)
+                
+                val aggregatedResults = aggregator.searchAll(
+                    query = query,
+                    jackettService = jackettService,
+                    prowlarrService = prowlarrService,
+                    limit = 100,
+                    includeCustomSites = true,
+                    includeOnionSites = includeOnion
+                )
+
+                saveSearchQuery(query)
+
+                launch(Dispatchers.Main) {
+                    adapter?.updateData(aggregatedResults.results)
+                    binding.textStatus.text = aggregatedResults.getStatusSummary()
+                    
+                    // Show detailed status on long press
+                    binding.textStatus.setOnLongClickListener {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Source Details")
+                            .setMessage(aggregatedResults.getDetailedStatus())
+                            .setPositiveButton("OK", null)
+                            .show()
+                        true
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                launch(Dispatchers.Main) {
+                    binding.textStatus.text = "Aggregated search error: ${e.message}"
                 }
             }
         }

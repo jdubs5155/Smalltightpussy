@@ -4,6 +4,7 @@ package com.zim.jackettprowler.databinding;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -22,6 +23,15 @@ public final class ActivityIndexerManagementBinding implements ViewBinding {
   private final ScrollView rootView;
 
   @NonNull
+  public final Button buttonLoadBuiltInProviders;
+
+  @NonNull
+  public final Button buttonMassImportJackett;
+
+  @NonNull
+  public final Button buttonMassImportProwlarr;
+
+  @NonNull
   public final LinearLayout jackettIndexersLayout;
 
   @NonNull
@@ -34,9 +44,14 @@ public final class ActivityIndexerManagementBinding implements ViewBinding {
   public final TextView statusText;
 
   private ActivityIndexerManagementBinding(@NonNull ScrollView rootView,
-      @NonNull LinearLayout jackettIndexersLayout, @NonNull ProgressBar progressBar,
-      @NonNull LinearLayout prowlarrIndexersLayout, @NonNull TextView statusText) {
+      @NonNull Button buttonLoadBuiltInProviders, @NonNull Button buttonMassImportJackett,
+      @NonNull Button buttonMassImportProwlarr, @NonNull LinearLayout jackettIndexersLayout,
+      @NonNull ProgressBar progressBar, @NonNull LinearLayout prowlarrIndexersLayout,
+      @NonNull TextView statusText) {
     this.rootView = rootView;
+    this.buttonLoadBuiltInProviders = buttonLoadBuiltInProviders;
+    this.buttonMassImportJackett = buttonMassImportJackett;
+    this.buttonMassImportProwlarr = buttonMassImportProwlarr;
     this.jackettIndexersLayout = jackettIndexersLayout;
     this.progressBar = progressBar;
     this.prowlarrIndexersLayout = prowlarrIndexersLayout;
@@ -70,6 +85,24 @@ public final class ActivityIndexerManagementBinding implements ViewBinding {
     // This is done to optimize the compiled bytecode for size and performance.
     int id;
     missingId: {
+      id = R.id.buttonLoadBuiltInProviders;
+      Button buttonLoadBuiltInProviders = ViewBindings.findChildViewById(rootView, id);
+      if (buttonLoadBuiltInProviders == null) {
+        break missingId;
+      }
+
+      id = R.id.buttonMassImportJackett;
+      Button buttonMassImportJackett = ViewBindings.findChildViewById(rootView, id);
+      if (buttonMassImportJackett == null) {
+        break missingId;
+      }
+
+      id = R.id.buttonMassImportProwlarr;
+      Button buttonMassImportProwlarr = ViewBindings.findChildViewById(rootView, id);
+      if (buttonMassImportProwlarr == null) {
+        break missingId;
+      }
+
       id = R.id.jackettIndexersLayout;
       LinearLayout jackettIndexersLayout = ViewBindings.findChildViewById(rootView, id);
       if (jackettIndexersLayout == null) {
@@ -94,8 +127,9 @@ public final class ActivityIndexerManagementBinding implements ViewBinding {
         break missingId;
       }
 
-      return new ActivityIndexerManagementBinding((ScrollView) rootView, jackettIndexersLayout,
-          progressBar, prowlarrIndexersLayout, statusText);
+      return new ActivityIndexerManagementBinding((ScrollView) rootView, buttonLoadBuiltInProviders,
+          buttonMassImportJackett, buttonMassImportProwlarr, jackettIndexersLayout, progressBar,
+          prowlarrIndexersLayout, statusText);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

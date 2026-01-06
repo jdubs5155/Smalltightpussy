@@ -14,5 +14,9 @@
     {
         "merged": "com.zim.jackettprowler.app-mergeDebugResources-31:/layout/activity_main.xml",
         "source": "com.zim.jackettprowler.app-main-34:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-mergeDebugResources-31:/layout/activity_custom_urls.xml",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_custom_urls.xml"
     }
 ]

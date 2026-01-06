@@ -30,6 +30,9 @@
         android:theme="@style/Theme.JackettProwlarrClient"
         android:usesCleartextTraffic="true" >
         <activity
+            android:name="com.zim.jackettprowler.CustomURLsActivity"
+            android:exported="false" />
+        <activity
             android:name="com.zim.jackettprowler.IndexerManagementActivity"
             android:exported="false" />
         <activity

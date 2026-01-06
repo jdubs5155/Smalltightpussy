@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="source_array">
+        <item>Jackett</item>
+        <item>Prowlarr</item>
+    </string-array>
+    <color name="black">#000000</color>
+    <color name="ic_launcher_background">#3700B3</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="white">#FFFFFF</color>
+    <string name="app_name">Jackett Prowlarr Client</string>
+    <string name="pref_qb_base_url">pref_qb_base_url</string>
+    <string name="pref_qb_enabled">pref_qb_enabled</string>
+    <string name="pref_qb_password">pref_qb_password</string>
+    <string name="pref_qb_username">pref_qb_username</string>
+    <string name="qb_base_url_label">qBittorrent URL</string>
+    <string name="qb_enabled_label">Enable qBittorrent API</string>
+    <string name="qb_password_label">Password</string>
+    <string name="qb_username_label">Username</string>
+    <string name="save_button">Save</string>
+    <string name="settings_title">Settings</string>
+    <style name="Theme.JackettProwlarrClient" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryVariant">@color/purple_700</item>
+        <item name="colorAccent">@color/teal_200</item>
+    </style>
+</resources>

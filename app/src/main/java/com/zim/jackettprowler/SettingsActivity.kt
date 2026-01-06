@@ -50,5 +50,10 @@ class SettingsActivity : AppCompatActivity() {
             val intent = Intent(this, IndexerManagementActivity::class.java)
             startActivity(intent)
         }
+
+        binding.buttonAddCustomURLs.setOnClickListener {
+            val intent = Intent(this, CustomURLsActivity::class.java)
+            startActivity(intent)
+        }
     }
 }

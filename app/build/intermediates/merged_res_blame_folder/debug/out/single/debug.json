@@ -1,70 +1,74 @@
 [
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-hdpi_ic_launcher.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-hdpi/ic_launcher.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-mdpi/ic_launcher.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-xhdpi_ic_launcher_round.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-xhdpi/ic_launcher_round.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_main.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_main.xml"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-mdpi_ic_launcher_round.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-mdpi/ic_launcher_round.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxxhdpi/ic_launcher.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-anydpi-v26/ic_launcher_round.xml"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-hdpi/ic_launcher.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-hdpi_ic_launcher_round.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-hdpi/ic_launcher_round.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-xhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/layout_activity_settings.xml.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/layout/activity_settings.xml"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-xxxhdpi_ic_launcher.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-xxxhdpi/ic_launcher.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-anydpi-v26/ic_launcher_round.xml"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-mdpi_ic_launcher.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-mdpi/ic_launcher.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxxhdpi/ic_launcher_round.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-xhdpi_ic_launcher.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-xhdpi/ic_launcher.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-anydpi-v26/ic_launcher.xml"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-xxhdpi_ic_launcher_round.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-xxhdpi/ic_launcher_round.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-xhdpi/ic_launcher.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-anydpi-v26/ic_launcher.xml"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxhdpi/ic_launcher.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-xxxhdpi/ic_launcher_round.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_indexer_management.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_indexer_management.xml"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/layout_activity_main.xml.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/layout/activity_main.xml"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-hdpi/ic_launcher_round.png"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/mipmap-xxhdpi_ic_launcher.png.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/mipmap-xxhdpi/ic_launcher.png"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_item_torrent.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/item_torrent.xml"
     },
     {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/layout_activity_indexer_management.xml.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/layout/activity_indexer_management.xml"
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_custom_urls.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_custom_urls.xml"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/mipmap-mdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_settings.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_settings.xml"
     },
     {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/xml_network_security_config.xml.flat",
         "source": "com.zim.jackettprowler.app-main-34:/xml/network_security_config.xml"
-    },
-    {
-        "merged": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-merged_res-32:/layout_item_torrent.xml.flat",
-        "source": "/home/codespace/.gradle/daemon/8.2/com.zim.jackettprowler.app-main-34:/layout/item_torrent.xml"
     }
 ]

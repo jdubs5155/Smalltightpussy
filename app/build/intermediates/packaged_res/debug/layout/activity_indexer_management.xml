@@ -27,6 +27,36 @@
             android:layout_marginBottom="16dp"
             android:gravity="center" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+            
+            <Button
+                android:id="@+id/buttonMassImportJackett"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Mass Import Jackett"
+                android:layout_marginEnd="8dp" />
+            
+            <Button
+                android:id="@+id/buttonMassImportProwlarr"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Mass Import Prowlarr" />
+        </LinearLayout>
+        
+        <Button
+            android:id="@+id/buttonLoadBuiltInProviders"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Load 65+ Built-in Providers"
+            android:layout_marginBottom="16dp"
+            android:backgroundTint="#FF6B35" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

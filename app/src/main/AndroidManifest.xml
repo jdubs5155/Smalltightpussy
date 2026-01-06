@@ -15,6 +15,10 @@
         android:usesCleartextTraffic="true">
 
         <activity
+            android:name=".CustomURLsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".IndexerManagementActivity"
             android:exported="false" />
 
