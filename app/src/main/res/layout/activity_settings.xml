@@ -18,6 +18,144 @@
             android:textStyle="bold"
             android:layout_marginBottom="16dp" />
 
+        <!-- Jackett/Prowlarr Settings -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Jackett Configuration"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Configure your Jackett server connection. Find your API key in Jackett web interface (top-right corner)."
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Jackett URL (with port)"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Examples:\n• Same network: http://192.168.1.175:9117\n• Localhost (PC): http://localhost:9117\n• Custom port: http://192.168.1.100:8080"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editJackettUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="http://192.168.1.175:9117"
+            android:inputType="textUri"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Jackett API Key"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Copy from: Jackett Dashboard → Top right corner → API Key button"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editJackettApiKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="e.g., sfbizvj42r5h41a2aojb2t29zouqgd3s"
+            android:inputType="text"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Prowlarr Configuration"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Configure your Prowlarr server connection. API key is in Settings → General → Security."
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Prowlarr URL (with port)"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Examples:\n• Default port: http://192.168.1.175:9696\n• Localhost (PC): http://localhost:9696\n• Custom port: http://192.168.1.100:7878"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editProwlarrUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="http://192.168.1.175:9696"
+            android:inputType="textUri"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Prowlarr API Key"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Copy from: Prowlarr → Settings → General → Security → API Key"
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editProwlarrApiKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="e.g., 11e5676f4c3444479cea3671a6c0c55b"
+            android:inputType="text"
+            android:layout_marginBottom="20dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="qBittorrent Settings"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
         <CheckBox
             android:id="@+id/checkEnableQb"
             android:layout_width="match_parent"
@@ -76,11 +214,27 @@
             android:layout_height="wrap_content"
             android:text="@string/save_button" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Indexer Management"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/buttonImportIndexers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Import Indexers from Jackett/Prowlarr"
+            android:backgroundTint="#3498DB" />
+
         <Button
             android:id="@+id/buttonManageIndexers"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="8dp"
             android:text="View and Manage Indexers" />
 
         <Button
@@ -90,6 +244,14 @@
             android:layout_marginTop="8dp"
             android:text="Add Custom Clearnet/Onion Sites"
             android:backgroundTint="#2ECC71" />
+
+        <Button
+            android:id="@+id/buttonManageBuiltInProviders"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Manage Built-in Providers (60+)"
+            android:backgroundTint="#9B59B6" />
 
     </LinearLayout>
 

@@ -1,11 +1,14 @@
 package com.zim.jackettprowler
 
 import android.content.Context
+import com.zim.jackettprowler.providers.ProviderRegistry
 import kotlinx.coroutines.*
 
 /**
  * Aggregates torrent results from multiple sources:
  * - Torznab APIs (Jackett, Prowlarr)
+ * - Imported indexers from Jackett/Prowlarr
+ * - Built-in torrent providers (60+ sites)
  * - Custom scraper sites
  * - Onion sites via Tor
  */
@@ -13,6 +16,7 @@ class TorrentAggregator(private val context: Context) {
     private val customSiteManager = CustomSiteManager(context)
     private val torProxyManager = TorProxyManager(context)
     private val scraperService = ScraperService(torProxyManager)
+    private val indexerImporter = IndexerImporter(context)
     
     /**
      * Search all enabled sources and aggregate results
@@ -23,7 +27,9 @@ class TorrentAggregator(private val context: Context) {
         prowlarrService: TorznabService?,
         limit: Int = 100,
         includeCustomSites: Boolean = true,
-        includeOnionSites: Boolean = false
+        includeOnionSites: Boolean = false,
+        includeBuiltInProviders: Boolean = true,
+        includeImportedIndexers: Boolean = true
     ): AggregatedResults = withContext(Dispatchers.IO) {
         val allResults = mutableSetOf<TorrentResult>()
         val sourceStatus = mutableMapOf<String, SourceResult>()
@@ -50,6 +56,23 @@ class TorrentAggregator(private val context: Context) {
             }
         }
         
+        // Search imported indexers from Jackett/Prowlarr
+        if (includeImportedIndexers) {
+            try {
+                val importedResults = indexerImporter.searchAcrossImported(query, limit)
+                allResults.addAll(importedResults)
+                sourceStatus["Imported Indexers"] = SourceResult(true, importedResults.size, null)
+            } catch (e: Exception) {
+                sourceStatus["Imported Indexers"] = SourceResult(false, 0, e.message)
+            }
+        }
+        
+        // Search built-in providers (60+ sites) as fallback
+        if (includeBuiltInProviders) {
+            val builtInConfigs = getEnabledBuiltInProviders()
+            searchCustomSites(query, builtInConfigs, limit, allResults, sourceStatus)
+        }
+        
         // Search custom clearnet sites
         if (includeCustomSites) {
             val clearnetSites = customSiteManager.getClearnetSites()
@@ -74,6 +97,21 @@ class TorrentAggregator(private val context: Context) {
             successfulSources = sourceStatus.count { it.value.success },
             totalResults = uniqueResults.size
         )
+    }
+    
+    /**
+     * Get enabled built-in providers from settings
+     */
+    private fun getEnabledBuiltInProviders(): List<CustomSiteConfig> {
+        val prefs = context.getSharedPreferences("builtin_providers", Context.MODE_PRIVATE)
+        val enabledIds = prefs.getStringSet("enabled_providers", null)
+        
+        return if (enabledIds == null) {
+            // Default: enable only public providers
+            ProviderRegistry.getPublicConfigs()
+        } else {
+            ProviderRegistry.getAllConfigs().filter { it.id in enabledIds }
+        }
     }
     
     /**

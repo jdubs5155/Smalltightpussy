@@ -400,3 +400,49 @@ class ProviderBitsearch : BaseIndexerProvider() {
         )
     )
 }
+/**
+ * TorrentGuru - DHT torrent search
+ */
+class ProviderTorrentGuru : BaseIndexerProvider() {
+    override val id = "torrentguru"
+    override val name = "TorrentGuru"
+    override val baseUrl = "https://torrentguru.io"
+    override val description = "DHT-based torrent search engine"
+    
+    override fun toConfig() = CustomSiteConfig(
+        id = id,
+        name = name,
+        baseUrl = baseUrl,
+        searchPath = "/search?q={query}",
+        selectors = selectors(
+            container = "div.result-item",
+            title = "div.title a",
+            magnetUrl = "a[href^='magnet:']",
+            size = "span.size",
+            seeders = "span.seeders"
+        )
+    )
+}
+
+/**
+ * Snowfl - Clean DHT indexer
+ */
+class ProviderSnowfl : BaseIndexerProvider() {
+    override val id = "snowfl"
+    override val name = "Snowfl"
+    override val baseUrl = "https://snowfl.com"
+    override val description = "Minimalist DHT torrent search"
+    
+    override fun toConfig() = CustomSiteConfig(
+        id = id,
+        name = name,
+        baseUrl = baseUrl,
+        searchPath = "/{query}.html",
+        selectors = selectors(
+            container = "div.container > div",
+            title = "h2 a",
+            magnetUrl = "a.download[href^='magnet:']",
+            size = "span.size"
+        )
+    )
+}

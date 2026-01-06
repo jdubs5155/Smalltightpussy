@@ -3,7 +3,7 @@ package com.zim.jackettprowler.providers
 import com.zim.jackettprowler.CustomSiteConfig
 
 /**
- * Central registry for all 65+ built-in torrent indexer providers
+ * Central registry for all 70+ built-in torrent indexer providers
  * NO CONTENT RESTRICTIONS - includes adult content for testing
  */
 object ProviderRegistry {
@@ -95,7 +95,10 @@ object ProviderRegistry {
         ProviderNyaa(),
         ProviderKickassTorrents(),
         ProviderTorrentFunk(),
-        ProviderTorrentDownloads()
+        ProviderTorrentDownloads(),
+        ProviderTorlock(),
+        ProviderGloTorrents(),
+        ProviderSolidTorrents()
     )
     
     private fun privateProviders() = listOf(
@@ -155,7 +158,9 @@ object ProviderRegistry {
         ProviderRarbgMirror(),
         ProviderTorrentKitty(),
         ProviderTorrentDB(),
-        ProviderBitsearch()
+        ProviderBitsearch(),
+        ProviderTorrentGuru(),
+        ProviderSnowfl()
     )
     
     /**

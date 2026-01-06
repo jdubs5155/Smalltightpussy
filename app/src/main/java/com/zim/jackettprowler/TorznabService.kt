@@ -13,18 +13,11 @@ import java.util.concurrent.TimeUnit
 class TorznabService(
     private val baseUrl: String,
     private val apiKey: String,
-    private val serviceType: ServiceType = ServiceType.AUTO_DETECT,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 ) {
-
-    enum class ServiceType {
-        JACKETT,
-        PROWLARR,
-        AUTO_DETECT
-    }
 
     enum class SearchType {
         SEARCH,    // t=search - general search
@@ -156,20 +149,13 @@ class TorznabService(
     }
 
     private fun buildUrl(function: String, params: Map<String, String>): String {
-        // Determine the correct API path based on service type
-        val apiPath = when (serviceType) {
-            ServiceType.JACKETT -> "/api"
-            ServiceType.PROWLARR -> "/api/v2.0/indexers/all/results/torznab/api"
-            ServiceType.AUTO_DETECT -> {
-                // Auto-detect based on base URL
-                if (baseUrl.contains(":9117") || baseUrl.contains("jackett", ignoreCase = true)) {
-                    "/api"
-                } else if (baseUrl.contains(":9696") || baseUrl.contains("prowlarr", ignoreCase = true)) {
-                    "/api/v2.0/indexers/all/results/torznab/api"
-                } else {
-                    "/api" // Default to Jackett style
-                }
-            }
+        // Prowlarr uses /api/v1/search, Jackett uses /api/v2.0/indexers/all/results/torznab/api
+        val apiPath = if (baseUrl.contains("prowlarr", ignoreCase = true) || 
+                           baseUrl.contains(":9696") || 
+                           testUrlForProwlarr()) {
+            "/api/v1/search"
+        } else {
+            "/api/v2.0/indexers/all/results/torznab/api"
         }
         
         val url = "${baseUrl.trimEnd('/')}$apiPath"
@@ -182,6 +168,19 @@ class TorznabService(
         }
         
         return uri.build().toString()
+    }
+    
+    private fun testUrlForProwlarr(): Boolean {
+        // Test if this is a Prowlarr instance by checking the response header or capabilities endpoint
+        return try {
+            val testUrl = "${baseUrl.trimEnd('/')}/api/v1/search?t=caps&apikey=$apiKey"
+            val request = Request.Builder().url(testUrl).get().build()
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun parseCapabilities(xml: String): TorznabCapabilities {

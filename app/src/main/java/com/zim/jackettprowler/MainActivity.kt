@@ -56,9 +56,28 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
-        // Initialize Torznab services
-        jackettService = TorznabService(JACKETT_BASE_URL, JACKETT_API_KEY)
-        prowlarrService = TorznabService(PROWLARR_BASE_URL, PROWLARR_API_KEY)
+        // Load API credentials from SharedPreferences (can be edited in Settings)
+        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+        
+        // Initialize with hard-coded defaults if not set
+        val jackettUrl = prefs.getString("jackett_url", JACKETT_BASE_URL) ?: JACKETT_BASE_URL
+        val jackettKey = prefs.getString("jackett_api_key", JACKETT_API_KEY) ?: JACKETT_API_KEY
+        val prowlarrUrl = prefs.getString("prowlarr_url", PROWLARR_BASE_URL) ?: PROWLARR_BASE_URL
+        val prowlarrKey = prefs.getString("prowlarr_api_key", PROWLARR_API_KEY) ?: PROWLARR_API_KEY
+        
+        // Save defaults if first run
+        if (!prefs.contains("jackett_url")) {
+            prefs.edit()
+                .putString("jackett_url", JACKETT_BASE_URL)
+                .putString("jackett_api_key", JACKETT_API_KEY)
+                .putString("prowlarr_url", PROWLARR_BASE_URL)
+                .putString("prowlarr_api_key", PROWLARR_API_KEY)
+                .apply()
+        }
+        
+        // Initialize Torznab services with current settings
+        jackettService = TorznabService(jackettUrl, jackettKey)
+        prowlarrService = TorznabService(prowlarrUrl, prowlarrKey)
         
         // Initialize download history manager
         historyManager = DownloadHistoryManager(this)
@@ -69,6 +88,23 @@ class MainActivity : AppCompatActivity() {
         setupRecyclerView()
         setupListeners()
         checkConnections()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reload Torznab services in case settings changed
+        reloadServices()
+    }
+
+    private fun reloadServices() {
+        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+        val jackettUrl = prefs.getString("jackett_url", JACKETT_BASE_URL) ?: JACKETT_BASE_URL
+        val jackettKey = prefs.getString("jackett_api_key", JACKETT_API_KEY) ?: JACKETT_API_KEY
+        val prowlarrUrl = prefs.getString("prowlarr_url", PROWLARR_BASE_URL) ?: PROWLARR_BASE_URL
+        val prowlarrKey = prefs.getString("prowlarr_api_key", PROWLARR_API_KEY) ?: PROWLARR_API_KEY
+        
+        jackettService = TorznabService(jackettUrl, jackettKey)
+        prowlarrService = TorznabService(prowlarrUrl, prowlarrKey)
     }
 
     private fun setupRecyclerView() {
@@ -350,11 +386,11 @@ class MainActivity : AppCompatActivity() {
     private fun detectInstalledTorrentClients(): List<TorrentClientOption> {
         val clients = mutableListOf<TorrentClientOption>()
         val knownClients = listOf(
+            "org.proninyaroslav.libretorrent" to "LibreTorrent",  // LibreTorrent first (preferred)
             "com.utorrent.client" to "µTorrent",
             "com.bittorrent.client" to "BitTorrent",
             "org.transdroid.full" to "Transdroid",
             "com.deluge.android" to "Deluge",
-            "org.proninyaroslav.libretorrent" to "LibreTorrent",
             "com.frostwire.android" to "FrostWire",
             "com.flxrs.danmaku.flinger" to "Flud"
         )
@@ -374,7 +410,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showNoClientsDialog(result: TorrentResult) {
         val recommendations = listOf(
-            "LibreTorrent - Free, open source",
+            "LibreTorrent - Free, open source (RECOMMENDED)",
             "µTorrent - Popular choice",
             "Flud - Simple and effective"
         )
@@ -382,12 +418,12 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("No Torrent Clients Found")
             .setMessage("You need to install a torrent client app to download torrents.\n\nRecommended clients:\n${recommendations.joinToString("\n")}")
-            .setPositiveButton("Open Play Store") { _, _ ->
+            .setPositiveButton("Install LibreTorrent") { _, _ ->
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=torrent+client&c=apps"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=org.proninyaroslav.libretorrent"))
                     startActivity(intent)
                 } catch (_: Exception) {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/search?q=torrent+client&c=apps"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=org.proninyaroslav.libretorrent"))
                     startActivity(intent)
                 }
             }

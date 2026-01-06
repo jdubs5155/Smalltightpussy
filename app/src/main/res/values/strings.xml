@@ -3,9 +3,9 @@
     <string name="app_name">Jackett Prowlarr Client</string>
 
     <string-array name="source_array">
-        <item>All Sources (Built-in + Jackett + Prowlarr)</item>
-        <item>Jackett Only</item>
-        <item>Prowlarr Only</item>
+        <item>All Sources (Everything)</item>
+        <item>Jackett</item>
+        <item>Prowlarr</item>
     </string-array>
 
     <!-- Advanced / settings -->
