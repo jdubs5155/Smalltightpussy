@@ -11518,8 +11518,9 @@
         <item name="colorPrimaryVariant">#290073</item> 
         <item name="colorAccent">#018786</item> 
     </style></file><file path="/workspaces/JackettProwlarrClient/app/src/main/res/values/strings.xml" qualifiers=""><string name="app_name">Jackett Prowlarr Client</string><string-array name="source_array">
-        <item>Jackett</item>
-        <item>Prowlarr</item>
+        <item>All Sources (Built-in + Jackett + Prowlarr)</item>
+        <item>Jackett Only</item>
+        <item>Prowlarr Only</item>
     </string-array><string name="settings_title">Settings</string><string name="qb_enabled_label">Enable qBittorrent API</string><string name="qb_base_url_label">qBittorrent URL</string><string name="qb_username_label">Username</string><string name="qb_password_label">Password</string><string name="save_button">Save</string></file><file path="/workspaces/JackettProwlarrClient/app/src/main/res/values/prefs_keys.xml" qualifiers=""><string name="pref_qb_enabled">pref_qb_enabled</string><string name="pref_qb_base_url">pref_qb_base_url</string><string name="pref_qb_username">pref_qb_username</string><string name="pref_qb_password">pref_qb_password</string></file><file path="/workspaces/JackettProwlarrClient/app/src/main/res/values/themes.xml" qualifiers=""><style name="Theme.JackettProwlarrClient" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>

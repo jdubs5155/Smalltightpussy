@@ -140,10 +140,10 @@ class MainActivity : AppCompatActivity() {
     private fun getSelectedSource(): Source {
         val pos = binding.spinnerSource.selectedItemPosition
         return when (pos) {
-            0 -> Source.JACKETT
-            1 -> Source.PROWLARR
-            2 -> Source.ALL_SOURCES  // New aggregated option
-            else -> Source.JACKETT
+            0 -> Source.ALL_SOURCES  // All sources (default)
+            1 -> Source.JACKETT      // Jackett only
+            2 -> Source.PROWLARR     // Prowlarr only
+            else -> Source.ALL_SOURCES
         }
     }
 
