@@ -1,14 +1,16 @@
 # JackettProwlarrClient - AI Coding Agent Instructions
 
 ## Project Overview
-Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Prowlarr), custom web scrapers, and Tor-enabled .onion sites. Uses Kotlin with coroutines for async operations.
+Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Prowlarr), custom web scrapers, and Tor-enabled .onion sites. Uses Kotlin with coroutines for async operations. **NEW**: Supports importing individual indexers from Jackett/Prowlarr and includes 60+ built-in torrent providers as fallback.
 
 ## Architecture
 
 ### Core Components
-- **TorznabService**: Torznab API client for Jackett/Prowlarr - handles search, TV/movie queries, capabilities detection
+- **TorznabService**: Torznab API client for Jackett/Prowlarr - auto-detects API paths (/api/v1/search for Prowlarr, /api/v2.0 for Jackett)
+- **IndexerImporter**: Imports individual indexers from Jackett/Prowlarr with their unique Torznab URLs - allows per-indexer toggling
+- **ProviderRegistry**: 60+ built-in torrent providers (1337x, TPB, YTS, EZTV, Nyaa, etc.) - works without Jackett/Prowlarr
 - **ScraperService**: HTML scraping engine using Jsoup - extracts torrent data from custom sites via CSS/XPath selectors
-- **TorrentAggregator**: Orchestrates parallel searches across multiple sources (Torznab + scrapers + onion sites)
+- **TorrentAggregator**: Orchestrates parallel searches across: Jackett/Prowlarr APIs → Imported indexers → Built-in providers → Custom scrapers → Onion sites
 - **TorProxyManager**: SOCKS proxy manager for Orbot/Tor integration to access .onion sites
 - **QbittorrentClient**: qBittorrent Web UI API client for sending torrents to remote clients
 - **DownloadHistoryManager**: JSON-persisted download tracking (last 100 downloads)
@@ -16,26 +18,34 @@ Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Pr
 ### Data Flow
 1. User enters search query in MainActivity
 2. Query flows to TorznabService (Jackett/Prowlarr) OR TorrentAggregator (multi-source)
-3. Results parsed into `TorrentResult` objects with health metrics (seeders/leechers ratio)
-4. TorrentAdapter displays results in RecyclerView with color-coded health status
-5. Download via qBittorrent API or intent to local torrent clients (uTorrent, LibreTorrent, etc.)
+3. If Torznab APIs unavailable, searches fallback to: imported indexers → built-in providers → custom scrapers
+4. Results parsed into `TorrentResult` objects with health metrics (seeders/leechers ratio)
+5. TorrentAdapter displays results in RecyclerView with color-coded health status
+6. Download via qBittorrent API or intent to local torrent clients (uTorrent, LibreTorrent, etc.)
 
-### Provider System
-- **IndexerProvider interface**: Base for all torrent site providers
-- **Concrete providers**: PublicIndexers.kt, PrivateIndexers.kt, InternationalIndexers.kt
-- **CustomSiteConfig**: JSON-based scraper definitions stored in `custom_sites.json`
-- **GitHubScraperSync**: Auto-sync scraper configs from GitHub repos
+### Indexer Management System
+- **Import from Jackett/Prowlarr**: SettingsActivity → "Import Indexers" button fetches all configured indexers
+- **Per-indexer Torznab URLs**: Each indexer gets its own Torznab endpoint (e.g., `/api/v2.0/indexers/1337x/results/torznab`)
+- **Toggle system**: IndexerManagementActivity allows enabling/disabling individual imported indexers
+- **Built-in providers**: 60+ providers in ProviderRegistry - enabled by default for public trackers
+- **Storage**: Imported indexers saved to SharedPreferences as JSON via IndexerImporter
 
 ## Critical Conventions
 
 ### API Configuration (MainActivity.kt)
-Hard-coded API keys and URLs are at class level - **change these for local development**:
+Hard-coded API keys and URLs are at class level - **change these for local development**. Now also saved to SharedPreferences for SettingsActivity access:
 ```kotlin
 private val JACKETT_BASE_URL = "http://192.168.1.175:9117"
 private val JACKETT_API_KEY = "sfbizvj42r5h41a2aojb2t29zouqgd3s"
 private val PROWLARR_BASE_URL = "http://192.168.1.175:9696"
 private val PROWLARR_API_KEY = "11e5676f4c3444479cea3671a6c0c55b"
 ```
+
+### Prowlarr vs Jackett API Paths
+**CRITICAL FIX**: TorznabService now auto-detects API type:
+- Prowlarr uses: `/api/v1/search`
+- Jackett uses: `/api/v2.0/indexers/all/results/torznab/api`
+Detection via port (9696) or URL substring, with fallback test request.
 
 ### TorrentResult Health Calculation
 Health status uses seeder thresholds (see [TorrentResult.kt](app/src/main/java/com/zim/jackettprowler/TorrentResult.kt)):
@@ -75,16 +85,25 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 Requires Android SDK 26+ (minSdk), targets SDK 34.
 
-### Testing Network Features
-- **Local Jackett/Prowlarr**: Must be running on accessible network address
-- **qBittorrent testing**: Enable in SettingsActivity, requires Web UI credentials
-- **Tor/.onion sites**: Install Orbot app on device/emulator first
+### Testing Indexer Import
+1. Ensure Jackett/Prowlarr running and accessible on network
+2. Open app → Settings → "Import Indexers from Jackett/Prowlarr"
+3. Choose import source (Jackett, Prowlarr, or Both)
+4. Verify indexers appear in "Manage Indexers" with toggle switches
+5. Test search with "All Sources" to use imported + built-in providers
 
-### Debugging Torznab Issues
+### Testing Built-in Providers
+- Settings → "Manage Built-in Providers (60+)" shows provider count
+- "Enable All Public" activates 13 public trackers by default
+- Private trackers require authentication (included for reference only)
+- Built-in providers work offline - no Jackett/Prowlarr needed
+
+### Debugging Connection Issues
 Check connection status in MainActivity status text. Common issues:
-- `HTTP 401`: Invalid API key
-- `HTTP 403`: API key missing or wrong format
-- Empty results: Check Torznab caps with `service.getCapabilities()` first
+- `HTTP 401/403`: Invalid API key - check SharedPreferences values
+- "Prowlarr unreachable": Wrong API path - verify `/api/v1/search` detection
+- Empty results with imported indexers: Check per-indexer toggle state in IndexerManagementActivity
+- Built-in providers not searching: Verify enabled in `builtin_providers` SharedPreferences
 
 ### Adding Custom Scrapers
 1. Create `CustomSiteConfig` with CSS/XPath selectors in [CustomSiteConfig.kt](app/src/main/java/com/zim/jackettprowler/CustomSiteConfig.kt)
@@ -96,7 +115,7 @@ Check connection status in MainActivity status text. Common issues:
 
 ### External Dependencies
 - **OkHttp**: All HTTP requests - configured with 30s timeouts in TorznabService
-- **Gson**: JSON persistence (SharedPreferences) - DownloadHistoryManager, CustomSiteManager
+- **Gson**: JSON persistence (SharedPreferences) - DownloadHistoryManager, CustomSiteManager, IndexerImporter
 - **Jsoup**: HTML parsing for web scrapers
 - **Orbot (optional)**: Tor proxy for .onion sites - checks via `TorProxyManager.isTorAvailable()`
 
@@ -107,20 +126,31 @@ Magnet links open via `Intent.ACTION_VIEW` to find installed torrent clients. Pr
 3. Fallback to web browser
 
 ### Storage
-- **SharedPreferences**: Settings, download history, Tor config, custom sites
+- **SharedPreferences**: Settings, download history, Tor config, custom sites, imported indexers, built-in provider toggles
 - **No Room/SQLite**: All persistence is JSON via Gson
-- Location: `context.getSharedPreferences("download_history", MODE_PRIVATE)`
+- Locations:
+  - `prefs`: Main settings, API credentials
+  - `imported_indexers`: Imported Jackett/Prowlarr indexers
+  - `builtin_providers`: Enabled provider IDs
+  - `download_history`: Recent downloads
 
 ## Key Files Reference
-- [TorznabService.kt](app/src/main/java/com/zim/jackettprowler/TorznabService.kt) - Torznab API implementation
-- [TorrentAggregator.kt](app/src/main/java/com/zim/jackettprowler/TorrentAggregator.kt) - Multi-source search orchestration
+- [TorznabService.kt](app/src/main/java/com/zim/jackettprowler/TorznabService.kt) - Torznab API with Prowlarr/Jackett detection
+- [IndexerImporter.kt](app/src/main/java/com/zim/jackettprowler/IndexerImporter.kt) - Import individual indexers from Jackett/Prowlarr
+- [ProviderRegistry.kt](app/src/main/java/com/zim/jackettprowler/providers/ProviderRegistry.kt) - 60+ built-in providers
+- [TorrentAggregator.kt](app/src/main/java/com/zim/jackettprowler/TorrentAggregator.kt) - Multi-source search with fallback chain
 - [MainActivity.kt](app/src/main/java/com/zim/jackettprowler/MainActivity.kt) - Main search UI and lifecycle
+- [SettingsActivity.kt](app/src/main/java/com/zim/jackettprowler/SettingsActivity.kt) - Import button and provider management
 - [ScraperService.kt](app/src/main/java/com/zim/jackettprowler/ScraperService.kt) - HTML scraping engine
 - [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Detailed feature changelog
 
 ## Common Pitfalls
+- **Prowlarr API path wrong**: Use `/api/v1/search` not `/api/v2.0/indexers...`
+- **Imported indexers not searchable**: Check `isEnabled` flag in IndexerImporter storage
+- **Built-in providers always searching**: Disable via `builtin_providers` SharedPreferences
 - **Don't parse XML manually in Activities** - use TorznabService layer
 - **Always sort results by seeders descending** - users expect best health first
 - **Rate limit scraper requests** - default 1000ms minimum between same-site requests
 - **Test with actual Jackett/Prowlarr instances** - XML structure varies by version
 - **Magnet links vs download URLs** - check `isMagnetLink()` before choosing download method
+- **Per-indexer API keys**: Imported indexers inherit parent API key - store in `ImportedIndexer.apiKey`

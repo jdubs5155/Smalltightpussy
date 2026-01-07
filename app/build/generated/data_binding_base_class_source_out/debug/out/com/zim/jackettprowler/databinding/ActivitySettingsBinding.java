@@ -25,13 +25,34 @@ public final class ActivitySettingsBinding implements ViewBinding {
   public final Button buttonAddCustomURLs;
 
   @NonNull
+  public final Button buttonImportIndexers;
+
+  @NonNull
+  public final Button buttonManageBuiltInProviders;
+
+  @NonNull
   public final Button buttonManageIndexers;
+
+  @NonNull
+  public final Button buttonManageTrackers;
 
   @NonNull
   public final Button buttonSaveSettings;
 
   @NonNull
   public final CheckBox checkEnableQb;
+
+  @NonNull
+  public final EditText editJackettApiKey;
+
+  @NonNull
+  public final EditText editJackettUrl;
+
+  @NonNull
+  public final EditText editProwlarrApiKey;
+
+  @NonNull
+  public final EditText editProwlarrUrl;
 
   @NonNull
   public final EditText editQbBaseUrl;
@@ -43,14 +64,25 @@ public final class ActivitySettingsBinding implements ViewBinding {
   public final EditText editQbUsername;
 
   private ActivitySettingsBinding(@NonNull ScrollView rootView, @NonNull Button buttonAddCustomURLs,
-      @NonNull Button buttonManageIndexers, @NonNull Button buttonSaveSettings,
-      @NonNull CheckBox checkEnableQb, @NonNull EditText editQbBaseUrl,
-      @NonNull EditText editQbPassword, @NonNull EditText editQbUsername) {
+      @NonNull Button buttonImportIndexers, @NonNull Button buttonManageBuiltInProviders,
+      @NonNull Button buttonManageIndexers, @NonNull Button buttonManageTrackers,
+      @NonNull Button buttonSaveSettings, @NonNull CheckBox checkEnableQb,
+      @NonNull EditText editJackettApiKey, @NonNull EditText editJackettUrl,
+      @NonNull EditText editProwlarrApiKey, @NonNull EditText editProwlarrUrl,
+      @NonNull EditText editQbBaseUrl, @NonNull EditText editQbPassword,
+      @NonNull EditText editQbUsername) {
     this.rootView = rootView;
     this.buttonAddCustomURLs = buttonAddCustomURLs;
+    this.buttonImportIndexers = buttonImportIndexers;
+    this.buttonManageBuiltInProviders = buttonManageBuiltInProviders;
     this.buttonManageIndexers = buttonManageIndexers;
+    this.buttonManageTrackers = buttonManageTrackers;
     this.buttonSaveSettings = buttonSaveSettings;
     this.checkEnableQb = checkEnableQb;
+    this.editJackettApiKey = editJackettApiKey;
+    this.editJackettUrl = editJackettUrl;
+    this.editProwlarrApiKey = editProwlarrApiKey;
+    this.editProwlarrUrl = editProwlarrUrl;
     this.editQbBaseUrl = editQbBaseUrl;
     this.editQbPassword = editQbPassword;
     this.editQbUsername = editQbUsername;
@@ -89,9 +121,27 @@ public final class ActivitySettingsBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.buttonImportIndexers;
+      Button buttonImportIndexers = ViewBindings.findChildViewById(rootView, id);
+      if (buttonImportIndexers == null) {
+        break missingId;
+      }
+
+      id = R.id.buttonManageBuiltInProviders;
+      Button buttonManageBuiltInProviders = ViewBindings.findChildViewById(rootView, id);
+      if (buttonManageBuiltInProviders == null) {
+        break missingId;
+      }
+
       id = R.id.buttonManageIndexers;
       Button buttonManageIndexers = ViewBindings.findChildViewById(rootView, id);
       if (buttonManageIndexers == null) {
+        break missingId;
+      }
+
+      id = R.id.buttonManageTrackers;
+      Button buttonManageTrackers = ViewBindings.findChildViewById(rootView, id);
+      if (buttonManageTrackers == null) {
         break missingId;
       }
 
@@ -104,6 +154,30 @@ public final class ActivitySettingsBinding implements ViewBinding {
       id = R.id.checkEnableQb;
       CheckBox checkEnableQb = ViewBindings.findChildViewById(rootView, id);
       if (checkEnableQb == null) {
+        break missingId;
+      }
+
+      id = R.id.editJackettApiKey;
+      EditText editJackettApiKey = ViewBindings.findChildViewById(rootView, id);
+      if (editJackettApiKey == null) {
+        break missingId;
+      }
+
+      id = R.id.editJackettUrl;
+      EditText editJackettUrl = ViewBindings.findChildViewById(rootView, id);
+      if (editJackettUrl == null) {
+        break missingId;
+      }
+
+      id = R.id.editProwlarrApiKey;
+      EditText editProwlarrApiKey = ViewBindings.findChildViewById(rootView, id);
+      if (editProwlarrApiKey == null) {
+        break missingId;
+      }
+
+      id = R.id.editProwlarrUrl;
+      EditText editProwlarrUrl = ViewBindings.findChildViewById(rootView, id);
+      if (editProwlarrUrl == null) {
         break missingId;
       }
 
@@ -126,7 +200,9 @@ public final class ActivitySettingsBinding implements ViewBinding {
       }
 
       return new ActivitySettingsBinding((ScrollView) rootView, buttonAddCustomURLs,
-          buttonManageIndexers, buttonSaveSettings, checkEnableQb, editQbBaseUrl, editQbPassword,
+          buttonImportIndexers, buttonManageBuiltInProviders, buttonManageIndexers,
+          buttonManageTrackers, buttonSaveSettings, checkEnableQb, editJackettApiKey,
+          editJackettUrl, editProwlarrApiKey, editProwlarrUrl, editQbBaseUrl, editQbPassword,
           editQbUsername);
     }
     String missingId = rootView.getResources().getResourceName(id);

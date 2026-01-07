@@ -85,7 +85,6 @@ object ProviderRegistry {
     private fun publicProviders() = listOf(
         Provider1337x(),
         ProviderThePirateBay(),
-        ProviderRARBG(),
         ProviderEZTV(),
         ProviderYTS(),
         ProviderLimeTorrents(),
@@ -95,21 +94,16 @@ object ProviderRegistry {
         ProviderNyaa(),
         ProviderKickassTorrents(),
         ProviderTorrentFunk(),
-        ProviderTorrentDownloads(),
-        ProviderTorlock(),
-        ProviderGloTorrents(),
-        ProviderSolidTorrents()
+        ProviderTorrentDownloads()
     )
     
     private fun privateProviders() = listOf(
         ProviderIPTorrents(),
         ProviderTorrentLeech(),
         ProviderAlphaRatio(),
-        ProviderBroadcastTheNet(),
         ProviderPassThePopcorn(),
         ProviderRedacted(),
-        ProviderOrpheus(),
-        ProviderAnimeBytes()
+        ProviderOrpheus()
     )
     
     private fun adultProviders() = listOf(

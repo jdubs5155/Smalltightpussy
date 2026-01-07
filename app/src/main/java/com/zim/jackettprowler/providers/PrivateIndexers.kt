@@ -82,62 +82,6 @@ class ProviderAlphaRatio : BaseIndexerProvider() {
 }
 
 /**
- * BroadcastTheNet (BTN) - Premier TV private tracker
- */
-class ProviderBroadcastTheNet : BaseIndexerProvider() {
-    override val id = "broadcastthenet"
-    override val name = "BroadcastTheNet"
-    override val baseUrl = "https://broadcasthe.net"
-    override val description = "Premier TV private tracker"
-    override val isPrivate = true
-    override val category = listOf("TV")
-    
-    override fun toConfig() = CustomSiteConfig(
-        id = id,
-        name = name,
-        baseUrl = baseUrl,
-        searchPath = "/torrents.php?searchstr={query}",
-        selectors = selectors(
-            container = "table.torrent_table tbody tr",
-            title = "td a[href^='torrents.php?id=']",
-            downloadUrl = "td a[href^='torrents.php?action=download']",
-            size = "td:nth-last-child(4)",
-            seeders = "td:nth-last-child(3)",
-            leechers = "td:nth-last-child(2)"
-        ),
-        enabled = false
-    )
-}
-
-/**
- * AnimeBytes - Premier anime private tracker
- */
-class ProviderAnimeBytes : BaseIndexerProvider() {
-    override val id = "animebytes"
-    override val name = "AnimeBytes"
-    override val baseUrl = "https://animebytes.tv"
-    override val description = "Premier anime private tracker"
-    override val isPrivate = true
-    override val category = listOf("Anime")
-    
-    override fun toConfig() = CustomSiteConfig(
-        id = id,
-        name = name,
-        baseUrl = baseUrl,
-        searchPath = "/torrents.php?searchstr={query}",
-        selectors = selectors(
-            container = "table.torrent_table tbody tr",
-            title = "td.big_info a",
-            downloadUrl = "td a[href^='torrents.php?action=download']",
-            size = "td:nth-last-child(4)",
-            seeders = "td:nth-last-child(3)",
-            leechers = "td:nth-last-child(2)"
-        ),
-        enabled = false
-    )
-}
-
-/**
  * MoreThanTV - TV focused private tracker
  */
 class ProviderMoreThanTV : BaseIndexerProvider() {

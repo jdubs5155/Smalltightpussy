@@ -291,6 +291,13 @@ class IndexerImporter(private val context: Context) {
     }
     
     /**
+     * Update indexer enabled state (alias for toggleIndexer for consistency)
+     */
+    fun updateIndexerState(indexerId: String, enabled: Boolean) {
+        toggleIndexer(indexerId, enabled)
+    }
+    
+    /**
      * Remove an imported indexer
      */
     fun removeIndexer(indexerId: String) {

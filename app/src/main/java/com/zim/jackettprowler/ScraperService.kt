@@ -1,5 +1,6 @@
 package com.zim.jackettprowler
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
@@ -11,14 +12,18 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Web scraping service for extracting torrent data from HTML pages
+ * Now with integrated pattern learning for automatic improvement!
  */
 class ScraperService(
-    private val torProxyManager: TorProxyManager? = null
+    private val torProxyManager: TorProxyManager? = null,
+    private val context: Context? = null
 ) {
     private val lastRequestTime = mutableMapOf<String, Long>()
+    private val patternLearning = context?.let { PatternLearningSystem(it) }
     
     /**
      * Search a custom site and extract torrent results
+     * Now with automatic pattern learning!
      */
     suspend fun search(
         siteConfig: CustomSiteConfig,
@@ -26,20 +31,28 @@ class ScraperService(
         limit: Int = 50
     ): List<TorrentResult> = withContext(Dispatchers.IO) {
         try {
+            // Try to use learned patterns first
+            val improvedConfig = patternLearning?.suggestImprovements(siteConfig) ?: siteConfig
+            
             // Rate limiting
-            enforceRateLimit(siteConfig)
+            enforceRateLimit(improvedConfig)
             
             // Build search URL
-            val searchUrl = buildSearchUrl(siteConfig, query)
+            val searchUrl = buildSearchUrl(improvedConfig, query)
             
             // Fetch HTML
-            val html = fetchHtml(searchUrl, siteConfig)
+            val html = fetchHtml(searchUrl, improvedConfig)
             
             // Parse HTML
             val document = Jsoup.parse(html, searchUrl)
             
             // Extract results
-            extractResults(document, siteConfig, limit)
+            val results = extractResults(document, improvedConfig, limit)
+            
+            // Learn from results
+            patternLearning?.analyzeResults(siteConfig.id, improvedConfig, results)
+            
+            results
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()

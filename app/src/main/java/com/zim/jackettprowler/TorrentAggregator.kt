@@ -11,11 +11,13 @@ import kotlinx.coroutines.*
  * - Built-in torrent providers (60+ sites)
  * - Custom scraper sites
  * - Onion sites via Tor
+ * 
+ * Now with intelligent pattern learning!
  */
 class TorrentAggregator(private val context: Context) {
     private val customSiteManager = CustomSiteManager(context)
     private val torProxyManager = TorProxyManager(context)
-    private val scraperService = ScraperService(torProxyManager)
+    private val scraperService = ScraperService(torProxyManager, context)
     private val indexerImporter = IndexerImporter(context)
     
     /**

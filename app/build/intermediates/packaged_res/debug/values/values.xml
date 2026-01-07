@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="source_array">
-        <item>All Sources (Built-in + Jackett + Prowlarr)</item>
-        <item>Jackett Only</item>
-        <item>Prowlarr Only</item>
+        <item>All Sources (Everything)</item>
+        <item>Jackett</item>
+        <item>Prowlarr</item>
     </string-array>
     <color name="black">#000000</color>
     <color name="ic_launcher_background">#3700B3</color>

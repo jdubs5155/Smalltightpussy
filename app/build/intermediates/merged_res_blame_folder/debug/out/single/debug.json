@@ -8,6 +8,10 @@
         "source": "com.zim.jackettprowler.app-main-34:/layout/activity_main.xml"
     },
     {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_item_provider.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/item_provider.xml"
+    },
+    {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxxhdpi_ic_launcher.png.flat",
         "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxxhdpi/ic_launcher.png"
     },
@@ -20,6 +24,10 @@
         "source": "com.zim.jackettprowler.app-main-34:/mipmap-xhdpi/ic_launcher_round.png"
     },
     {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_smart_provider_add.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_smart_provider_add.xml"
+    },
+    {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxhdpi_ic_launcher_round.png.flat",
         "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxhdpi/ic_launcher_round.png"
     },
@@ -30,6 +38,10 @@
     {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
         "source": "com.zim.jackettprowler.app-main-34:/mipmap-xxxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_item_provider_header.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/item_provider_header.xml"
     },
     {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-anydpi-v26_ic_launcher.xml.flat",
@@ -48,12 +60,20 @@
         "source": "com.zim.jackettprowler.app-main-34:/layout/activity_indexer_management.xml"
     },
     {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_unified_provider_management.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_unified_provider_management.xml"
+    },
+    {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/mipmap-hdpi_ic_launcher_round.png.flat",
         "source": "com.zim.jackettprowler.app-main-34:/mipmap-hdpi/ic_launcher_round.png"
     },
     {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_item_torrent.xml.flat",
         "source": "com.zim.jackettprowler.app-main-34:/layout/item_torrent.xml"
+    },
+    {
+        "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_tracker_management.xml.flat",
+        "source": "com.zim.jackettprowler.app-main-34:/layout/activity_tracker_management.xml"
     },
     {
         "merged": "com.zim.jackettprowler.app-merged_res-32:/layout_activity_custom_urls.xml.flat",

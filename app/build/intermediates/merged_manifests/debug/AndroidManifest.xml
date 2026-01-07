@@ -36,8 +36,20 @@
             android:name="com.zim.jackettprowler.IndexerManagementActivity"
             android:exported="false" />
         <activity
+            android:name="com.zim.jackettprowler.UnifiedProviderManagementActivity"
+            android:exported="false"
+            android:label="All Providers" />
+        <activity
+            android:name="com.zim.jackettprowler.SmartProviderAddActivity"
+            android:exported="false"
+            android:label="Add Custom Provider" />
+        <activity
             android:name="com.zim.jackettprowler.SettingsActivity"
             android:exported="false" />
+        <activity
+            android:name="com.zim.jackettprowler.TrackerManagementActivity"
+            android:exported="false"
+            android:label="Tracker Management" />
         <activity
             android:name="com.zim.jackettprowler.MainActivity"
             android:exported="true" >
