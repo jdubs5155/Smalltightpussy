@@ -1,17 +1,52 @@
 # JackettProwlarrClient
 
-A powerful Android BitTorrent client that uses the Torznab API to search and download torrents from Jackett and Prowlarr indexers, with 61+ built-in providers.
+[![Build APK](https://github.com/zimbiss/JackettProwlarrClient/actions/workflows/build-apk.yml/badge.svg)](https://github.com/zimbiss/JackettProwlarrClient/actions/workflows/build-apk.yml)
+[![GitHub release](https://img.shields.io/github/v/release/zimbiss/JackettProwlarrClient?include_prereleases)](https://github.com/zimbiss/JackettProwlarrClient/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+A powerful Android BitTorrent client that uses the Torznab API to search and download torrents from Jackett and Prowlarr indexers, with 61+ built-in providers and **200+ super fast tracker integration**.
 
 ## 📥 Download APK
 
-### From GitHub Actions (Recommended)
-1. Go to the [Actions tab](https://github.com/zimbiss/JackettProwlarrClient/actions)
-2. Click on the latest successful workflow run
-3. Scroll down to "Artifacts" section
-4. Download `JackettProwlarr-debug-apk`
-5. Extract the ZIP file and install the APK on your device
+### 🚀 Latest Build (Always Up-to-Date)
+**[📦 Download Latest Debug APK](https://nightly.link/zimbiss/JackettProwlarrClient/workflows/build-apk/main/JackettProwlarr-debug-v1.0.zip)**
 
-The APK is automatically built on every push to the main branch and is available for 30 days.
+Automatically built from the latest commit on the main branch.
+
+### Alternative Download Methods
+
+#### Method 1: GitHub Actions (Most Recent)
+1. Go to the [Actions tab](https://github.com/zimbiss/JackettProwlarrClient/actions/workflows/build-apk.yml)
+2. Click on the latest successful workflow run (green checkmark ✅)
+3. Scroll down to "Artifacts" section
+4. Download the APK artifact (available for 90 days)
+5. Extract the ZIP file and install the APK
+
+#### Method 2: GitHub Releases (Stable Versions)
+1. Go to the [Releases page](https://github.com/zimbiss/JackettProwlarrClient/releases)
+2. Download the latest APK from the release assets
+3. Install directly on your Android device
+
+#### Method 3: Build from Source
+```bash
+git clone https://github.com/zimbiss/JackettProwlarrClient.git
+cd JackettProwlarrClient
+./gradlew assembleDebug
+# APK will be in: app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 📱 Installation Instructions
+1. **Enable Unknown Sources**: Settings → Security → Install from Unknown Sources
+2. **Download APK**: Choose one of the methods above
+3. **Install**: Open the APK file and tap "Install"
+4. **Grant Permissions**: Allow necessary permissions when prompted
+5. **Configure**: Set up Jackett/Prowlarr URLs in Settings (or use built-in providers)
+
+### ⚠️ Important Notes
+- **Debug APK**: Recommended for testing, includes detailed logs
+- **Release APK**: Optimized but unsigned (requires signing for production)
+- **Minimum Android Version**: Android 8.0 (API 26) or higher
+- **Build Frequency**: APK is rebuilt automatically on every commit to main branch
 
 ## Features
 

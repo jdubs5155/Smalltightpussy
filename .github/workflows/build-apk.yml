@@ -26,19 +26,85 @@ jobs:
       run: chmod +x gradlew
       
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace
+      run: ./gradlew assembleDebug --stacktrace --no-daemon
       
-    - name: Upload APK
+    - name: Build Release APK
+      run: ./gradlew assembleRelease --stacktrace --no-daemon
+      continue-on-error: true
+      
+    - name: Get version info
+      id: version
+      run: |
+        VERSION=$(grep 'versionName' app/build.gradle | awk '{print $2}' | tr -d '"' || echo "unknown")
+        BUILD=$(date +%Y%m%d-%H%M)
+        echo "VERSION_NAME=$VERSION" >> $GITHUB_OUTPUT
+        echo "BUILD_NUMBER=$BUILD" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION (Build: $BUILD)"
+        
+    - name: Rename APKs with version
+      run: |
+        mkdir -p dist
+        if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+          cp app/build/outputs/apk/debug/app-debug.apk dist/JackettProwlarr-v${{ steps.version.outputs.VERSION_NAME }}-debug.apk
+        fi
+        if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/JackettProwlarr-v${{ steps.version.outputs.VERSION_NAME }}-release.apk
+        fi
+        ls -lh dist/
+        
+    - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: JackettProwlarr-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: JackettProwlarr-debug-v${{ steps.version.outputs.VERSION_NAME }}
+        path: dist/JackettProwlarr-v${{ steps.version.outputs.VERSION_NAME }}-debug.apk
+        retention-days: 90
+        if-no-files-found: error
+        
+    - name: Upload Release APK
+      if: hashFiles('dist/JackettProwlarr-v${{ steps.version.outputs.VERSION_NAME }}-release.apk') != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: JackettProwlarr-release-v${{ steps.version.outputs.VERSION_NAME }}
+        path: dist/JackettProwlarr-v${{ steps.version.outputs.VERSION_NAME }}-release.apk
         retention-days: 90
         
-    - name: Create Release APK on tag
+    - name: Create GitHub Release on tag
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: app/build/outputs/apk/debug/app-debug.apk
+        files: dist/*.apk
+        body: |
+          ## 📱 JackettProwlarr Client - ${{ github.ref_name }}
+          
+          ### 🚀 Latest Features
+          - ⚡ 200+ super fast tracker integration
+          - 📡 Automatic magnet link enhancement  
+          - 🔥 Improved peer discovery and download speeds
+          - 🎯 60+ built-in torrent providers
+          - 🔄 Jackett/Prowlarr indexer import
+          - 🌐 Custom site scraping support
+          
+          ### 📦 Downloads
+          - **Debug APK**: For testing with detailed logs
+          - **Release APK**: Optimized production build (unsigned)
+          
+          ### 📱 Installation
+          1. Download the APK file (Debug recommended for first install)
+          2. Enable "Install from Unknown Sources" in Android Settings → Security
+          3. Open the downloaded APK to install
+          4. Grant necessary permissions when prompted
+          
+          ### 🔧 Configuration
+          - Set up your Jackett/Prowlarr URLs in Settings
+          - Import indexers or use 60+ built-in providers
+          - Tracker enhancement is enabled by default (200+ trackers)
+          
+          ### 📝 Changelog
+          See [TRACKER_INTEGRATION_SUMMARY.md](https://github.com/${{ github.repository }}/blob/main/TRACKER_INTEGRATION_SUMMARY.md) for details
+          
+          ---
+          Built automatically by GitHub Actions on ${{ steps.version.outputs.BUILD_NUMBER }}
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
