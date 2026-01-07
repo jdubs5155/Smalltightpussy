@@ -43,6 +43,9 @@ class MainActivity : AppCompatActivity() {
     
     // Torrent aggregator
     private lateinit var aggregator: TorrentAggregator
+    
+    // Tracker manager for enhancing magnet links
+    private lateinit var trackerManager: TrackerManager
 
     enum class Source {
         JACKETT,
@@ -84,6 +87,9 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize torrent aggregator
         aggregator = TorrentAggregator(this)
+        
+        // Initialize tracker manager
+        trackerManager = TrackerManager(this)
 
         setupRecyclerView()
         setupListeners()
@@ -266,7 +272,9 @@ class MainActivity : AppCompatActivity() {
                     prowlarrService = prowlarrService,
                     limit = 100,
                     includeCustomSites = true,
-                    includeOnionSites = includeOnion
+                    includeOnionSites = includeOnion,
+                    includeBuiltInProviders = true,  // EXPLICITLY enable built-in providers
+                    includeImportedIndexers = true   // EXPLICITLY enable imported indexers
                 )
 
                 saveSearchQuery(query)
@@ -438,12 +446,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadWithClient(result: TorrentResult, client: TorrentClientOption) {
+        // Enhance magnet link with trackers before downloading
+        val downloadLink = if (result.isMagnetLink()) {
+            val originalLink = result.getDownloadLink()
+            val enhancedLink = trackerManager.enhanceMagnetLink(originalLink)
+            
+            // Show tracker stats in status
+            val stats = trackerManager.getTrackerStats(enhancedLink)
+            if (stats.total > 0) {
+                binding.textStatus.text = "📡 Enhanced with ${stats.total} trackers (${stats.udp} UDP, ${stats.http} HTTP)"
+            }
+            
+            enhancedLink
+        } else {
+            result.link
+        }
+        
         when (client.type) {
             "qbittorrent" -> {
                 uiScope.launch(Dispatchers.IO) {
                     try {
                         val qb = QbittorrentClient(client.baseUrl!!, client.username!!, client.password!!)
-                        qb.addTorrentFromUrl(result.link)
+                        qb.addTorrentFromUrl(downloadLink)
                         launch(Dispatchers.Main) {
                             binding.textStatus.text = "✓ Downloading in qBittorrent"
                         }
@@ -458,14 +482,14 @@ class MainActivity : AppCompatActivity() {
             else -> {
                 // Use Android intent for other clients
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.link))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadLink))
                     intent.setPackage(client.type)
                     startActivity(intent)
                     binding.textStatus.text = "✓ Opening in ${client.displayName}"
                 } catch (e: Exception) {
                     // Fallback to generic intent
                     try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.link))
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadLink))
                         startActivity(intent)
                         binding.textStatus.text = "✓ Opening in default app"
                     } catch (e2: Exception) {
@@ -520,8 +544,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openTorrentLinkExternal(link: String) {
+        // Enhance magnet link with trackers before opening
+        val downloadLink = if (link.startsWith("magnet:")) {
+            val enhancedLink = trackerManager.enhanceMagnetLink(link)
+            val stats = trackerManager.getTrackerStats(enhancedLink)
+            if (stats.total > 0) {
+                binding.textStatus.text = "📡 Enhanced with ${stats.total} trackers"
+            }
+            enhancedLink
+        } else {
+            link
+        }
+        
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadLink))
             startActivity(intent)
         } catch (e: Exception) {
             binding.textStatus.text = "No app to handle this link."

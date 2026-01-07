@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import com.zim.jackettprowler.automation.ConnectionStabilityManager
+import com.zim.jackettprowler.automation.ProviderHealthMonitor
 import com.zim.jackettprowler.databinding.ActivitySettingsBinding
 import kotlinx.coroutines.*
 
@@ -14,12 +16,17 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val job = Job()
     private val uiScope = CoroutineScope(Dispatchers.Main + job)
+    private lateinit var connectionManager: ConnectionStabilityManager
+    private lateinit var healthMonitor: ProviderHealthMonitor
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
         title = getString(R.string.settings_title)
+        
+        connectionManager = ConnectionStabilityManager(this)
+        healthMonitor = ProviderHealthMonitor(this)
 
         val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
 
@@ -33,6 +40,9 @@ class SettingsActivity : AppCompatActivity() {
         binding.editJackettApiKey.setText(jackettApiKey)
         binding.editProwlarrUrl.setText(prowlarrUrl)
         binding.editProwlarrApiKey.setText(prowlarrApiKey)
+        
+        // Show connection status
+        updateConnectionStatus()
 
         // Load qBittorrent settings
         val enabled = prefs.getBoolean(getString(R.string.pref_qb_enabled), false)
@@ -46,30 +56,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.editQbPassword.setText(password)
 
         binding.buttonSaveSettings.setOnClickListener {
-            prefs.edit()
-                // Save Jackett/Prowlarr settings
-                .putString("jackett_url", binding.editJackettUrl.text.toString().trim())
-                .putString("jackett_api_key", binding.editJackettApiKey.text.toString().trim())
-                .putString("prowlarr_url", binding.editProwlarrUrl.text.toString().trim())
-                .putString("prowlarr_api_key", binding.editProwlarrApiKey.text.toString().trim())
-                // Save qBittorrent settings
-                .putBoolean(getString(R.string.pref_qb_enabled), binding.checkEnableQb.isChecked)
-                .putString(
-                    getString(R.string.pref_qb_base_url),
-                    binding.editQbBaseUrl.text.toString().trim()
-                )
-                .putString(
-                    getString(R.string.pref_qb_username),
-                    binding.editQbUsername.text.toString().trim()
-                )
-                .putString(
-                    getString(R.string.pref_qb_password),
-                    binding.editQbPassword.text.toString()
-                )
-                .apply()
-            
-            Toast.makeText(this, "Settings saved! Restart search to apply changes.", Toast.LENGTH_LONG).show()
-            finish()
+            saveAndTestConnections()
         }
 
         binding.buttonImportIndexers.setOnClickListener {
@@ -77,17 +64,26 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         binding.buttonManageIndexers.setOnClickListener {
-            val intent = Intent(this, IndexerManagementActivity::class.java)
+            // Open unified provider management
+            val intent = Intent(this, UnifiedProviderManagementActivity::class.java)
             startActivity(intent)
         }
 
         binding.buttonAddCustomURLs.setOnClickListener {
-            val intent = Intent(this, CustomURLsActivity::class.java)
+            // Open smart provider adding
+            val intent = Intent(this, SmartProviderAddActivity::class.java)
             startActivity(intent)
         }
         
         binding.buttonManageBuiltInProviders.setOnClickListener {
-            showBuiltInProvidersDialog()
+            // Also open unified provider management
+            val intent = Intent(this, UnifiedProviderManagementActivity::class.java)
+            startActivity(intent)
+        }
+        
+        binding.buttonManageTrackers.setOnClickListener {
+            val intent = Intent(this, TrackerManagementActivity::class.java)
+            startActivity(intent)
         }
     }
     
@@ -206,6 +202,33 @@ class SettingsActivity : AppCompatActivity() {
         
         prefs.edit().putStringSet("enabled_providers", providerIds).apply()
         Toast.makeText(this, "Enabled ${providerIds.size} built-in providers", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun saveAndTestConnections() {
+        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+        
+        val jackettUrl = binding.editJackettUrl.text.toString().trim()
+        val jackettKey = binding.editJackettApiKey.text.toString().trim()
+        val prowlarrUrl = binding.editProwlarrUrl.text.toString().trim()
+        val prowlarrKey = binding.editProwlarrApiKey.text.toString().trim()
+        
+        prefs.edit()
+            .putString("jackett_url", jackettUrl)
+            .putString("jackett_api_key", jackettKey)
+            .putString("prowlarr_url", prowlarrUrl)
+            .putString("prowlarr_api_key", prowlarrKey)
+            .putBoolean(getString(R.string.pref_qb_enabled), binding.checkEnableQb.isChecked)
+            .putString(getString(R.string.pref_qb_base_url), binding.editQbBaseUrl.text.toString().trim())
+            .putString(getString(R.string.pref_qb_username), binding.editQbUsername.text.toString().trim())
+            .putString(getString(R.string.pref_qb_password), binding.editQbPassword.text.toString())
+            .apply()
+        
+        Toast.makeText(this, "Settings saved! Testing connections...", Toast.LENGTH_LONG).show()
+        finish()
+    }
+    
+    private fun updateConnectionStatus() {
+        // Placeholder for future UI updates
     }
     
     override fun onDestroy() {

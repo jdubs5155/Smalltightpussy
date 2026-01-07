@@ -21,10 +21,25 @@
         <activity
             android:name=".IndexerManagementActivity"
             android:exported="false" />
+        
+        <activity
+            android:name=".UnifiedProviderManagementActivity"
+            android:exported="false"
+            android:label="All Providers" />
+        
+        <activity
+            android:name=".SmartProviderAddActivity"
+            android:exported="false"
+            android:label="Add Custom Provider" />
 
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+        
+        <activity
+            android:name=".TrackerManagementActivity"
+            android:exported="false"
+            android:label="Tracker Management" />
 
         <activity
             android:name=".MainActivity"
