@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Add Custom Torrent Sites"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Site Name"
+            android:textSize="14sp"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/editSiteName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="e.g. My Custom Site"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Base URL (clearnet or .onion)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editBaseUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="https://example.com or http://abc123.onion"
+            android:inputType="textUri" />
+
+        <CheckBox
+            android:id="@+id/checkboxOnionSite"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="This is a .onion site (requires Tor)"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Search Path (use {query} for search term)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editSearchPath"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="/search?q={query} or /search/{query}/"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Result Container (CSS Selector)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editResultContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="table tbody tr or div.result-item"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Title Selector"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editTitleSelector"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="td:nth-child(1) a or h3.title a"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Magnet Link Selector (optional)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editMagnetSelector"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="a[href^='magnet:']"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Size Selector (optional)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editSizeSelector"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="td.size or span.filesize"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Seeders Selector (optional)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editSeedersSelector"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="td.seeders or span.seeds"
+            android:inputType="text" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Leechers Selector (optional)"
+            android:textSize="14sp"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/editLeechersSelector"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="td.leechers or span.leeches"
+            android:inputType="text" />
+
+        <Button
+            android:id="@+id/buttonSaveCustomSite"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Save Custom Site"
+            android:layout_marginTop="24dp" />
+
+        <Button
+            android:id="@+id/buttonViewSavedSites"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="View Saved Sites"
+            android:layout_marginTop="8dp" />
+
+    </LinearLayout>
+</ScrollView>

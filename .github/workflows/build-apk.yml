@@ -61,7 +61,7 @@ jobs:
         if-no-files-found: error
         
     - name: Upload Release APK
-      if: hashFiles('dist/JackettProwlarr-v${{ steps.version.outputs.VERSION_NAME }}-release.apk') != ''
+      if: ${{ hashFiles(format('dist/JackettProwlarr-v{0}-release.apk', steps.version.outputs.VERSION_NAME)) != '' }}
       uses: actions/upload-artifact@v4
       with:
         name: JackettProwlarr-release-v${{ steps.version.outputs.VERSION_NAME }}
