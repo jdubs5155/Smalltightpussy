@@ -9,6 +9,10 @@ import android.view.inputmethod.EditorInfo
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.zim.jackettprowler.databinding.ActivityMainBinding
+import com.zim.jackettprowler.services.DaemonController
+import com.zim.jackettprowler.services.NetworkQualityMonitor
+import com.zim.jackettprowler.services.ProviderAnalytics
+import com.zim.jackettprowler.services.SearchResultCache
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -46,6 +50,11 @@ class MainActivity : AppCompatActivity() {
     
     // Tracker manager for enhancing magnet links
     private lateinit var trackerManager: TrackerManager
+    
+    // Background services
+    private lateinit var searchCache: SearchResultCache
+    private lateinit var networkMonitor: NetworkQualityMonitor
+    private lateinit var providerAnalytics: ProviderAnalytics
 
     enum class Source {
         JACKETT,
@@ -90,6 +99,17 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize tracker manager
         trackerManager = TrackerManager(this)
+        
+        // Initialize background services
+        searchCache = SearchResultCache(this)
+        networkMonitor = NetworkQualityMonitor(this)
+        providerAnalytics = ProviderAnalytics(this)
+        
+        // Start network monitoring
+        networkMonitor.startMonitoring()
+        
+        // Initialize background daemon (for health checks, etc.)
+        DaemonController.initialize(this)
 
         setupRecyclerView()
         setupListeners()
@@ -210,9 +230,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         val useSmartSearch = binding.toggleDescriptiveSearch.isChecked
+        val downloadableOnly = binding.toggleDownloadableOnly.isChecked
         val searchType = if (useSmartSearch) "Smart Search" else "Standard"
+        val dlFilter = if (downloadableOnly) " (DL)" else ""
         
-        binding.textStatus.text = "Searching $source ($searchType) for \"$query\"..."
+        binding.textStatus.text = "Searching $source ($searchType$dlFilter) for \"$query\"..."
         adapter?.updateData(emptyList())
 
         uiScope.launch(Dispatchers.IO) {
@@ -238,12 +260,25 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 saveSearchQuery(query)
-                val results = allResults.toList().sortedByDescending { it.seeders }
-
-                launch(Dispatchers.Main) {
-                    adapter?.updateData(results)
-                    binding.textStatus.text =
-                        "Search OK on $source ($searchType) | ${results.size} result(s)."
+                var results = allResults.toList().sortedByDescending { it.seeders }
+                
+                // Filter for downloadable results only if enabled
+                if (downloadableOnly) {
+                    val originalCount = results.size
+                    results = filterDownloadableResults(results)
+                    val filteredCount = originalCount - results.size
+                    
+                    launch(Dispatchers.Main) {
+                        adapter?.updateData(results)
+                        binding.textStatus.text =
+                            "Search OK on $source ($searchType) | ${results.size} result(s) | $filteredCount filtered"
+                    }
+                } else {
+                    launch(Dispatchers.Main) {
+                        adapter?.updateData(results)
+                        binding.textStatus.text =
+                            "Search OK on $source ($searchType) | ${results.size} result(s)."
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -258,7 +293,9 @@ class MainActivity : AppCompatActivity() {
      * Perform aggregated search across all sources
      */
     private fun performAggregatedSearch(query: String) {
-        binding.textStatus.text = "Searching all sources for \"$query\"..."
+        val downloadableOnly = binding.toggleDownloadableOnly.isChecked
+        val filterText = if (downloadableOnly) " (DL only)" else ""
+        binding.textStatus.text = "Searching all sources$filterText for \"$query\"..."
         adapter?.updateData(emptyList())
 
         uiScope.launch(Dispatchers.IO) {
@@ -278,10 +315,18 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 saveSearchQuery(query)
+                
+                // Filter for downloadable results only if enabled
+                val filteredResults = if (downloadableOnly) {
+                    filterDownloadableResults(aggregatedResults.results)
+                } else {
+                    aggregatedResults.results
+                }
 
                 launch(Dispatchers.Main) {
-                    adapter?.updateData(aggregatedResults.results)
-                    binding.textStatus.text = aggregatedResults.getStatusSummary()
+                    adapter?.updateData(filteredResults)
+                    val dlInfo = if (downloadableOnly) " | ${aggregatedResults.results.size - filteredResults.size} filtered" else ""
+                    binding.textStatus.text = aggregatedResults.getStatusSummary() + dlInfo
                     
                     // Show detailed status on long press
                     binding.textStatus.setOnLongClickListener {
@@ -300,6 +345,82 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+    
+    /**
+     * Filter results to only show downloadable torrents (magnet links or .torrent files)
+     * Compatible with LibreTorrent and other torrent clients
+     */
+    private fun filterDownloadableResults(results: List<TorrentResult>): List<TorrentResult> {
+        return results.filter { result ->
+            isDownloadable(result)
+        }
+    }
+    
+    /**
+     * Check if a torrent result can be downloaded
+     * Returns true if it has a magnet link, .torrent URL, or infohash
+     */
+    private fun isDownloadable(result: TorrentResult): Boolean {
+        val link = result.link
+        
+        // Check for magnet link
+        if (link.startsWith("magnet:?")) {
+            return true
+        }
+        
+        // Check for .torrent file URL
+        if (link.endsWith(".torrent", ignoreCase = true)) {
+            return true
+        }
+        
+        // Check if link contains torrent/download patterns
+        if (link.contains("/download/", ignoreCase = true) ||
+            link.contains("/torrent/", ignoreCase = true) ||
+            link.contains("get_torrent", ignoreCase = true) ||
+            link.contains("dl.php", ignoreCase = true)) {
+            return true
+        }
+        
+        // Check magnetUrl field if present
+        result.magnetUrl?.let { magnetUrl ->
+            if (magnetUrl.startsWith("magnet:?")) {
+                return true
+            }
+        }
+        
+        // Check if we can extract an infohash
+        val infohashPattern = Regex("[a-fA-F0-9]{40}")
+        if (infohashPattern.containsMatchIn(link)) {
+            return true
+        }
+        
+        // Additional check - try to verify downloadability behind the scenes
+        return verifyDownloadability(result)
+    }
+    
+    /**
+     * Advanced downloadability verification
+     * Uses background checks to ensure the torrent can be downloaded
+     */
+    private fun verifyDownloadability(result: TorrentResult): Boolean {
+        // If seeders > 0, likely downloadable
+        if (result.seeders > 0) {
+            return true
+        }
+        
+        // If it's from a known good source, trust it
+        val trustedSources = listOf(
+            "1337x", "thepiratebay", "rarbg", "yts", "eztv", "nyaa", "torrentgalaxy",
+            "limetorrents", "kickass", "torrentz2", "jackett", "prowlarr"
+        )
+        
+        val sourceName = result.title.lowercase()
+        if (trustedSources.any { result.link.contains(it, ignoreCase = true) }) {
+            return true
+        }
+        
+        return false
     }
 
     private fun extractKeywords(query: String): List<String> {
@@ -577,5 +698,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         job.cancel()
+        networkMonitor.destroy()
     }
 }

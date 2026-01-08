@@ -1,37 +1,54 @@
 package com.zim.jackettprowler
 
 import android.app.AlertDialog
+import android.app.ProgressDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.zim.jackettprowler.automation.TrackerSiteScanner
 import com.zim.jackettprowler.databinding.ActivityTrackerManagementBinding
+import kotlinx.coroutines.*
 
 /**
  * Activity for managing torrent tracker lists
  * Allows users to view, enable/disable, and add custom trackers
+ * NEW: Scan 200+ trackers and auto-configure search interfaces!
  */
 class TrackerManagementActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityTrackerManagementBinding
     private lateinit var trackerManager: TrackerManager
+    private lateinit var trackerScanner: TrackerSiteScanner
     private lateinit var adapter: TrackerAdapter
+    
+    private val job = Job()
+    private val uiScope = CoroutineScope(Dispatchers.Main + job)
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityTrackerManagementBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
-        title = "Tracker Management"
+        title = "Tracker Management (${TrackerDatabase.getTrackerCount()}+ Available)"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         
         trackerManager = TrackerManager(this)
+        trackerScanner = TrackerSiteScanner(this)
         
         setupUI()
         setupListeners()
         updateStats()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        job.cancel()
     }
     
     private fun setupUI() {
@@ -76,6 +93,21 @@ class TrackerManagementActivity : AppCompatActivity() {
         
         binding.buttonUseAll.setOnClickListener {
             useAllTrackers()
+        }
+        
+        // NEW: Copy all 200+ trackers to clipboard
+        binding.buttonCopyAllTrackers.setOnClickListener {
+            copyAllTrackersToClipboard()
+        }
+        
+        // NEW: Scan trackers for search capability
+        binding.buttonScanTrackers.setOnClickListener {
+            scanTrackersForSearchCapability()
+        }
+        
+        // NEW: Show tracker database
+        binding.buttonViewDatabase.setOnClickListener {
+            showTrackerDatabase()
         }
     }
     
@@ -171,6 +203,264 @@ class TrackerManagementActivity : AppCompatActivity() {
         val httpsCount = trackers.count { it.startsWith("https://") }
         
         binding.textTrackerStats.text = "UDP: $udpCount | HTTP: $httpCount | HTTPS: $httpsCount"
+    }
+    
+    /**
+     * Copy all 200+ trackers from TrackerDatabase to clipboard
+     */
+    private fun copyAllTrackersToClipboard() {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val trackerText = TrackerDatabase.getTrackersAsText()
+        val clip = ClipData.newPlainText("BitTorrent Trackers", trackerText)
+        clipboard.setPrimaryClip(clip)
+        
+        Toast.makeText(
+            this,
+            "✅ Copied ${TrackerDatabase.getTrackerCount()} trackers to clipboard!\n\n" +
+                    "📋 Paste into:\n" +
+                    "• qBittorrent: Tools → Options → BitTorrent → Add trackers\n" +
+                    "• LibreTorrent: Settings → Torrent → Add trackers\n" +
+                    "• Deluge: Preferences → Network → Add trackers",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+    
+    /**
+     * Scan 200+ trackers for search capability and auto-add to built-in providers
+     * Uses Tool-X integration for automatic configuration detection
+     */
+    private fun scanTrackersForSearchCapability() {
+        val options = arrayOf(
+            "🚀 Quick Scan (Known Sites Only)",
+            "🔍 Full Scan (All ${TrackerDatabase.getTrackerCount()} Trackers)",
+            "📖 Learn More"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🔍 Scan Trackers for Search APIs")
+            .setMessage("This feature will automatically:\n\n" +
+                    "✨ Detect search interfaces from tracker domains\n" +
+                    "✨ Auto-configure CSS selectors\n" +
+                    "✨ Add to built-in providers\n" +
+                    "✨ Enable in 'Everything' search\n\n" +
+                    "Choose scan type:")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> performQuickScan()
+                    1 -> performFullScan()
+                    2 -> showToolXIntegrationInfo()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    /**
+     * Quick scan - only check known search interfaces
+     */
+    private fun performQuickScan() {
+        val progressDialog = ProgressDialog(this).apply {
+            setTitle("🚀 Quick Scan")
+            setMessage("Scanning known search interfaces...")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            setCancelable(false)
+            show()
+        }
+        
+        uiScope.launch(Dispatchers.IO) {
+            val result = trackerScanner.quickScan { current, total, message ->
+                launch(Dispatchers.Main) {
+                    progressDialog.progress = (current * 100) / total
+                    progressDialog.setMessage(message)
+                }
+            }
+            
+            launch(Dispatchers.Main) {
+                progressDialog.dismiss()
+                showScanResults(result)
+            }
+        }
+    }
+    
+    /**
+     * Full scan - scan all 200+ trackers
+     */
+    private fun performFullScan() {
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ Full Scan Warning")
+            .setMessage("Full scan will check all ${TrackerDatabase.getTrackerCount()} trackers.\n\n" +
+                    "This may take 5-10 minutes and use network data.\n\n" +
+                    "Continue?")
+            .setPositiveButton("Start Scan") { _, _ ->
+                val progressDialog = ProgressDialog(this).apply {
+                    setTitle("🔍 Full Tracker Scan")
+                    setMessage("Scanning ${TrackerDatabase.getTrackerCount()} trackers...")
+                    setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                    max = TrackerDatabase.getTrackerCount()
+                    setCancelable(false)
+                    show()
+                }
+                
+                uiScope.launch(Dispatchers.IO) {
+                    val result = trackerScanner.scanAllTrackers { current, total, message ->
+                        launch(Dispatchers.Main) {
+                            progressDialog.progress = current
+                            progressDialog.setMessage("($current/$total) $message")
+                        }
+                    }
+                    
+                    launch(Dispatchers.Main) {
+                        progressDialog.dismiss()
+                        showScanResults(result)
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    /**
+     * Show scan results
+     */
+    private fun showScanResults(result: TrackerSiteScanner.BatchScanResult) {
+        val successfulConfigs = result.results.filter { it.autoConfigured }
+        
+        val message = buildString {
+            appendLine("📊 SCAN RESULTS")
+            appendLine("═".repeat(30))
+            appendLine()
+            appendLine("Trackers Scanned: ${result.totalScanned}")
+            appendLine("Search Interfaces Found: ${result.searchInterfacesFound}")
+            appendLine("Auto-Configured: ${result.autoConfigured}")
+            appendLine()
+            
+            if (successfulConfigs.isNotEmpty()) {
+                appendLine("✅ ADDED TO PROVIDERS:")
+                successfulConfigs.forEach { config ->
+                    appendLine("  • ${config.config?.name ?: config.searchUrl}")
+                }
+                appendLine()
+                appendLine("These sites are now searchable via 'Everything' button!")
+            } else {
+                appendLine("No new providers were auto-configured.")
+                appendLine("Try Quick Scan for pre-configured sites.")
+            }
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("✓ Scan Complete")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .setNeutralButton("View Details") { _, _ ->
+                showDetailedResults(result)
+            }
+            .show()
+    }
+    
+    /**
+     * Show detailed scan results
+     */
+    private fun showDetailedResults(result: TrackerSiteScanner.BatchScanResult) {
+        val detailMessage = result.results
+            .filter { it.hasSearchInterface || it.error != null }
+            .take(50)
+            .joinToString("\n") { scanResult ->
+                when {
+                    scanResult.autoConfigured -> "✅ ${scanResult.searchUrl}"
+                    scanResult.hasSearchInterface -> "⚠️ ${scanResult.searchUrl} (manual config needed)"
+                    scanResult.error != null -> "❌ ${scanResult.trackerUrl}: ${scanResult.error}"
+                    else -> "○ ${scanResult.trackerUrl}"
+                }
+            }
+        
+        AlertDialog.Builder(this)
+            .setTitle("Detailed Results (First 50)")
+            .setMessage(detailMessage)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+    
+    /**
+     * Show Tool-X integration information
+     */
+    private fun showToolXIntegrationInfo() {
+        AlertDialog.Builder(this)
+            .setTitle("🛠️ Tool-X Auto-Configuration")
+            .setMessage("Tool-X will analyze each tracker:\n\n" +
+                    "1️⃣ HTTP/HTTPS Detection\n" +
+                    "   • Test if tracker has web interface\n" +
+                    "   • Extract domain and path patterns\n\n" +
+                    "2️⃣ API Discovery\n" +
+                    "   • Probe for Torznab endpoints\n" +
+                    "   • Check RSS feed availability\n" +
+                    "   • Test JSON-RPC APIs\n\n" +
+                    "3️⃣ HTML Scraping Setup\n" +
+                    "   • Auto-generate CSS selectors\n" +
+                    "   • Map search result structure\n" +
+                    "   • Extract magnet/download links\n\n" +
+                    "4️⃣ Configuration Storage\n" +
+                    "   • Save to CustomSiteConfig\n" +
+                    "   • Add to built-in providers\n" +
+                    "   • Enable for 'Everything' search\n\n" +
+                    "All configuration happens automatically in the background!")
+            .setPositiveButton("Got It", null)
+            .show()
+    }
+    
+    /**
+     * Show complete tracker database with categories
+     */
+    private fun showTrackerDatabase() {
+        val categories = TrackerDatabase.getTrackerCategories()
+        val categoryNames = categories.keys.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle("📊 Tracker Database (${TrackerDatabase.getTrackerCount()} Total)")
+            .setItems(categoryNames) { _, which ->
+                val selectedCategory = categoryNames[which]
+                val trackers = categories[selectedCategory] ?: emptyList()
+                showCategoryTrackers(selectedCategory, trackers)
+            }
+            .setNeutralButton("Copy All ${TrackerDatabase.getTrackerCount()}", null)
+            .setNegativeButton("Close", null)
+            .show()
+            .getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                copyAllTrackersToClipboard()
+            }
+    }
+    
+    /**
+     * Show trackers from specific category
+     */
+    private fun showCategoryTrackers(category: String, trackers: List<String>) {
+        val trackerList = trackers.mapIndexed { index, tracker ->
+            "${index + 1}. $tracker"
+        }.joinToString("\n\n")
+        
+        AlertDialog.Builder(this)
+            .setTitle("$category (${trackers.size} trackers)")
+            .setMessage(trackerList)
+            .setPositiveButton("Copy These ${trackers.size}") { _, _ ->
+                copyTrackersToClipboard(trackers, category)
+            }
+            .setNegativeButton("Back", null)
+            .show()
+    }
+    
+    /**
+     * Copy specific tracker category to clipboard
+     */
+    private fun copyTrackersToClipboard(trackers: List<String>, category: String) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val trackerText = trackers.joinToString("\n\n")
+        val clip = ClipData.newPlainText("$category Trackers", trackerText)
+        clipboard.setPrimaryClip(clip)
+        
+        Toast.makeText(
+            this,
+            "✅ Copied ${trackers.size} $category trackers to clipboard!",
+            Toast.LENGTH_SHORT
+        ).show()
     }
     
     private fun isValidTrackerUrl(url: String): Boolean {

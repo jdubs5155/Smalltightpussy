@@ -137,6 +137,7 @@ object ProviderRegistry {
     )
     
     private fun specializedProviders() = listOf(
+        // Original specialized providers
         ProviderBTScene(),
         ProviderTorrentSeeds(),
         ProviderISOHunt(),
@@ -154,7 +155,39 @@ object ProviderRegistry {
         ProviderTorrentDB(),
         ProviderBitsearch(),
         ProviderTorrentGuru(),
-        ProviderSnowfl()
+        ProviderSnowfl(),
+        
+        // NEW: DHT/Magnet providers
+        ProviderBT4G(),
+        ProviderBTDiggDHT(),
+        
+        // NEW: Specialty indexers
+        ProviderAcademicTorrents(),
+        ProviderInternetArchive(),
+        ProviderLegitTorrents(),
+        ProviderLinuxTracker(),
+        
+        // NEW: General public trackers
+        ProviderSeedPeer(),
+        ProviderIDope(),
+        ProviderTorrentParadise(),
+        ProviderTorrentDownload(),
+        ProviderGloDLS(),
+        ProviderMagnetDLNew(),
+        ProviderYourBittorrent(),
+        
+        // NEW: Alternative/mirror sites
+        ProviderZooqleAlt(),
+        ProviderTorrentz2Alt(),
+        ProviderETTV(),
+        ProviderTorrentDayStyle(),
+        ProviderExtraTorrentClone(),
+        
+        // NEW: Mirror/clone sites for resilience
+        ProviderRarbgMirror2(),
+        Provider1337xMirror(),
+        ProviderTPBMirror(),
+        ProviderKATClone()
     )
     
     /**
