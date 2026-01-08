@@ -348,8 +348,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     /**
-     * Filter results to only show downloadable torrents (magnet links or .torrent files)
-     * Compatible with LibreTorrent and other torrent clients
+     * Filter results to only show alive torrents (not dead - must have seeders or peers)
      */
     private fun filterDownloadableResults(results: List<TorrentResult>): List<TorrentResult> {
         return results.filter { result ->
@@ -358,69 +357,12 @@ class MainActivity : AppCompatActivity() {
     }
     
     /**
-     * Check if a torrent result can be downloaded
-     * Returns true if it has a magnet link, .torrent URL, or infohash
+     * Check if a torrent is alive (has seeders or peers)
+     * Returns true if seeders > 0 or peers > 0
      */
     private fun isDownloadable(result: TorrentResult): Boolean {
-        val link = result.link
-        
-        // Check for magnet link
-        if (link.startsWith("magnet:?")) {
-            return true
-        }
-        
-        // Check for .torrent file URL
-        if (link.endsWith(".torrent", ignoreCase = true)) {
-            return true
-        }
-        
-        // Check if link contains torrent/download patterns
-        if (link.contains("/download/", ignoreCase = true) ||
-            link.contains("/torrent/", ignoreCase = true) ||
-            link.contains("get_torrent", ignoreCase = true) ||
-            link.contains("dl.php", ignoreCase = true)) {
-            return true
-        }
-        
-        // Check magnetUrl field if present
-        result.magnetUrl?.let { magnetUrl ->
-            if (magnetUrl.startsWith("magnet:?")) {
-                return true
-            }
-        }
-        
-        // Check if we can extract an infohash
-        val infohashPattern = Regex("[a-fA-F0-9]{40}")
-        if (infohashPattern.containsMatchIn(link)) {
-            return true
-        }
-        
-        // Additional check - try to verify downloadability behind the scenes
-        return verifyDownloadability(result)
-    }
-    
-    /**
-     * Advanced downloadability verification
-     * Uses background checks to ensure the torrent can be downloaded
-     */
-    private fun verifyDownloadability(result: TorrentResult): Boolean {
-        // If seeders > 0, likely downloadable
-        if (result.seeders > 0) {
-            return true
-        }
-        
-        // If it's from a known good source, trust it
-        val trustedSources = listOf(
-            "1337x", "thepiratebay", "rarbg", "yts", "eztv", "nyaa", "torrentgalaxy",
-            "limetorrents", "kickass", "torrentz2", "jackett", "prowlarr"
-        )
-        
-        val sourceName = result.title.lowercase()
-        if (trustedSources.any { result.link.contains(it, ignoreCase = true) }) {
-            return true
-        }
-        
-        return false
+        // A torrent is "downloadable" if it has at least one seeder or peer
+        return result.seeders > 0 || result.peers > 0
     }
 
     private fun extractKeywords(query: String): List<String> {
