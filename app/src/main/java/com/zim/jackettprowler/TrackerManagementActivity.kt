@@ -233,17 +233,13 @@ class TrackerManagementActivity : AppCompatActivity() {
         val options = arrayOf(
             "🚀 Quick Scan (Known Sites Only)",
             "🔍 Full Scan (All ${TrackerDatabase.getTrackerCount()} Trackers)",
-            "📖 Learn More"
+            "📖 Learn More About Tool-X"
         )
         
         AlertDialog.Builder(this)
-            .setTitle("🔍 Scan Trackers for Search APIs")
-            .setMessage("This feature will automatically:\n\n" +
-                    "✨ Detect search interfaces from tracker domains\n" +
-                    "✨ Auto-configure CSS selectors\n" +
-                    "✨ Add to built-in providers\n" +
-                    "✨ Enable in 'Everything' search\n\n" +
-                    "Choose scan type:")
+            .setTitle("🔍 Scan Trackers for Search APIs\n\n" +
+                    "Auto-detect search interfaces,\n" +
+                    "configure selectors & add providers")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> performQuickScan()
