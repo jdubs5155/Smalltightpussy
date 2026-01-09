@@ -245,6 +245,8 @@ class VideoSitesActivity : AppCompatActivity() {
             "🔗 Invidious Instances...",
             "🔗 PeerTube Instances...",
             "──────────────",
+            "🔞 Adult Sites (18+)...",
+            "──────────────",
             "⚡ Add All Public Sites"
         )
         
@@ -261,11 +263,98 @@ class VideoSitesActivity : AppCompatActivity() {
                     6 -> addPresetSite(VideoSiteType.ARCHIVE_ORG)
                     8 -> showInvidiousInstancesDialog()
                     9 -> showPeerTubeInstancesDialog()
-                    11 -> addAllPresets()
+                    11 -> showAdultSitesDialog()
+                    13 -> addAllPresets()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+    
+    private fun showAdultSitesDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ Age Verification")
+            .setMessage("You must be 18+ years old to add adult video sites.\n\nDo you confirm that you are of legal age in your jurisdiction?")
+            .setPositiveButton("I am 18+") { _, _ ->
+                showAdultSitesListDialog()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showAdultSitesListDialog() {
+        val sites = arrayOf(
+            "🔞 PornHub",
+            "🔞 XVideos", 
+            "🔞 xHamster",
+            "🔞 XNXX",
+            "🔞 YouPorn",
+            "🔞 RedTube",
+            "🔞 SpankBang",
+            "🔞 Eporner",
+            "🔞 Tube8",
+            "🔞 Beeg",
+            "──────────────",
+            "⚡ Add All Adult Sites"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🔞 Adult Video Sites (18+)")
+            .setItems(sites) { _, which ->
+                when (which) {
+                    0 -> addAdultSite("pornhub", "PornHub", "https://www.pornhub.com", "/video/search?search={query}")
+                    1 -> addAdultSite("xvideos", "XVideos", "https://www.xvideos.com", "/?k={query}")
+                    2 -> addAdultSite("xhamster", "xHamster", "https://xhamster.com", "/search/{query}")
+                    3 -> addAdultSite("xnxx", "XNXX", "https://www.xnxx.com", "/search/{query}")
+                    4 -> addAdultSite("youporn", "YouPorn", "https://www.youporn.com", "/search/?query={query}")
+                    5 -> addAdultSite("redtube", "RedTube", "https://www.redtube.com", "/?search={query}")
+                    6 -> addAdultSite("spankbang", "SpankBang", "https://spankbang.com", "/s/{query}/")
+                    7 -> addAdultSite("eporner", "Eporner", "https://www.eporner.com", "/search/{query}/")
+                    8 -> addAdultSite("tube8", "Tube8", "https://www.tube8.com", "/searches?q={query}")
+                    9 -> addAdultSite("beeg", "Beeg", "https://beeg.com", "/search?q={query}")
+                    11 -> addAllAdultSites()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun addAdultSite(id: String, name: String, baseUrl: String, searchPath: String) {
+        val config = VideoSiteConfig(
+            id = "adult_$id",
+            name = "$name (18+)",
+            baseUrl = baseUrl,
+            siteType = VideoSiteType.GENERIC,
+            searchPath = searchPath,
+            selectors = VideoSelectors(
+                videoContainer = ".video-wrapper, .thumb-block, .mozaique .thumb, .video-box, .video-item",
+                videoTitle = ".title a, .thumb-under a, a[title], .video-title",
+                videoUrl = "a[href*='/video'], a[href*='/view_video'], a[href*='watch']",
+                thumbnail = "img[data-src], img[src*='thumb'], .thumb img",
+                duration = ".duration, .video-duration, span.duration",
+                views = ".views, .video-views, .metadata .views"
+            ),
+            isAdult = true
+        )
+        
+        videoService.saveSite(config)
+        refreshSiteList()
+        Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun addAllAdultSites() {
+        addAdultSite("pornhub", "PornHub", "https://www.pornhub.com", "/video/search?search={query}")
+        addAdultSite("xvideos", "XVideos", "https://www.xvideos.com", "/?k={query}")
+        addAdultSite("xhamster", "xHamster", "https://xhamster.com", "/search/{query}")
+        addAdultSite("xnxx", "XNXX", "https://www.xnxx.com", "/search/{query}")
+        addAdultSite("youporn", "YouPorn", "https://www.youporn.com", "/search/?query={query}")
+        addAdultSite("redtube", "RedTube", "https://www.redtube.com", "/?search={query}")
+        addAdultSite("spankbang", "SpankBang", "https://spankbang.com", "/s/{query}/")
+        addAdultSite("eporner", "Eporner", "https://www.eporner.com", "/search/{query}/")
+        addAdultSite("tube8", "Tube8", "https://www.tube8.com", "/searches?q={query}")
+        addAdultSite("beeg", "Beeg", "https://beeg.com", "/search?q={query}")
+        
+        Toast.makeText(this, "Added all adult video sites (18+)", Toast.LENGTH_SHORT).show()
     }
     
     private fun showInvidiousInstancesDialog() {

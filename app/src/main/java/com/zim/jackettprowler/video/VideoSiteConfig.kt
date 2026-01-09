@@ -15,7 +15,8 @@ data class VideoSiteConfig(
     val instanceUrl: String = "",  // For sites like Invidious/Piped that have instances
     val isEnabled: Boolean = true,
     val selectors: VideoSelectors = VideoSelectors(),
-    val addedTimestamp: Long = System.currentTimeMillis()
+    val addedTimestamp: Long = System.currentTimeMillis(),
+    val isAdult: Boolean = false  // 18+ adult content flag
 ) {
     fun toJson(): String = Gson().toJson(this)
     
@@ -39,8 +40,11 @@ enum class VideoSiteType {
 
 data class VideoSelectors(
     val container: String = "",
+    val videoContainer: String = "",  // Alternative name for container
     val title: String = "",
+    val videoTitle: String = "",  // Alternative name for title
     val thumbnailUrl: String = "",
+    val thumbnail: String = "",  // Alternative name for thumbnailUrl
     val videoUrl: String = "",
     val duration: String = "",
     val views: String = "",
