@@ -35,7 +35,7 @@ jobs:
     - name: Get version info
       id: version
       run: |
-        VERSION=$(grep 'versionName' app/build.gradle | awk '{print $2}' | tr -d '"' || echo "unknown")
+        VERSION=$(grep 'versionName' app/build.gradle | awk '{print $2}' | tr -d '"' | tr -d '\r\n' | xargs || echo "unknown")
         BUILD=$(date +%Y%m%d-%H%M)
         echo "VERSION_NAME=$VERSION" >> $GITHUB_OUTPUT
         echo "BUILD_NUMBER=$BUILD" >> $GITHUB_OUTPUT
