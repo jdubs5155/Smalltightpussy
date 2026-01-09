@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.zim.jackettprowler.R
@@ -21,7 +22,8 @@ import android.graphics.BitmapFactory
  * Adapter for displaying video search results
  */
 class VideoResultAdapter(
-    private val onItemClick: (VideoResult) -> Unit
+    private val onItemClick: (VideoResult) -> Unit,
+    private val onDownloadClick: (VideoResult) -> Unit
 ) : RecyclerView.Adapter<VideoResultAdapter.ViewHolder>() {
     
     private var results = listOf<VideoResult>()
@@ -58,6 +60,7 @@ class VideoResultAdapter(
         private val textDuration: TextView = itemView.findViewById(R.id.textDuration)
         private val textViews: TextView = itemView.findViewById(R.id.textViews)
         private val textSource: TextView = itemView.findViewById(R.id.textSource)
+        private val buttonDownload: ImageButton? = itemView.findViewById(R.id.buttonDownload)
         
         fun bind(result: VideoResult) {
             textTitle.text = result.title
@@ -85,6 +88,11 @@ class VideoResultAdapter(
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.videoUrl))
                 itemView.context.startActivity(intent)
                 true
+            }
+            
+            // Handle download button click
+            buttonDownload?.setOnClickListener {
+                onDownloadClick(result)
             }
         }
         

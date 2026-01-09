@@ -17,6 +17,7 @@ import com.zim.jackettprowler.services.SearchResultCache
 import com.zim.jackettprowler.video.VideoResultAdapter
 import com.zim.jackettprowler.video.VideoSearchService
 import com.zim.jackettprowler.video.VideoResult
+import com.zim.jackettprowler.video.VideoDownloadService
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -59,6 +60,9 @@ class MainActivity : AppCompatActivity() {
     
     // Video search service
     private lateinit var videoSearchService: VideoSearchService
+    
+    // Video download service
+    private lateinit var videoDownloadService: VideoDownloadService
     
     // Background services
     private lateinit var searchCache: SearchResultCache
@@ -112,6 +116,9 @@ class MainActivity : AppCompatActivity() {
         // Initialize video search service
         videoSearchService = VideoSearchService(this)
         
+        // Initialize video download service
+        videoDownloadService = VideoDownloadService(this)
+        
         // Initialize background services
         searchCache = SearchResultCache(this)
         networkMonitor = NetworkQualityMonitor(this)
@@ -152,10 +159,11 @@ class MainActivity : AppCompatActivity() {
         binding.recyclerViewResults.layoutManager = LinearLayoutManager(this)
         binding.recyclerViewResults.adapter = adapter
         
-        // Setup video results recycler
-        videoAdapter = VideoResultAdapter { result ->
-            openVideoResult(result)
-        }
+        // Setup video results recycler with download callback
+        videoAdapter = VideoResultAdapter(
+            onItemClick = { result -> openVideoResult(result) },
+            onDownloadClick = { result -> showVideoDownloadOptions(result) }
+        )
         binding.recyclerViewVideoResults.layoutManager = LinearLayoutManager(this)
         binding.recyclerViewVideoResults.adapter = videoAdapter
     }
@@ -305,6 +313,142 @@ class MainActivity : AppCompatActivity() {
             binding.textStatus.text = "🎬 Opening: ${result.title.take(50)}..."
         } catch (e: Exception) {
             binding.textStatus.text = "Error opening video: ${e.message}"
+        }
+    }
+    
+    private fun showVideoDownloadOptions(result: VideoResult) {
+        binding.textStatus.text = "⏳ Extracting video streams..."
+        
+        uiScope.launch(Dispatchers.IO) {
+            val extraction = videoDownloadService.extractStreams(result)
+            
+            launch(Dispatchers.Main) {
+                if (extraction.success && extraction.streams.isNotEmpty()) {
+                    showStreamSelectionDialog(result, extraction.streams)
+                } else {
+                    // Extraction failed - offer to open in browser or external app
+                    showExternalDownloadOptions(result, extraction.error)
+                }
+            }
+        }
+    }
+    
+    private fun showStreamSelectionDialog(result: VideoResult, streams: List<VideoDownloadService.VideoStream>) {
+        val options = streams.map { stream ->
+            val qualityInfo = if (stream.quality != "auto") stream.quality else "Auto"
+            val formatInfo = stream.format.uppercase()
+            val audioTag = if (stream.isAudioOnly) " (Audio)" else ""
+            "$qualityInfo - $formatInfo$audioTag"
+        }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle("📥 Download: ${result.title.take(40)}...")
+            .setItems(options) { _, which ->
+                val selectedStream = streams[which]
+                startVideoDownload(selectedStream, result.title)
+            }
+            .setNeutralButton("Open in Browser") { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.videoUrl))
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showExternalDownloadOptions(result: VideoResult, error: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Download Options")
+            .setMessage("Could not extract video streams directly.\n\nReason: $error\n\nYou can try alternative methods:")
+            .setPositiveButton("Open in Browser") { _, _ ->
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.videoUrl))
+                startActivity(intent)
+            }
+            .setNeutralButton("Copy URL") { _, _ ->
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Video URL", result.videoUrl)
+                clipboard.setPrimaryClip(clip)
+                binding.textStatus.text = "📋 URL copied to clipboard"
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    @Suppress("DEPRECATION")
+    private fun startVideoDownload(stream: VideoDownloadService.VideoStream, title: String) {
+        // Check for storage permission on older Android versions
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            if (checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) 
+                != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
+                binding.textStatus.text = "⚠️ Storage permission required"
+                return
+            }
+        }
+        
+        binding.textStatus.text = "📥 Starting download: ${title.take(40)}..."
+        
+        // Create progress dialog
+        val progressDialog = android.app.ProgressDialog(this).apply {
+            setTitle("Downloading Video")
+            setMessage(title.take(50))
+            setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL)
+            max = 100
+            setCancelable(false)
+            show()
+        }
+        
+        uiScope.launch(Dispatchers.IO) {
+            val result = videoDownloadService.downloadVideo(stream, title) { progress ->
+                launch(Dispatchers.Main) {
+                    progressDialog.progress = progress
+                }
+            }
+            
+            launch(Dispatchers.Main) {
+                progressDialog.dismiss()
+                
+                result.fold(
+                    onSuccess = { file ->
+                        binding.textStatus.text = "✅ Downloaded: ${file.name}"
+                        
+                        // Offer to open the file
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Download Complete")
+                            .setMessage("Video saved to:\n${file.absolutePath}")
+                            .setPositiveButton("Open") { _, _ ->
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW)
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        this@MainActivity,
+                                        "${packageName}.provider",
+                                        file
+                                    )
+                                    intent.setDataAndType(uri, "video/*")
+                                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    binding.textStatus.text = "Could not open video: ${e.message}"
+                                }
+                            }
+                            .setNegativeButton("OK", null)
+                            .show()
+                    },
+                    onFailure = { error ->
+                        binding.textStatus.text = "❌ Download failed: ${error.message}"
+                        
+                        // Offer alternative options
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Download Failed")
+                            .setMessage("Error: ${error.message}\n\nTry opening in browser instead?")
+                            .setPositiveButton("Open in Browser") { _, _ ->
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(stream.url))
+                                startActivity(intent)
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                )
+            }
         }
     }
 
