@@ -1,7 +1,7 @@
 # JackettProwlarrClient - AI Coding Agent Instructions
 
 ## Project Overview
-Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Prowlarr), custom web scrapers, and Tor-enabled .onion sites. Uses Kotlin with coroutines for async operations. **NEW**: Supports importing individual indexers from Jackett/Prowlarr and includes 60+ built-in torrent providers as fallback.
+Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Prowlarr), custom web scrapers, and Tor-enabled .onion sites. Uses Kotlin with coroutines for async operations. **NEW**: Supports importing individual indexers from Jackett/Prowlarr, includes 60+ built-in torrent providers as fallback, and now has **clearnet video search** with support for 10+ video platforms.
 
 ## Architecture
 
@@ -14,14 +14,17 @@ Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Pr
 - **TorProxyManager**: SOCKS proxy manager for Orbot/Tor integration to access .onion sites
 - **QbittorrentClient**: qBittorrent Web UI API client for sending torrents to remote clients
 - **DownloadHistoryManager**: JSON-persisted download tracking (last 100 downloads)
+- **VideoSearchService**: Clearnet video search with 10+ platforms (YouTube via Invidious, Dailymotion, Vimeo, Rumble, Odysee, BitChute, PeerTube, Archive.org, Twitch)
+- **VideoSiteInfiltrator**: Auto-detects and configures video sites from URL (like torrent site infiltration)
 
 ### Data Flow
 1. User enters search query in MainActivity
-2. Query flows to TorznabService (Jackett/Prowlarr) OR TorrentAggregator (multi-source)
-3. If Torznab APIs unavailable, searches fallback to: imported indexers → built-in providers → custom scrapers
-4. Results parsed into `TorrentResult` objects with health metrics (seeders/leechers ratio)
-5. TorrentAdapter displays results in RecyclerView with color-coded health status
-6. Download via qBittorrent API or intent to local torrent clients (uTorrent, LibreTorrent, etc.)
+2. **Mode Toggle**: Torrents mode → TorznabService/TorrentAggregator | Videos mode → VideoSearchService
+3. For torrents: If Torznab APIs unavailable, searches fallback to: imported indexers → built-in providers → custom scrapers
+4. For videos: Searches all enabled video sites in parallel
+5. Results parsed into `TorrentResult` or `VideoResult` objects
+6. TorrentAdapter/VideoResultAdapter displays results in RecyclerView
+7. Torrent download via qBittorrent API or intent | Video opens in browser or compatible app
 
 ### Indexer Management System
 - **Import from Jackett/Prowlarr**: SettingsActivity → "Import Indexers" button fetches all configured indexers
@@ -29,6 +32,14 @@ Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Pr
 - **Toggle system**: IndexerManagementActivity allows enabling/disabling individual imported indexers
 - **Built-in providers**: 60+ providers in ProviderRegistry - enabled by default for public trackers
 - **Storage**: Imported indexers saved to SharedPreferences as JSON via IndexerImporter
+
+### Video Search System (NEW)
+- **VideoSiteConfig**: Data class for video site configuration with selectors
+- **VideoSiteType**: Enum for known platforms (YOUTUBE, DAILYMOTION, VIMEO, RUMBLE, ODYSEE, BITCHUTE, PEERTUBE, ARCHIVE_ORG, TWITCH, GENERIC)
+- **VideoSearchService**: Searches configured video sites in parallel, handles API/scraping differences per platform
+- **VideoSiteInfiltrator**: Analyzes URLs to auto-detect video site type and create configurations
+- **VideoSitesActivity**: UI to manage video sites - add, delete, test, toggle enabled state
+- **Storage**: Video sites saved to `video_sites` SharedPreferences as JSON
 
 ## Critical Conventions
 
@@ -105,6 +116,21 @@ Check connection status in MainActivity status text. Common issues:
 - Empty results with imported indexers: Check per-indexer toggle state in IndexerManagementActivity
 - Built-in providers not searching: Verify enabled in `builtin_providers` SharedPreferences
 
+### Testing Video Search
+1. Toggle to "Videos" mode using the circle buttons in MainActivity
+2. Settings → "Manage Video Sites (10+)" to add/configure video sites
+3. Add sites by URL - VideoSiteInfiltrator auto-detects type
+4. "Test All Sites" verifies connectivity and search functionality
+5. Search returns VideoResult objects with title, channel, duration, views, thumbnail
+6. Click video to open in browser or compatible video app
+
+### Adding Custom Video Sites
+1. Go to Settings → "Manage Video Sites (10+)"
+2. Enter site URL (e.g., `https://yewtu.be` for Invidious instance)
+3. VideoSiteInfiltrator auto-detects site type and creates config
+4. For unknown sites, GENERIC type uses CSS selectors for scraping
+5. Test site with "Test" button before enabling
+
 ### Adding Custom Scrapers
 1. Create `CustomSiteConfig` with CSS/XPath selectors in [CustomSiteConfig.kt](app/src/main/java/com/zim/jackettprowler/CustomSiteConfig.kt)
 2. Test selectors with ScraperService in isolation
@@ -139,9 +165,12 @@ Magnet links open via `Intent.ACTION_VIEW` to find installed torrent clients. Pr
 - [IndexerImporter.kt](app/src/main/java/com/zim/jackettprowler/IndexerImporter.kt) - Import individual indexers from Jackett/Prowlarr
 - [ProviderRegistry.kt](app/src/main/java/com/zim/jackettprowler/providers/ProviderRegistry.kt) - 60+ built-in providers
 - [TorrentAggregator.kt](app/src/main/java/com/zim/jackettprowler/TorrentAggregator.kt) - Multi-source search with fallback chain
-- [MainActivity.kt](app/src/main/java/com/zim/jackettprowler/MainActivity.kt) - Main search UI and lifecycle
-- [SettingsActivity.kt](app/src/main/java/com/zim/jackettprowler/SettingsActivity.kt) - Import button and provider management
+- [MainActivity.kt](app/src/main/java/com/zim/jackettprowler/MainActivity.kt) - Main search UI with Torrent/Video mode toggle
+- [SettingsActivity.kt](app/src/main/java/com/zim/jackettprowler/SettingsActivity.kt) - Import button, provider management, video sites
 - [ScraperService.kt](app/src/main/java/com/zim/jackettprowler/ScraperService.kt) - HTML scraping engine
+- [VideoSearchService.kt](app/src/main/java/com/zim/jackettprowler/video/VideoSearchService.kt) - Video site search with 10+ platforms
+- [VideoSiteInfiltrator.kt](app/src/main/java/com/zim/jackettprowler/video/VideoSiteInfiltrator.kt) - Auto-detect video site type from URL
+- [VideoSitesActivity.kt](app/src/main/java/com/zim/jackettprowler/video/VideoSitesActivity.kt) - Manage video sites
 - [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Detailed feature changelog
 
 ## Common Pitfalls
@@ -154,3 +183,6 @@ Magnet links open via `Intent.ACTION_VIEW` to find installed torrent clients. Pr
 - **Test with actual Jackett/Prowlarr instances** - XML structure varies by version
 - **Magnet links vs download URLs** - check `isMagnetLink()` before choosing download method
 - **Per-indexer API keys**: Imported indexers inherit parent API key - store in `ImportedIndexer.apiKey`
+- **Video mode confusion**: When `isVideoMode=true`, use VideoSearchService not TorznabService
+- **YouTube via Invidious**: Direct YouTube API requires API key; use Invidious instances for free access
+- **AlertDialog setMessage+setItems conflict**: Use only setItems() OR setMessage(), not both together
