@@ -283,6 +283,31 @@ class VideoSitesActivity : AppCompatActivity() {
     }
     
     private fun showAdultSitesListDialog() {
+        val categories = arrayOf(
+            "🌐 Popular Sites (10)",
+            "🎬 Premium/Studios (15)",
+            "🌍 International (10)",
+            "🔧 Specialty Sites (15)",
+            "──────────────",
+            "⚡ Add All 50+ Adult Sites"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🔞 Adult Video Sites Database (50+)")
+            .setItems(categories) { _, which ->
+                when (which) {
+                    0 -> showPopularAdultSites()
+                    1 -> showPremiumAdultSites()
+                    2 -> showInternationalAdultSites()
+                    3 -> showSpecialtyAdultSites()
+                    5 -> addAllAdultSitesComplete()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showPopularAdultSites() {
         val sites = arrayOf(
             "🔞 PornHub",
             "🔞 XVideos", 
@@ -295,11 +320,11 @@ class VideoSitesActivity : AppCompatActivity() {
             "🔞 Tube8",
             "🔞 Beeg",
             "──────────────",
-            "⚡ Add All Adult Sites"
+            "⚡ Add All Popular"
         )
         
         AlertDialog.Builder(this)
-            .setTitle("🔞 Adult Video Sites (18+)")
+            .setTitle("🌐 Popular Adult Sites")
             .setItems(sites) { _, which ->
                 when (which) {
                     0 -> addAdultSite("pornhub", "PornHub", "https://www.pornhub.com", "/video/search?search={query}")
@@ -312,10 +337,141 @@ class VideoSitesActivity : AppCompatActivity() {
                     7 -> addAdultSite("eporner", "Eporner", "https://www.eporner.com", "/search/{query}/")
                     8 -> addAdultSite("tube8", "Tube8", "https://www.tube8.com", "/searches?q={query}")
                     9 -> addAdultSite("beeg", "Beeg", "https://beeg.com", "/search?q={query}")
-                    11 -> addAllAdultSites()
+                    11 -> addAllPopularAdultSites()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Back") { _, _ -> showAdultSitesListDialog() }
+            .show()
+    }
+    
+    private fun showPremiumAdultSites() {
+        val sites = arrayOf(
+            "🔞 Brazzers",
+            "🔞 RealityKings",
+            "🔞 BangBros",
+            "🔞 Naughty America",
+            "🔞 Digital Playground",
+            "🔞 Blacked",
+            "🔞 Tushy",
+            "🔞 Vixen",
+            "🔞 Deeper",
+            "🔞 Mofos",
+            "🔞 TeamSkeet",
+            "🔞 Babes",
+            "🔞 Twistys",
+            "🔞 PureTaboo",
+            "🔞 AdultTime",
+            "──────────────",
+            "⚡ Add All Premium"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🎬 Premium/Studios")
+            .setItems(sites) { _, which ->
+                when (which) {
+                    0 -> addAdultSite("brazzers", "Brazzers", "https://www.brazzers.com", "/search?q={query}")
+                    1 -> addAdultSite("realitykings", "RealityKings", "https://www.realitykings.com", "/search?q={query}")
+                    2 -> addAdultSite("bangbros", "BangBros", "https://www.bangbros.com", "/search/{query}")
+                    3 -> addAdultSite("naughtyamerica", "NaughtyAmerica", "https://www.naughtyamerica.com", "/search?q={query}")
+                    4 -> addAdultSite("digitalplayground", "DigitalPlayground", "https://www.digitalplayground.com", "/search?q={query}")
+                    5 -> addAdultSite("blacked", "Blacked", "https://www.blacked.com", "/videos?search={query}")
+                    6 -> addAdultSite("tushy", "Tushy", "https://www.tushy.com", "/videos?search={query}")
+                    7 -> addAdultSite("vixen", "Vixen", "https://www.vixen.com", "/videos?search={query}")
+                    8 -> addAdultSite("deeper", "Deeper", "https://www.deeper.com", "/videos?search={query}")
+                    9 -> addAdultSite("mofos", "Mofos", "https://www.mofos.com", "/search?q={query}")
+                    10 -> addAdultSite("teamskeet", "TeamSkeet", "https://www.teamskeet.com", "/search?q={query}")
+                    11 -> addAdultSite("babes", "Babes", "https://www.babes.com", "/search?q={query}")
+                    12 -> addAdultSite("twistys", "Twistys", "https://www.twistys.com", "/search?q={query}")
+                    13 -> addAdultSite("puretaboo", "PureTaboo", "https://www.puretaboo.com", "/search?q={query}")
+                    14 -> addAdultSite("adulttime", "AdultTime", "https://www.adulttime.com", "/search?q={query}")
+                    16 -> addAllPremiumAdultSites()
+                }
+            }
+            .setNegativeButton("Back") { _, _ -> showAdultSitesListDialog() }
+            .show()
+    }
+    
+    private fun showInternationalAdultSites() {
+        val sites = arrayOf(
+            "🔞 JavHD (Japan)",
+            "🔞 R18 (Japan)",
+            "🔞 DMM (Japan)",
+            "🔞 Txxx (Europe)",
+            "🔞 Porn555 (Asia)",
+            "🔞 Drtuber",
+            "🔞 HClips",
+            "🔞 Pornone",
+            "🔞 Gotporn",
+            "🔞 4tube",
+            "──────────────",
+            "⚡ Add All International"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🌍 International Sites")
+            .setItems(sites) { _, which ->
+                when (which) {
+                    0 -> addAdultSite("javhd", "JavHD", "https://www.javhd.com", "/search?q={query}")
+                    1 -> addAdultSite("r18", "R18", "https://www.r18.com", "/videos/search/?q={query}")
+                    2 -> addAdultSite("dmm", "DMM", "https://www.dmm.co.jp", "/search?q={query}")
+                    3 -> addAdultSite("txxx", "Txxx", "https://www.txxx.com", "/search/?q={query}")
+                    4 -> addAdultSite("porn555", "Porn555", "https://www.porn555.com", "/search/{query}")
+                    5 -> addAdultSite("drtuber", "DrTuber", "https://www.drtuber.com", "/search/{query}")
+                    6 -> addAdultSite("hclips", "HClips", "https://www.hclips.com", "/search/{query}")
+                    7 -> addAdultSite("pornone", "Pornone", "https://www.pornone.com", "/search?q={query}")
+                    8 -> addAdultSite("gotporn", "GotPorn", "https://www.gotporn.com", "/results?search={query}")
+                    9 -> addAdultSite("4tube", "4tube", "https://www.4tube.com", "/search?q={query}")
+                    11 -> addAllInternationalAdultSites()
+                }
+            }
+            .setNegativeButton("Back") { _, _ -> showAdultSitesListDialog() }
+            .show()
+    }
+    
+    private fun showSpecialtyAdultSites() {
+        val sites = arrayOf(
+            "🔞 Porntrex",
+            "🔞 Tnaflix",
+            "🔞 Nudevista",
+            "🔞 Pornmd",
+            "🔞 Thumbzilla",
+            "🔞 Fapster",
+            "🔞 Fuq",
+            "🔞 Xxxdan",
+            "🔞 Sunporno",
+            "🔞 Anyporn",
+            "🔞 Porndig",
+            "🔞 Sexvid",
+            "🔞 Upornia",
+            "🔞 Voyeurhit",
+            "🔞 Analdin",
+            "──────────────",
+            "⚡ Add All Specialty"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🔧 Specialty Sites")
+            .setItems(sites) { _, which ->
+                when (which) {
+                    0 -> addAdultSite("porntrex", "Porntrex", "https://www.porntrex.com", "/search/{query}/")
+                    1 -> addAdultSite("tnaflix", "TNAFlix", "https://www.tnaflix.com", "/search.php?what={query}")
+                    2 -> addAdultSite("nudevista", "Nudevista", "https://www.nudevista.com", "/?q={query}")
+                    3 -> addAdultSite("pornmd", "PornMD", "https://www.pornmd.com", "/{query}")
+                    4 -> addAdultSite("thumbzilla", "Thumbzilla", "https://www.thumbzilla.com", "/video/search?search={query}")
+                    5 -> addAdultSite("fapster", "Fapster", "https://www.fapster.xxx", "/search/{query}")
+                    6 -> addAdultSite("fuq", "Fuq", "https://www.fuq.com", "/search/{query}/")
+                    7 -> addAdultSite("xxxdan", "Xxxdan", "https://xxxdan.com", "/search/{query}")
+                    8 -> addAdultSite("sunporno", "Sunporno", "https://www.sunporno.com", "/search/{query}/")
+                    9 -> addAdultSite("anyporn", "Anyporn", "https://www.anyporn.com", "/search/?q={query}")
+                    10 -> addAdultSite("porndig", "Porndig", "https://www.porndig.com", "/search/{query}")
+                    11 -> addAdultSite("sexvid", "Sexvid", "https://www.sexvid.xxx", "/search/{query}")
+                    12 -> addAdultSite("upornia", "Upornia", "https://www.upornia.com", "/search/{query}/")
+                    13 -> addAdultSite("voyeurhit", "Voyeurhit", "https://www.voyeurhit.com", "/search/{query}")
+                    14 -> addAdultSite("analdin", "Analdin", "https://www.analdin.com", "/search/{query}/")
+                    16 -> addAllSpecialtyAdultSites()
+                }
+            }
+            .setNegativeButton("Back") { _, _ -> showAdultSitesListDialog() }
             .show()
     }
     
@@ -327,12 +483,12 @@ class VideoSitesActivity : AppCompatActivity() {
             siteType = VideoSiteType.GENERIC,
             searchPath = searchPath,
             selectors = VideoSelectors(
-                videoContainer = ".video-wrapper, .thumb-block, .mozaique .thumb, .video-box, .video-item",
-                videoTitle = ".title a, .thumb-under a, a[title], .video-title",
-                videoUrl = "a[href*='/video'], a[href*='/view_video'], a[href*='watch']",
-                thumbnail = "img[data-src], img[src*='thumb'], .thumb img",
-                duration = ".duration, .video-duration, span.duration",
-                views = ".views, .video-views, .metadata .views"
+                videoContainer = ".video-wrapper, .thumb-block, .mozaique .thumb, .video-box, .video-item, .thumb, .thumbs li",
+                videoTitle = ".title a, .thumb-under a, a[title], .video-title, h3 a, .name",
+                videoUrl = "a[href*='/video'], a[href*='/view_video'], a[href*='watch'], a[href*='/v/']",
+                thumbnail = "img[data-src], img[src*='thumb'], .thumb img, img.lazy, img[data-original]",
+                duration = ".duration, .video-duration, span.duration, .time, .length",
+                views = ".views, .video-views, .metadata .views, .info .views"
             ),
             isAdult = true
         )
@@ -342,7 +498,7 @@ class VideoSitesActivity : AppCompatActivity() {
         Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
     }
     
-    private fun addAllAdultSites() {
+    private fun addAllPopularAdultSites() {
         addAdultSite("pornhub", "PornHub", "https://www.pornhub.com", "/video/search?search={query}")
         addAdultSite("xvideos", "XVideos", "https://www.xvideos.com", "/?k={query}")
         addAdultSite("xhamster", "xHamster", "https://xhamster.com", "/search/{query}")
@@ -353,8 +509,154 @@ class VideoSitesActivity : AppCompatActivity() {
         addAdultSite("eporner", "Eporner", "https://www.eporner.com", "/search/{query}/")
         addAdultSite("tube8", "Tube8", "https://www.tube8.com", "/searches?q={query}")
         addAdultSite("beeg", "Beeg", "https://beeg.com", "/search?q={query}")
+        Toast.makeText(this, "Added 10 popular adult sites", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun addAllPremiumAdultSites() {
+        addAdultSite("brazzers", "Brazzers", "https://www.brazzers.com", "/search?q={query}")
+        addAdultSite("realitykings", "RealityKings", "https://www.realitykings.com", "/search?q={query}")
+        addAdultSite("bangbros", "BangBros", "https://www.bangbros.com", "/search/{query}")
+        addAdultSite("naughtyamerica", "NaughtyAmerica", "https://www.naughtyamerica.com", "/search?q={query}")
+        addAdultSite("digitalplayground", "DigitalPlayground", "https://www.digitalplayground.com", "/search?q={query}")
+        addAdultSite("blacked", "Blacked", "https://www.blacked.com", "/videos?search={query}")
+        addAdultSite("tushy", "Tushy", "https://www.tushy.com", "/videos?search={query}")
+        addAdultSite("vixen", "Vixen", "https://www.vixen.com", "/videos?search={query}")
+        addAdultSite("deeper", "Deeper", "https://www.deeper.com", "/videos?search={query}")
+        addAdultSite("mofos", "Mofos", "https://www.mofos.com", "/search?q={query}")
+        addAdultSite("teamskeet", "TeamSkeet", "https://www.teamskeet.com", "/search?q={query}")
+        addAdultSite("babes", "Babes", "https://www.babes.com", "/search?q={query}")
+        addAdultSite("twistys", "Twistys", "https://www.twistys.com", "/search?q={query}")
+        addAdultSite("puretaboo", "PureTaboo", "https://www.puretaboo.com", "/search?q={query}")
+        addAdultSite("adulttime", "AdultTime", "https://www.adulttime.com", "/search?q={query}")
+        Toast.makeText(this, "Added 15 premium studio sites", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun addAllInternationalAdultSites() {
+        addAdultSite("javhd", "JavHD", "https://www.javhd.com", "/search?q={query}")
+        addAdultSite("r18", "R18", "https://www.r18.com", "/videos/search/?q={query}")
+        addAdultSite("dmm", "DMM", "https://www.dmm.co.jp", "/search?q={query}")
+        addAdultSite("txxx", "Txxx", "https://www.txxx.com", "/search/?q={query}")
+        addAdultSite("porn555", "Porn555", "https://www.porn555.com", "/search/{query}")
+        addAdultSite("drtuber", "DrTuber", "https://www.drtuber.com", "/search/{query}")
+        addAdultSite("hclips", "HClips", "https://www.hclips.com", "/search/{query}")
+        addAdultSite("pornone", "Pornone", "https://www.pornone.com", "/search?q={query}")
+        addAdultSite("gotporn", "GotPorn", "https://www.gotporn.com", "/results?search={query}")
+        addAdultSite("4tube", "4tube", "https://www.4tube.com", "/search?q={query}")
+        Toast.makeText(this, "Added 10 international sites", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun addAllSpecialtyAdultSites() {
+        addAdultSite("porntrex", "Porntrex", "https://www.porntrex.com", "/search/{query}/")
+        addAdultSite("tnaflix", "TNAFlix", "https://www.tnaflix.com", "/search.php?what={query}")
+        addAdultSite("nudevista", "Nudevista", "https://www.nudevista.com", "/?q={query}")
+        addAdultSite("pornmd", "PornMD", "https://www.pornmd.com", "/{query}")
+        addAdultSite("thumbzilla", "Thumbzilla", "https://www.thumbzilla.com", "/video/search?search={query}")
+        addAdultSite("fapster", "Fapster", "https://www.fapster.xxx", "/search/{query}")
+        addAdultSite("fuq", "Fuq", "https://www.fuq.com", "/search/{query}/")
+        addAdultSite("xxxdan", "Xxxdan", "https://xxxdan.com", "/search/{query}")
+        addAdultSite("sunporno", "Sunporno", "https://www.sunporno.com", "/search/{query}/")
+        addAdultSite("anyporn", "Anyporn", "https://www.anyporn.com", "/search/?q={query}")
+        addAdultSite("porndig", "Porndig", "https://www.porndig.com", "/search/{query}")
+        addAdultSite("sexvid", "Sexvid", "https://www.sexvid.xxx", "/search/{query}")
+        addAdultSite("upornia", "Upornia", "https://www.upornia.com", "/search/{query}/")
+        addAdultSite("voyeurhit", "Voyeurhit", "https://www.voyeurhit.com", "/search/{query}")
+        addAdultSite("analdin", "Analdin", "https://www.analdin.com", "/search/{query}/")
+        Toast.makeText(this, "Added 15 specialty sites", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun addAllAdultSitesComplete() {
+        val progress = ProgressDialog.show(this, "Adding Sites", "Adding 50+ adult video sites...", true)
         
-        Toast.makeText(this, "Added all adult video sites (18+)", Toast.LENGTH_SHORT).show()
+        uiScope.launch(Dispatchers.IO) {
+            // Popular (10)
+            addAdultSiteSilent("pornhub", "PornHub", "https://www.pornhub.com", "/video/search?search={query}")
+            addAdultSiteSilent("xvideos", "XVideos", "https://www.xvideos.com", "/?k={query}")
+            addAdultSiteSilent("xhamster", "xHamster", "https://xhamster.com", "/search/{query}")
+            addAdultSiteSilent("xnxx", "XNXX", "https://www.xnxx.com", "/search/{query}")
+            addAdultSiteSilent("youporn", "YouPorn", "https://www.youporn.com", "/search/?query={query}")
+            addAdultSiteSilent("redtube", "RedTube", "https://www.redtube.com", "/?search={query}")
+            addAdultSiteSilent("spankbang", "SpankBang", "https://spankbang.com", "/s/{query}/")
+            addAdultSiteSilent("eporner", "Eporner", "https://www.eporner.com", "/search/{query}/")
+            addAdultSiteSilent("tube8", "Tube8", "https://www.tube8.com", "/searches?q={query}")
+            addAdultSiteSilent("beeg", "Beeg", "https://beeg.com", "/search?q={query}")
+            
+            // Premium (15)
+            addAdultSiteSilent("brazzers", "Brazzers", "https://www.brazzers.com", "/search?q={query}")
+            addAdultSiteSilent("realitykings", "RealityKings", "https://www.realitykings.com", "/search?q={query}")
+            addAdultSiteSilent("bangbros", "BangBros", "https://www.bangbros.com", "/search/{query}")
+            addAdultSiteSilent("naughtyamerica", "NaughtyAmerica", "https://www.naughtyamerica.com", "/search?q={query}")
+            addAdultSiteSilent("digitalplayground", "DigitalPlayground", "https://www.digitalplayground.com", "/search?q={query}")
+            addAdultSiteSilent("blacked", "Blacked", "https://www.blacked.com", "/videos?search={query}")
+            addAdultSiteSilent("tushy", "Tushy", "https://www.tushy.com", "/videos?search={query}")
+            addAdultSiteSilent("vixen", "Vixen", "https://www.vixen.com", "/videos?search={query}")
+            addAdultSiteSilent("deeper", "Deeper", "https://www.deeper.com", "/videos?search={query}")
+            addAdultSiteSilent("mofos", "Mofos", "https://www.mofos.com", "/search?q={query}")
+            addAdultSiteSilent("teamskeet", "TeamSkeet", "https://www.teamskeet.com", "/search?q={query}")
+            addAdultSiteSilent("babes", "Babes", "https://www.babes.com", "/search?q={query}")
+            addAdultSiteSilent("twistys", "Twistys", "https://www.twistys.com", "/search?q={query}")
+            addAdultSiteSilent("puretaboo", "PureTaboo", "https://www.puretaboo.com", "/search?q={query}")
+            addAdultSiteSilent("adulttime", "AdultTime", "https://www.adulttime.com", "/search?q={query}")
+            
+            // International (10)
+            addAdultSiteSilent("javhd", "JavHD", "https://www.javhd.com", "/search?q={query}")
+            addAdultSiteSilent("r18", "R18", "https://www.r18.com", "/videos/search/?q={query}")
+            addAdultSiteSilent("dmm", "DMM", "https://www.dmm.co.jp", "/search?q={query}")
+            addAdultSiteSilent("txxx", "Txxx", "https://www.txxx.com", "/search/?q={query}")
+            addAdultSiteSilent("porn555", "Porn555", "https://www.porn555.com", "/search/{query}")
+            addAdultSiteSilent("drtuber", "DrTuber", "https://www.drtuber.com", "/search/{query}")
+            addAdultSiteSilent("hclips", "HClips", "https://www.hclips.com", "/search/{query}")
+            addAdultSiteSilent("pornone", "Pornone", "https://www.pornone.com", "/search?q={query}")
+            addAdultSiteSilent("gotporn", "GotPorn", "https://www.gotporn.com", "/results?search={query}")
+            addAdultSiteSilent("4tube", "4tube", "https://www.4tube.com", "/search?q={query}")
+            
+            // Specialty (15)
+            addAdultSiteSilent("porntrex", "Porntrex", "https://www.porntrex.com", "/search/{query}/")
+            addAdultSiteSilent("tnaflix", "TNAFlix", "https://www.tnaflix.com", "/search.php?what={query}")
+            addAdultSiteSilent("nudevista", "Nudevista", "https://www.nudevista.com", "/?q={query}")
+            addAdultSiteSilent("pornmd", "PornMD", "https://www.pornmd.com", "/{query}")
+            addAdultSiteSilent("thumbzilla", "Thumbzilla", "https://www.thumbzilla.com", "/video/search?search={query}")
+            addAdultSiteSilent("fapster", "Fapster", "https://www.fapster.xxx", "/search/{query}")
+            addAdultSiteSilent("fuq", "Fuq", "https://www.fuq.com", "/search/{query}/")
+            addAdultSiteSilent("xxxdan", "Xxxdan", "https://xxxdan.com", "/search/{query}")
+            addAdultSiteSilent("sunporno", "Sunporno", "https://www.sunporno.com", "/search/{query}/")
+            addAdultSiteSilent("anyporn", "Anyporn", "https://www.anyporn.com", "/search/?q={query}")
+            addAdultSiteSilent("porndig", "Porndig", "https://www.porndig.com", "/search/{query}")
+            addAdultSiteSilent("sexvid", "Sexvid", "https://www.sexvid.xxx", "/search/{query}")
+            addAdultSiteSilent("upornia", "Upornia", "https://www.upornia.com", "/search/{query}/")
+            addAdultSiteSilent("voyeurhit", "Voyeurhit", "https://www.voyeurhit.com", "/search/{query}")
+            addAdultSiteSilent("analdin", "Analdin", "https://www.analdin.com", "/search/{query}/")
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                refreshSiteList()
+                Toast.makeText(this@VideoSitesActivity, "✓ Added 50 adult video sites (18+)", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    private fun addAdultSiteSilent(id: String, name: String, baseUrl: String, searchPath: String) {
+        val config = VideoSiteConfig(
+            id = "adult_$id",
+            name = "$name (18+)",
+            baseUrl = baseUrl,
+            siteType = VideoSiteType.GENERIC,
+            searchPath = searchPath,
+            selectors = VideoSelectors(
+                videoContainer = ".video-wrapper, .thumb-block, .mozaique .thumb, .video-box, .video-item, .thumb, .thumbs li",
+                videoTitle = ".title a, .thumb-under a, a[title], .video-title, h3 a, .name",
+                videoUrl = "a[href*='/video'], a[href*='/view_video'], a[href*='watch'], a[href*='/v/']",
+                thumbnail = "img[data-src], img[src*='thumb'], .thumb img, img.lazy, img[data-original]",
+                duration = ".duration, .video-duration, span.duration, .time, .length",
+                views = ".views, .video-views, .metadata .views, .info .views"
+            ),
+            isAdult = true
+        )
+        videoService.saveSite(config)
+    }
+    
+    // Keep old method for compatibility
+    private fun addAllAdultSites() {
+        addAllPopularAdultSites()
     }
     
     private fun showInvidiousInstancesDialog() {
@@ -700,7 +1002,7 @@ class VideoSitesActivity : AppCompatActivity() {
             private val textName = itemView.findViewById<android.widget.TextView>(R.id.textSiteName)
             private val textType = itemView.findViewById<android.widget.TextView>(R.id.textSiteType)
             private val textUrl = itemView.findViewById<android.widget.TextView>(R.id.textSiteUrl)
-            private val switchEnabled = itemView.findViewById<android.widget.Switch>(R.id.switchEnabled)
+            private val switchEnabled = itemView.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switchEnabled)
             private val buttonTest = itemView.findViewById<android.widget.ImageButton>(R.id.buttonTest)
             private val buttonDelete = itemView.findViewById<android.widget.ImageButton>(R.id.buttonDelete)
             

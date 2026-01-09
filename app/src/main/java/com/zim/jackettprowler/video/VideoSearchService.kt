@@ -465,6 +465,11 @@ class VideoSearchService(private val context: Context) {
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .build()
         
+        // Resolve selector aliases
+        val containerSelector = selectors.container.ifEmpty { selectors.videoContainer }
+        val titleSelector = selectors.title.ifEmpty { selectors.videoTitle }
+        val thumbSelector = selectors.thumbnailUrl.ifEmpty { selectors.thumbnail }
+        
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return emptyList()
             
@@ -473,15 +478,15 @@ class VideoSearchService(private val context: Context) {
             
             try {
                 val doc = Jsoup.parse(html, baseUrl)
-                val items = if (selectors.container.isNotEmpty()) {
-                    doc.select(selectors.container)
+                val items = if (containerSelector.isNotEmpty()) {
+                    doc.select(containerSelector)
                 } else {
                     doc.select("a[href*=video], a[href*=watch], div.video, article")
                 }
                 
                 for (item in items.take(limit)) {
-                    val title = if (selectors.title.isNotEmpty()) {
-                        item.select(selectors.title).text()
+                    val title = if (titleSelector.isNotEmpty()) {
+                        item.select(titleSelector).text()
                     } else {
                         item.text()
                     }
@@ -496,8 +501,12 @@ class VideoSearchService(private val context: Context) {
                         }
                     }
                     
-                    val thumbnail = if (selectors.thumbnailUrl.isNotEmpty()) {
-                        item.select(selectors.thumbnailUrl).attr("abs:src")
+                    val thumbnail = if (thumbSelector.isNotEmpty()) {
+                        item.select(thumbSelector).attr("abs:src").ifEmpty {
+                            item.select(thumbSelector).attr("data-src").ifEmpty {
+                                item.select(thumbSelector).attr("data-original")
+                            }
+                        }
                     } else {
                         item.select("img").first()?.attr("abs:src") ?: ""
                     }
