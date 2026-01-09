@@ -60,6 +60,11 @@
             android:name=".TrackerManagementActivity"
             android:exported="false"
             android:label="Tracker Management" />
+        
+        <activity
+            android:name=".video.VideoSitesActivity"
+            android:exported="false"
+            android:label="Video Sites" />
 
         <activity
             android:name=".MainActivity"

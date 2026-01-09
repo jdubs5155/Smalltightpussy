@@ -85,6 +85,11 @@ class SettingsActivity : AppCompatActivity() {
             val intent = Intent(this, TrackerManagementActivity::class.java)
             startActivity(intent)
         }
+        
+        binding.buttonManageVideoSites.setOnClickListener {
+            val intent = Intent(this, com.zim.jackettprowler.video.VideoSitesActivity::class.java)
+            startActivity(intent)
+        }
     }
     
     private fun showImportDialog() {
@@ -97,22 +102,44 @@ class SettingsActivity : AppCompatActivity() {
         val prowlarrApiKey = prefs.getString("prowlarr_api_key", "11e5676f4c3444479cea3671a6c0c55b") ?: ""
         
         val options = arrayOf(
-            "Import from Jackett",
-            "Import from Prowlarr", 
-            "Import from Both"
+            "📥 Import from Jackett",
+            "📥 Import from Prowlarr", 
+            "📥 Import from Both",
+            "ℹ️ What does this do?"
         )
         
         AlertDialog.Builder(this)
-            .setTitle("Import Indexers")
-            .setMessage("This will import all configured indexers and their Torznab URLs")
+            .setTitle("Import Torznab Indexers")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> performImport("jackett", jackettUrl, jackettApiKey)
                     1 -> performImport("prowlarr", prowlarrUrl, prowlarrApiKey)
                     2 -> performImport("both", jackettUrl, jackettApiKey, prowlarrUrl, prowlarrApiKey)
+                    3 -> showImportInfoDialog()
                 }
             }
             .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showImportInfoDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("About Indexer Import")
+            .setMessage("""
+                This feature imports all configured indexers from your Jackett/Prowlarr instances.
+                
+                What it does:
+                • Fetches all configured indexers
+                • Saves their individual Torznab URLs
+                • Allows toggling each indexer on/off
+                • Enables searching each indexer independently
+                
+                Requirements:
+                • Jackett/Prowlarr must be running
+                • API credentials must be configured above
+                • Network access to your Jackett/Prowlarr server
+            """.trimIndent())
+            .setPositiveButton("Got it", null)
             .show()
     }
     

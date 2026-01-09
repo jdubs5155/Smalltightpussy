@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -13,6 +14,9 @@ import com.zim.jackettprowler.services.DaemonController
 import com.zim.jackettprowler.services.NetworkQualityMonitor
 import com.zim.jackettprowler.services.ProviderAnalytics
 import com.zim.jackettprowler.services.SearchResultCache
+import com.zim.jackettprowler.video.VideoResultAdapter
+import com.zim.jackettprowler.video.VideoSearchService
+import com.zim.jackettprowler.video.VideoResult
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,8 +29,10 @@ class MainActivity : AppCompatActivity() {
     private val client = OkHttpClient()
 
     private var adapter: TorrentAdapter? = null
+    private var videoAdapter: VideoResultAdapter? = null
     private var lastQuery: String? = null
     private var lastSource: Source? = null
+    private var isVideoMode: Boolean = false
 
     private val job = Job()
     private val uiScope = CoroutineScope(Dispatchers.Main + job)
@@ -50,6 +56,9 @@ class MainActivity : AppCompatActivity() {
     
     // Tracker manager for enhancing magnet links
     private lateinit var trackerManager: TrackerManager
+    
+    // Video search service
+    private lateinit var videoSearchService: VideoSearchService
     
     // Background services
     private lateinit var searchCache: SearchResultCache
@@ -100,6 +109,9 @@ class MainActivity : AppCompatActivity() {
         // Initialize tracker manager
         trackerManager = TrackerManager(this)
         
+        // Initialize video search service
+        videoSearchService = VideoSearchService(this)
+        
         // Initialize background services
         searchCache = SearchResultCache(this)
         networkMonitor = NetworkQualityMonitor(this)
@@ -139,13 +151,39 @@ class MainActivity : AppCompatActivity() {
         }
         binding.recyclerViewResults.layoutManager = LinearLayoutManager(this)
         binding.recyclerViewResults.adapter = adapter
+        
+        // Setup video results recycler
+        videoAdapter = VideoResultAdapter { result ->
+            openVideoResult(result)
+        }
+        binding.recyclerViewVideoResults.layoutManager = LinearLayoutManager(this)
+        binding.recyclerViewVideoResults.adapter = videoAdapter
     }
 
     private fun setupListeners() {
         binding.buttonSearch.setOnClickListener {
             val query = binding.editTextQuery.text.toString().trim()
             if (query.isNotEmpty()) {
-                performSearch(query, getSelectedSource())
+                if (isVideoMode) {
+                    performVideoSearch(query)
+                } else {
+                    performSearch(query, getSelectedSource())
+                }
+            }
+        }
+        
+        // Mode toggle listeners
+        binding.radioTorrents.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                isVideoMode = false
+                switchToTorrentMode()
+            }
+        }
+        
+        binding.radioVideos.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                isVideoMode = true
+                switchToVideoMode()
             }
         }
 
@@ -185,7 +223,11 @@ class MainActivity : AppCompatActivity() {
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 val query = binding.editTextQuery.text.toString().trim()
                 if (query.isNotEmpty()) {
-                    performSearch(query, getSelectedSource())
+                    if (isVideoMode) {
+                        performVideoSearch(query)
+                    } else {
+                        performSearch(query, getSelectedSource())
+                    }
                 }
                 true
             } else {
@@ -196,6 +238,73 @@ class MainActivity : AppCompatActivity() {
         binding.buttonSettings.setOnClickListener {
             val intent = Intent(this, SettingsActivity::class.java)
             startActivity(intent)
+        }
+    }
+    
+    private fun switchToTorrentMode() {
+        binding.recyclerViewResults.visibility = View.VISIBLE
+        binding.recyclerViewVideoResults.visibility = View.GONE
+        binding.spinnerSource.visibility = View.VISIBLE
+        binding.textStatus.text = "🧲 Torrent mode - Search torrents"
+    }
+    
+    private fun switchToVideoMode() {
+        binding.recyclerViewResults.visibility = View.GONE
+        binding.recyclerViewVideoResults.visibility = View.VISIBLE
+        binding.spinnerSource.visibility = View.GONE  // Source selector not used for videos
+        
+        val videoSites = videoSearchService.getEnabledSites()
+        if (videoSites.isEmpty()) {
+            binding.textStatus.text = "🎬 Video mode - No video sites configured. Go to Settings to add some!"
+        } else {
+            binding.textStatus.text = "🎬 Video mode - ${videoSites.size} sites enabled"
+        }
+    }
+    
+    private fun performVideoSearch(query: String) {
+        val sites = videoSearchService.getEnabledSites()
+        if (sites.isEmpty()) {
+            binding.textStatus.text = "No video sites configured! Go to Settings → Clearnet Video Sites"
+            return
+        }
+        
+        binding.textStatus.text = "🎬 Searching ${sites.size} video sites for \"$query\"..."
+        videoAdapter?.updateData(emptyList())
+        
+        uiScope.launch(Dispatchers.IO) {
+            try {
+                val result = videoSearchService.searchAll(query, 100)
+                
+                launch(Dispatchers.Main) {
+                    videoAdapter?.updateData(result.results, grouped = true)
+                    binding.textStatus.text = result.getStatusSummary()
+                    
+                    // Show detailed status on long press
+                    binding.textStatus.setOnLongClickListener {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("Video Search Details")
+                            .setMessage(result.getDetailedStatus())
+                            .setPositiveButton("OK", null)
+                            .show()
+                        true
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                launch(Dispatchers.Main) {
+                    binding.textStatus.text = "Video search error: ${e.message}"
+                }
+            }
+        }
+    }
+    
+    private fun openVideoResult(result: VideoResult) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.videoUrl))
+            startActivity(intent)
+            binding.textStatus.text = "🎬 Opening: ${result.title.take(50)}..."
+        } catch (e: Exception) {
+            binding.textStatus.text = "Error opening video: ${e.message}"
         }
     }
 

@@ -330,6 +330,42 @@
             android:layout_marginTop="4dp"
             android:layout_marginBottom="12dp" />
 
+        <!-- Video Sites Management Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🎬 Video Sites"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp" />
+        
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Search clearnet video sites like YouTube, Vimeo, Dailymotion, Rumble, and more"
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:layout_marginBottom="12dp" />
+
+        <Button
+            android:id="@+id/buttonManageVideoSites"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🎥 Manage Video Sites (10+)"
+            android:backgroundTint="#E74C3C"
+            android:textColor="@android:color/white"
+            android:padding="16dp" />
+        
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Add and configure video sites for searching. Use 'Videos' mode in main screen to search."
+            android:textSize="11sp"
+            android:textColor="#888888"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp" />
+
     </LinearLayout>
 
 </ScrollView>
