@@ -23,6 +23,7 @@ class VideoSitesActivity : AppCompatActivity() {
     private lateinit var binding: ActivityVideoSitesBinding
     private lateinit var videoService: VideoSearchService
     private lateinit var universalExtractor: UniversalVideoExtractor
+    private lateinit var infiltrationEngine: SiteInfiltrationEngine
     private lateinit var adapter: VideoSiteAdapter
     
     private val job = Job()
@@ -37,6 +38,7 @@ class VideoSitesActivity : AppCompatActivity() {
         
         videoService = VideoSearchService(this)
         universalExtractor = UniversalVideoExtractor(this)
+        infiltrationEngine = SiteInfiltrationEngine(this)
         
         setupRecyclerView()
         setupButtons()
@@ -116,9 +118,24 @@ class VideoSitesActivity : AppCompatActivity() {
     }
     
     private fun deepDiscoverSite(url: String) {
-        val progress = ProgressDialog.show(this, "🔍 Deep Analysis", "Probing site capabilities...\n\n• Detecting instance type\n• Finding API endpoints\n• Analyzing page structure\n• Learning selectors", true)
+        val progress = ProgressDialog.show(this, "🔍 Advanced Site Infiltration", "Analyzing site...\n\n• Detecting platform type\n• Probing API endpoints\n• Scanning page structure\n• Learning CSS selectors\n• Bypassing protections", true)
         
         uiScope.launch(Dispatchers.IO) {
+            // First try the advanced infiltration engine
+            val infiltrationResult = infiltrationEngine.infiltrate(url)
+            
+            if (infiltrationResult.success && infiltrationResult.config != null) {
+                val config = infiltrationResult.config
+                if (config is VideoSiteConfig) {
+                    launch(Dispatchers.Main) {
+                        progress.dismiss()
+                        showInfiltrationResults(infiltrationResult, config)
+                    }
+                    return@launch
+                }
+            }
+            
+            // Fallback to universal extractor
             val discovered = universalExtractor.deepAnalyze(url)
             
             launch(Dispatchers.Main) {
@@ -132,6 +149,96 @@ class VideoSitesActivity : AppCompatActivity() {
                         "Could not analyze site. Try adding manually.",
                         Toast.LENGTH_LONG
                     ).show()
+                }
+            }
+        }
+    }
+    
+    private fun showInfiltrationResults(result: SiteInfiltrationEngine.InfiltrationResult, config: VideoSiteConfig) {
+        val featuresText = result.features.joinToString("\n") { "✓ $it" }
+        val warningsText = if (result.warnings.isNotEmpty()) {
+            "\n\n⚠️ Warnings:\n" + result.warnings.joinToString("\n") { "• $it" }
+        } else ""
+        val apisText = if (result.apiEndpoints.isNotEmpty()) {
+            "\n\nAPI Endpoints:\n" + result.apiEndpoints.take(3).joinToString("\n") { "• ${it.takeLast(50)}" }
+        } else ""
+        
+        val confidenceEmoji = when {
+            result.confidence >= 0.8f -> "🟢"
+            result.confidence >= 0.5f -> "🟡"
+            else -> "🔴"
+        }
+        
+        val siteTypeText = when (result.siteType) {
+            SiteInfiltrationEngine.SiteType.VIDEO -> "Video Platform"
+            SiteInfiltrationEngine.SiteType.ADULT_VIDEO -> "Adult Video (18+)"
+            SiteInfiltrationEngine.SiteType.TORRENT -> "Torrent Site"
+            SiteInfiltrationEngine.SiteType.INVIDIOUS_INSTANCE -> "Invidious Instance"
+            SiteInfiltrationEngine.SiteType.PIPED_INSTANCE -> "Piped Instance"
+            SiteInfiltrationEngine.SiteType.PEERTUBE_INSTANCE -> "PeerTube Instance"
+            SiteInfiltrationEngine.SiteType.GENERIC_VIDEO -> "Generic Video Site"
+            SiteInfiltrationEngine.SiteType.GENERIC_TORRENT -> "Generic Torrent Site"
+            else -> "Unknown"
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("$confidenceEmoji Site Infiltrated!")
+            .setMessage("""
+                |🎯 Name: ${config.name}
+                |📁 Type: $siteTypeText
+                |🎯 Confidence: ${(result.confidence * 100).toInt()}%
+                |
+                |Features Detected:
+                |$featuresText$apisText$warningsText
+            """.trimMargin())
+            .setPositiveButton("Add Site") { _, _ ->
+                videoService.saveSite(config)
+                refreshSiteList()
+                Toast.makeText(this, "✓ Added: ${config.name}", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Test First") { _, _ ->
+                testInfiltratedSite(result, config)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun testInfiltratedSite(result: SiteInfiltrationEngine.InfiltrationResult, config: VideoSiteConfig) {
+        val progress = ProgressDialog.show(this, "Testing Configuration", "Searching for 'test'...", true)
+        
+        uiScope.launch(Dispatchers.IO) {
+            try {
+                val testResult = infiltrationEngine.testConfiguration(config, "test")
+                
+                launch(Dispatchers.Main) {
+                    progress.dismiss()
+                    
+                    if (testResult.success) {
+                        AlertDialog.Builder(this@VideoSitesActivity)
+                            .setTitle("✅ Test Successful!")
+                            .setMessage("Found ${testResult.resultCount} results!\n\nExample:\n${testResult.sampleTitle?.take(60) ?: "N/A"}...")
+                            .setPositiveButton("Add Site") { _, _ ->
+                                videoService.saveSite(config)
+                                refreshSiteList()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    } else {
+                        AlertDialog.Builder(this@VideoSitesActivity)
+                            .setTitle("⚠️ Test Failed")
+                            .setMessage("${testResult.error ?: "No results found"}\n\nWould you like to add the site anyway? It may still work for some searches.")
+                            .setPositiveButton("Add Anyway") { _, _ ->
+                                videoService.saveSite(config)
+                                refreshSiteList()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    progress.dismiss()
+                    Toast.makeText(this@VideoSitesActivity, "Test error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
