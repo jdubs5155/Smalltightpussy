@@ -14,165 +14,245 @@
 12    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 12-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:5:5-79
 12-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:5:22-76
-13
-14    <permission
-14-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:22:5-24:47
-15        android:name="com.zim.jackettprowler.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
-15-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:23:9-81
-16        android:protectionLevel="signature" />
-16-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:24:9-44
-17
-18    <uses-permission android:name="com.zim.jackettprowler.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
-18-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:26:5-97
-18-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:26:22-94
-19
-20    <application
-20-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:5-53:19
-21        android:allowBackup="true"
-21-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:8:9-35
-22        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
-22-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:28:18-86
-23        android:debuggable="true"
-24        android:extractNativeLibs="false"
-25        android:icon="@mipmap/ic_launcher"
-25-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:9:9-43
-26        android:label="@string/app_name"
-26-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:9-41
-27        android:networkSecurityConfig="@xml/network_security_config"
-27-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:14:9-69
-28        android:roundIcon="@mipmap/ic_launcher_round"
-28-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:9-54
-29        android:supportsRtl="true"
-29-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:12:9-35
-30        android:theme="@style/Theme.JackettProwlarrClient"
-30-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:13:9-59
-31        android:usesCleartextTraffic="true" >
-31-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:15:9-44
-32        <activity
-32-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:17:9-19:40
-33            android:name="com.zim.jackettprowler.CustomURLsActivity"
-33-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:18:13-47
-34            android:exported="false" />
-34-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:19:13-37
-35        <activity
-35-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:21:9-23:40
-36            android:name="com.zim.jackettprowler.IndexerManagementActivity"
-36-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:22:13-54
-37            android:exported="false" />
-37-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:23:13-37
-38        <activity
-38-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:25:9-28:45
-39            android:name="com.zim.jackettprowler.UnifiedProviderManagementActivity"
-39-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:26:13-62
-40            android:exported="false"
-40-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:27:13-37
-41            android:label="All Providers" />
-41-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:28:13-42
-42        <activity
-42-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:30:9-33:51
-43            android:name="com.zim.jackettprowler.SmartProviderAddActivity"
-43-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:31:13-53
-44            android:exported="false"
-44-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:32:13-37
-45            android:label="Add Custom Provider" />
-45-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:33:13-48
-46        <activity
-46-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:35:9-37:40
-47            android:name="com.zim.jackettprowler.SettingsActivity"
-47-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:36:13-45
-48            android:exported="false" />
-48-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:37:13-37
-49        <activity
-49-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:39:9-42:50
-50            android:name="com.zim.jackettprowler.TrackerManagementActivity"
-50-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:40:13-54
-51            android:exported="false"
-51-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:41:13-37
-52            android:label="Tracker Management" />
-52-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:42:13-47
-53        <activity
-53-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:44:9-51:20
-54            android:name="com.zim.jackettprowler.MainActivity"
-54-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:45:13-41
-55            android:exported="true" >
-55-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:46:13-36
-56            <intent-filter>
-56-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:47:13-50:29
-57                <action android:name="android.intent.action.MAIN" />
-57-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:48:17-69
-57-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:48:25-66
-58
-59                <category android:name="android.intent.category.LAUNCHER" />
-59-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:49:17-77
-59-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:49:27-74
-60            </intent-filter>
-61        </activity>
-62
-63        <provider
-63-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
-64            android:name="androidx.startup.InitializationProvider"
-64-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:25:13-67
-65            android:authorities="com.zim.jackettprowler.androidx-startup"
-65-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:26:13-68
-66            android:exported="false" >
-66-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:27:13-37
-67            <meta-data
-67-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
-68                android:name="androidx.emoji2.text.EmojiCompatInitializer"
-68-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:30:17-75
-69                android:value="androidx.startup" />
-69-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:31:17-49
-70            <meta-data
-70-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/codespace/.gradle/caches/transforms-3/031b5b4322ae0587c914dbce1970481a/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
-71                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-71-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/codespace/.gradle/caches/transforms-3/031b5b4322ae0587c914dbce1970481a/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
-72                android:value="androidx.startup" />
-72-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/codespace/.gradle/caches/transforms-3/031b5b4322ae0587c914dbce1970481a/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
-73            <meta-data
-73-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
-74                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
-74-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
-75                android:value="androidx.startup" />
-75-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
-76        </provider>
-77
-78        <receiver
-78-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
-79            android:name="androidx.profileinstaller.ProfileInstallReceiver"
-79-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
-80            android:directBootAware="false"
-80-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
-81            android:enabled="true"
-81-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
-82            android:exported="true"
-82-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
-83            android:permission="android.permission.DUMP" >
-83-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
-84            <intent-filter>
-84-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
-85                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
-85-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
-85-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
-86            </intent-filter>
-87            <intent-filter>
-87-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
-88                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
-88-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
-88-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
-89            </intent-filter>
-90            <intent-filter>
-90-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
-91                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
-91-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
-91-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
-92            </intent-filter>
-93            <intent-filter>
-93-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
-94                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
-94-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
-94-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
-95            </intent-filter>
-96        </receiver>
-97    </application>
-98
-99</manifest>
+13    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+13-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:6:5-77
+13-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:6:22-74
+14    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+14-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:5-87
+14-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:22-84
+15    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+15-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:8:5-77
+15-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:8:22-74
+16    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+16-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:9:5-81
+16-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:9:22-78
+17    <uses-permission
+17-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:5-108
+18        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+18-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:22-78
+19        android:maxSdkVersion="28" />
+19-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:79-105
+20    <uses-permission
+20-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:5-107
+21        android:name="android.permission.READ_EXTERNAL_STORAGE"
+21-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:22-77
+22        android:maxSdkVersion="32" />
+22-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:78-104
+23
+24    <permission
+24-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:22:5-24:47
+25        android:name="com.zim.jackettprowler.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+25-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:23:9-81
+26        android:protectionLevel="signature" />
+26-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:24:9-44
+27
+28    <uses-permission android:name="com.zim.jackettprowler.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+28-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:26:5-97
+28-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:26:22-94
+29
+30    <application
+30-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:13:5-92:19
+31        android:allowBackup="true"
+31-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:14:9-35
+32        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+32-->[androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:28:18-86
+33        android:debuggable="true"
+34        android:extractNativeLibs="false"
+35        android:icon="@mipmap/ic_launcher"
+35-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:15:9-43
+36        android:label="@string/app_name"
+36-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:16:9-41
+37        android:networkSecurityConfig="@xml/network_security_config"
+37-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:20:9-69
+38        android:requestLegacyExternalStorage="true"
+38-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:22:9-52
+39        android:roundIcon="@mipmap/ic_launcher_round"
+39-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:17:9-54
+40        android:supportsRtl="true"
+40-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:18:9-35
+41        android:theme="@style/Theme.JackettProwlarrClient"
+41-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:19:9-59
+42        android:usesCleartextTraffic="true" >
+42-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:21:9-44
+43
+44        <!-- FileProvider for sharing downloaded videos -->
+45        <provider
+46            android:name="androidx.core.content.FileProvider"
+46-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:26:13-62
+47            android:authorities="com.zim.jackettprowler.provider"
+47-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:27:13-60
+48            android:exported="false"
+48-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:28:13-37
+49            android:grantUriPermissions="true" >
+49-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:29:13-47
+50            <meta-data
+50-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:30:13-32:54
+51                android:name="android.support.FILE_PROVIDER_PATHS"
+51-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:31:17-67
+52                android:resource="@xml/file_paths" />
+52-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:32:17-51
+53        </provider>
+54
+55        <!-- Background Service Daemon -->
+56        <service
+56-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:36:9-39:56
+57            android:name="com.zim.jackettprowler.services.BackgroundServiceDaemon"
+57-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:37:13-61
+58            android:exported="false"
+58-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:38:13-37
+59            android:foregroundServiceType="dataSync" />
+59-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:39:13-53
+60
+61        <!-- Boot Receiver to restart daemon -->
+62        <receiver
+62-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:42:9-49:20
+63            android:name="com.zim.jackettprowler.services.BootReceiver"
+63-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:43:13-50
+64            android:enabled="true"
+64-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:45:13-35
+65            android:exported="true" >
+65-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:44:13-36
+66            <intent-filter>
+66-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:46:13-48:29
+67                <action android:name="android.intent.action.BOOT_COMPLETED" />
+67-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:47:17-79
+67-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:47:25-76
+68            </intent-filter>
+69        </receiver>
+70
+71        <activity
+71-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:51:9-53:40
+72            android:name="com.zim.jackettprowler.CustomURLsActivity"
+72-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:52:13-47
+73            android:exported="false" />
+73-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:53:13-37
+74        <activity
+74-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:55:9-57:40
+75            android:name="com.zim.jackettprowler.IndexerManagementActivity"
+75-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:56:13-54
+76            android:exported="false" />
+76-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:57:13-37
+77        <activity
+77-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:59:9-62:45
+78            android:name="com.zim.jackettprowler.UnifiedProviderManagementActivity"
+78-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:60:13-62
+79            android:exported="false"
+79-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:61:13-37
+80            android:label="All Providers" />
+80-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:62:13-42
+81        <activity
+81-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:64:9-67:51
+82            android:name="com.zim.jackettprowler.SmartProviderAddActivity"
+82-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:65:13-53
+83            android:exported="false"
+83-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:66:13-37
+84            android:label="Add Custom Provider" />
+84-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:67:13-48
+85        <activity
+85-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:69:9-71:40
+86            android:name="com.zim.jackettprowler.SettingsActivity"
+86-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:70:13-45
+87            android:exported="false" />
+87-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:71:13-37
+88        <activity
+88-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:73:9-76:50
+89            android:name="com.zim.jackettprowler.TrackerManagementActivity"
+89-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:74:13-54
+90            android:exported="false"
+90-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:75:13-37
+91            android:label="Tracker Management" />
+91-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:76:13-47
+92        <activity
+92-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:78:9-81:43
+93            android:name="com.zim.jackettprowler.video.VideoSitesActivity"
+93-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:79:13-53
+94            android:exported="false"
+94-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:80:13-37
+95            android:label="Video Sites" />
+95-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:81:13-40
+96        <activity
+96-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:83:9-90:20
+97            android:name="com.zim.jackettprowler.MainActivity"
+97-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:84:13-41
+98            android:exported="true" >
+98-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:85:13-36
+99            <intent-filter>
+99-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:86:13-89:29
+100                <action android:name="android.intent.action.MAIN" />
+100-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:87:17-69
+100-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:87:25-66
+101
+102                <category android:name="android.intent.category.LAUNCHER" />
+102-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:88:17-77
+102-->/workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:88:27-74
+103            </intent-filter>
+104        </activity>
+105
+106        <provider
+106-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
+107            android:name="androidx.startup.InitializationProvider"
+107-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:25:13-67
+108            android:authorities="com.zim.jackettprowler.androidx-startup"
+108-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:26:13-68
+109            android:exported="false" >
+109-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:27:13-37
+110            <meta-data
+110-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
+111                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+111-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:30:17-75
+112                android:value="androidx.startup" />
+112-->[androidx.emoji2:emoji2:1.3.0] /home/codespace/.gradle/caches/transforms-3/a6ee396c37351089c855c518b753c819/transformed/jetified-emoji2-1.3.0/AndroidManifest.xml:31:17-49
+113            <meta-data
+113-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/codespace/.gradle/caches/transforms-3/031b5b4322ae0587c914dbce1970481a/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:29:13-31:52
+114                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+114-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/codespace/.gradle/caches/transforms-3/031b5b4322ae0587c914dbce1970481a/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:30:17-78
+115                android:value="androidx.startup" />
+115-->[androidx.lifecycle:lifecycle-process:2.6.2] /home/codespace/.gradle/caches/transforms-3/031b5b4322ae0587c914dbce1970481a/transformed/jetified-lifecycle-process-2.6.2/AndroidManifest.xml:31:17-49
+116            <meta-data
+116-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
+117                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+117-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+118                android:value="androidx.startup" />
+118-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
+119        </provider>
+120
+121        <receiver
+121-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
+122            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+122-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
+123            android:directBootAware="false"
+123-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
+124            android:enabled="true"
+124-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
+125            android:exported="true"
+125-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
+126            android:permission="android.permission.DUMP" >
+126-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
+127            <intent-filter>
+127-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
+128                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+128-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
+128-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
+129            </intent-filter>
+130            <intent-filter>
+130-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
+131                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+131-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
+131-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
+132            </intent-filter>
+133            <intent-filter>
+133-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
+134                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+134-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
+134-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
+135            </intent-filter>
+136            <intent-filter>
+136-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
+137                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+137-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
+137-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/codespace/.gradle/caches/transforms-3/9edd4987bf14549a224f7b6e71b0401e/transformed/jetified-profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
+138            </intent-filter>
+139        </receiver>
+140    </application>
+141
+142</manifest>

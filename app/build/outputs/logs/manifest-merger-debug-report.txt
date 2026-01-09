@@ -1,9 +1,20 @@
 -- Merging decision tree log ---
+provider#androidx.core.content.FileProvider
+INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:25:9-33:20
+	android:grantUriPermissions
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:29:13-47
+	android:authorities
+		INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:27:13-60
+	android:exported
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:28:13-37
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:26:13-62
 manifest
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-55:12
-INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-55:12
-INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-55:12
-INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-55:12
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-94:12
+INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-94:12
+INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-94:12
+INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:2:1-94:12
 MERGED from [androidx.databinding:viewbinding:8.2.0] /home/codespace/.gradle/caches/transforms-3/0ac49f6341771b75f0a928230b32f190/transformed/jetified-viewbinding-8.2.0/AndroidManifest.xml:2:1-7:12
 MERGED from [com.google.android.material:material:1.12.0] /home/codespace/.gradle/caches/transforms-3/c29f1a47a7b2f2bfd5db2868f2be0231/transformed/material-1.12.0/AndroidManifest.xml:17:1-24:12
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/codespace/.gradle/caches/transforms-3/8177fc0ae5949b09fa6ab8b305676505/transformed/constraintlayout-2.1.4/AndroidManifest.xml:2:1-11:12
@@ -63,9 +74,37 @@ uses-permission#android.permission.ACCESS_NETWORK_STATE
 ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:5:5-79
 	android:name
 		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:5:22-76
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:6:5-77
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:6:22-74
+uses-permission#android.permission.FOREGROUND_SERVICE_DATA_SYNC
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:5-87
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:22-84
+uses-permission#android.permission.POST_NOTIFICATIONS
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:8:5-77
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:8:22-74
+uses-permission#android.permission.RECEIVE_BOOT_COMPLETED
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:9:5-81
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:9:22-78
+uses-permission#android.permission.WRITE_EXTERNAL_STORAGE
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:5-108
+	android:maxSdkVersion
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:79-105
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:22-78
+uses-permission#android.permission.READ_EXTERNAL_STORAGE
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:5-107
+	android:maxSdkVersion
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:78-104
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:22-77
 application
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:5-53:19
-INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:7:5-53:19
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:13:5-92:19
+INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:13:5-92:19
 MERGED from [com.google.android.material:material:1.12.0] /home/codespace/.gradle/caches/transforms-3/c29f1a47a7b2f2bfd5db2868f2be0231/transformed/material-1.12.0/AndroidManifest.xml:22:5-20
 MERGED from [com.google.android.material:material:1.12.0] /home/codespace/.gradle/caches/transforms-3/c29f1a47a7b2f2bfd5db2868f2be0231/transformed/material-1.12.0/AndroidManifest.xml:22:5-20
 MERGED from [androidx.constraintlayout:constraintlayout:2.1.4] /home/codespace/.gradle/caches/transforms-3/8177fc0ae5949b09fa6ab8b305676505/transformed/constraintlayout-2.1.4/AndroidManifest.xml:9:5-20
@@ -84,82 +123,120 @@ MERGED from [androidx.startup:startup-runtime:1.1.1] /home/codespace/.gradle/cac
 MERGED from [androidx.startup:startup-runtime:1.1.1] /home/codespace/.gradle/caches/transforms-3/406d807a7ce62df501812ba1c8fa845a/transformed/jetified-startup-runtime-1.1.1/AndroidManifest.xml:25:5-31:19
 	android:extractNativeLibs
 		INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml
+	android:requestLegacyExternalStorage
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:22:9-52
 	android:appComponentFactory
 		ADDED from [androidx.core:core:1.13.1] /home/codespace/.gradle/caches/transforms-3/941772b63348fc5871296b1110339df0/transformed/core-1.13.1/AndroidManifest.xml:28:18-86
 	android:supportsRtl
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:12:9-35
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:18:9-35
 	android:label
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:10:9-41
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:16:9-41
 	android:roundIcon
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:11:9-54
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:17:9-54
 	android:icon
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:9:9-43
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:15:9-43
 	android:allowBackup
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:8:9-35
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:14:9-35
 	android:theme
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:13:9-59
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:19:9-59
 	android:networkSecurityConfig
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:14:9-69
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:20:9-69
 	android:usesCleartextTraffic
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:15:9-44
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:21:9-44
+service#com.zim.jackettprowler.services.BackgroundServiceDaemon
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:36:9-39:56
+	android:exported
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:38:13-37
+	android:foregroundServiceType
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:39:13-53
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:37:13-61
+receiver#com.zim.jackettprowler.services.BootReceiver
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:42:9-49:20
+	android:enabled
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:45:13-35
+	android:exported
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:44:13-36
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:43:13-50
+intent-filter#action:name:android.intent.action.BOOT_COMPLETED
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:46:13-48:29
+action#android.intent.action.BOOT_COMPLETED
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:47:17-79
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:47:25-76
 activity#com.zim.jackettprowler.CustomURLsActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:17:9-19:40
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:51:9-53:40
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:19:13-37
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:53:13-37
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:18:13-47
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:52:13-47
 activity#com.zim.jackettprowler.IndexerManagementActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:21:9-23:40
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:55:9-57:40
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:23:13-37
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:57:13-37
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:22:13-54
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:56:13-54
 activity#com.zim.jackettprowler.UnifiedProviderManagementActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:25:9-28:45
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:59:9-62:45
 	android:label
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:28:13-42
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:62:13-42
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:27:13-37
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:61:13-37
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:26:13-62
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:60:13-62
 activity#com.zim.jackettprowler.SmartProviderAddActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:30:9-33:51
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:64:9-67:51
 	android:label
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:33:13-48
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:67:13-48
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:32:13-37
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:66:13-37
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:31:13-53
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:65:13-53
 activity#com.zim.jackettprowler.SettingsActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:35:9-37:40
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:69:9-71:40
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:37:13-37
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:71:13-37
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:36:13-45
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:70:13-45
 activity#com.zim.jackettprowler.TrackerManagementActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:39:9-42:50
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:73:9-76:50
 	android:label
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:42:13-47
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:76:13-47
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:41:13-37
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:75:13-37
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:40:13-54
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:74:13-54
+activity#com.zim.jackettprowler.video.VideoSitesActivity
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:78:9-81:43
+	android:label
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:81:13-40
+	android:exported
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:80:13-37
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:79:13-53
 activity#com.zim.jackettprowler.MainActivity
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:44:9-51:20
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:83:9-90:20
 	android:exported
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:46:13-36
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:85:13-36
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:45:13-41
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:84:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:47:13-50:29
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:86:13-89:29
 action#android.intent.action.MAIN
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:48:17-69
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:87:17-69
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:48:25-66
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:87:25-66
 category#android.intent.category.LAUNCHER
-ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:49:17-77
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:88:17-77
 	android:name
-		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:49:27-74
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:88:27-74
+meta-data#android.support.FILE_PROVIDER_PATHS
+ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:30:13-32:54
+	android:resource
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:32:17-51
+	android:name
+		ADDED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml:31:17-67
 uses-sdk
 INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /workspaces/JackettProwlarrClient/app/src/main/AndroidManifest.xml

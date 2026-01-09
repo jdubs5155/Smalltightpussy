@@ -26,13 +26,22 @@ public final class ActivityTrackerManagementBinding implements ViewBinding {
   public final Button buttonAddTracker;
 
   @NonNull
+  public final Button buttonCopyAllTrackers;
+
+  @NonNull
   public final Button buttonResetDefaults;
+
+  @NonNull
+  public final Button buttonScanTrackers;
 
   @NonNull
   public final Button buttonUseAll;
 
   @NonNull
   public final Button buttonUseTop50;
+
+  @NonNull
+  public final Button buttonViewDatabase;
 
   @NonNull
   public final RecyclerView recyclerTrackers;
@@ -47,15 +56,20 @@ public final class ActivityTrackerManagementBinding implements ViewBinding {
   public final TextView textTrackerStats;
 
   private ActivityTrackerManagementBinding(@NonNull LinearLayout rootView,
-      @NonNull Button buttonAddTracker, @NonNull Button buttonResetDefaults,
+      @NonNull Button buttonAddTracker, @NonNull Button buttonCopyAllTrackers,
+      @NonNull Button buttonResetDefaults, @NonNull Button buttonScanTrackers,
       @NonNull Button buttonUseAll, @NonNull Button buttonUseTop50,
-      @NonNull RecyclerView recyclerTrackers, @NonNull SwitchCompat switchEnableTrackers,
-      @NonNull TextView textTrackerInfo, @NonNull TextView textTrackerStats) {
+      @NonNull Button buttonViewDatabase, @NonNull RecyclerView recyclerTrackers,
+      @NonNull SwitchCompat switchEnableTrackers, @NonNull TextView textTrackerInfo,
+      @NonNull TextView textTrackerStats) {
     this.rootView = rootView;
     this.buttonAddTracker = buttonAddTracker;
+    this.buttonCopyAllTrackers = buttonCopyAllTrackers;
     this.buttonResetDefaults = buttonResetDefaults;
+    this.buttonScanTrackers = buttonScanTrackers;
     this.buttonUseAll = buttonUseAll;
     this.buttonUseTop50 = buttonUseTop50;
+    this.buttonViewDatabase = buttonViewDatabase;
     this.recyclerTrackers = recyclerTrackers;
     this.switchEnableTrackers = switchEnableTrackers;
     this.textTrackerInfo = textTrackerInfo;
@@ -95,9 +109,21 @@ public final class ActivityTrackerManagementBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.buttonCopyAllTrackers;
+      Button buttonCopyAllTrackers = ViewBindings.findChildViewById(rootView, id);
+      if (buttonCopyAllTrackers == null) {
+        break missingId;
+      }
+
       id = R.id.buttonResetDefaults;
       Button buttonResetDefaults = ViewBindings.findChildViewById(rootView, id);
       if (buttonResetDefaults == null) {
+        break missingId;
+      }
+
+      id = R.id.buttonScanTrackers;
+      Button buttonScanTrackers = ViewBindings.findChildViewById(rootView, id);
+      if (buttonScanTrackers == null) {
         break missingId;
       }
 
@@ -110,6 +136,12 @@ public final class ActivityTrackerManagementBinding implements ViewBinding {
       id = R.id.buttonUseTop50;
       Button buttonUseTop50 = ViewBindings.findChildViewById(rootView, id);
       if (buttonUseTop50 == null) {
+        break missingId;
+      }
+
+      id = R.id.buttonViewDatabase;
+      Button buttonViewDatabase = ViewBindings.findChildViewById(rootView, id);
+      if (buttonViewDatabase == null) {
         break missingId;
       }
 
@@ -138,7 +170,8 @@ public final class ActivityTrackerManagementBinding implements ViewBinding {
       }
 
       return new ActivityTrackerManagementBinding((LinearLayout) rootView, buttonAddTracker,
-          buttonResetDefaults, buttonUseAll, buttonUseTop50, recyclerTrackers, switchEnableTrackers,
+          buttonCopyAllTrackers, buttonResetDefaults, buttonScanTrackers, buttonUseAll,
+          buttonUseTop50, buttonViewDatabase, recyclerTrackers, switchEnableTrackers,
           textTrackerInfo, textTrackerStats);
     }
     String missingId = rootView.getResources().getResourceName(id);

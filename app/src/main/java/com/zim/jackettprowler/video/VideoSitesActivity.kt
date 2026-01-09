@@ -22,6 +22,7 @@ class VideoSitesActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityVideoSitesBinding
     private lateinit var videoService: VideoSearchService
+    private lateinit var universalExtractor: UniversalVideoExtractor
     private lateinit var adapter: VideoSiteAdapter
     
     private val job = Job()
@@ -35,6 +36,7 @@ class VideoSitesActivity : AppCompatActivity() {
         title = "Clearnet Video Sites"
         
         videoService = VideoSearchService(this)
+        universalExtractor = UniversalVideoExtractor(this)
         
         setupRecyclerView()
         setupButtons()
@@ -89,15 +91,21 @@ class VideoSitesActivity : AppCompatActivity() {
     
     private fun showAddSiteDialog() {
         val editText = EditText(this).apply {
-            hint = "Paste video site URL (e.g., https://youtube.com)"
+            hint = "Paste video site URL (e.g., https://yewtu.be)"
             setPadding(48, 32, 48, 32)
         }
         
         AlertDialog.Builder(this)
-            .setTitle("Add Video Site")
-            .setMessage("Paste a URL from any video site. The app will automatically detect and configure it.\n\nSupported: YouTube, Dailymotion, Vimeo, Rumble, Odysee, BitChute, PeerTube instances, Archive.org, and more!")
+            .setTitle("🔍 Auto-Discover Video Site")
+            .setMessage("Paste ANY video site URL - the app will deep analyze and auto-configure it!\n\n✓ Invidious/Piped instances\n✓ PeerTube instances\n✓ Any video platform\n✓ Custom streaming sites")
             .setView(editText)
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton("Discover") { _, _ ->
+                val url = editText.text.toString().trim()
+                if (url.isNotEmpty()) {
+                    deepDiscoverSite(url)
+                }
+            }
+            .setNeutralButton("Simple Add") { _, _ ->
                 val url = editText.text.toString().trim()
                 if (url.isNotEmpty()) {
                     addSite(url)
@@ -105,6 +113,96 @@ class VideoSitesActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+    
+    private fun deepDiscoverSite(url: String) {
+        val progress = ProgressDialog.show(this, "🔍 Deep Analysis", "Probing site capabilities...\n\n• Detecting instance type\n• Finding API endpoints\n• Analyzing page structure\n• Learning selectors", true)
+        
+        uiScope.launch(Dispatchers.IO) {
+            val discovered = universalExtractor.deepAnalyze(url)
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                if (discovered != null) {
+                    showDiscoveryResults(discovered)
+                } else {
+                    Toast.makeText(
+                        this@VideoSitesActivity,
+                        "Could not analyze site. Try adding manually.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+    
+    private fun showDiscoveryResults(discovered: UniversalVideoExtractor.DiscoveredSite) {
+        val featuresText = discovered.features.joinToString("\n") { "✓ $it" }
+        val apisText = if (discovered.apiEndpoints.isNotEmpty()) {
+            "\n\nAPI Endpoints Found:\n" + discovered.apiEndpoints.take(3).joinToString("\n") { "• ${it.takeLast(50)}" }
+        } else ""
+        
+        val confidenceEmoji = when {
+            discovered.confidence >= 0.8f -> "🟢"
+            discovered.confidence >= 0.5f -> "🟡"
+            else -> "🔴"
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("$confidenceEmoji Site Discovered!")
+            .setMessage("""
+                |Name: ${discovered.config.name}
+                |Type: ${discovered.config.siteType}
+                |Confidence: ${(discovered.confidence * 100).toInt()}%
+                |
+                |Features:
+                |$featuresText$apisText
+            """.trimMargin())
+            .setPositiveButton("Add Site") { _, _ ->
+                videoService.saveSite(discovered.config)
+                refreshSiteList()
+                Toast.makeText(this, "Added: ${discovered.config.name}", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Test First") { _, _ ->
+                testDiscoveredSite(discovered)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun testDiscoveredSite(discovered: UniversalVideoExtractor.DiscoveredSite) {
+        val progress = ProgressDialog.show(this, "Testing", "Searching for 'test'...", true)
+        
+        uiScope.launch(Dispatchers.IO) {
+            try {
+                val results = universalExtractor.searchSite(discovered.config, "test")
+                
+                launch(Dispatchers.Main) {
+                    progress.dismiss()
+                    
+                    if (results.isNotEmpty()) {
+                        AlertDialog.Builder(this@VideoSitesActivity)
+                            .setTitle("✅ Test Successful!")
+                            .setMessage("Found ${results.size} videos!\n\nExample:\n${results.first().title.take(60)}...")
+                            .setPositiveButton("Add Site") { _, _ ->
+                                videoService.saveSite(discovered.config)
+                                refreshSiteList()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    } else {
+                        Toast.makeText(this@VideoSitesActivity, "No results found. Site may still work.", Toast.LENGTH_LONG).show()
+                        showDiscoveryResults(discovered)
+                    }
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    progress.dismiss()
+                    Toast.makeText(this@VideoSitesActivity, "Test failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
     
     private fun addSite(url: String) {
@@ -136,18 +234,22 @@ class VideoSitesActivity : AppCompatActivity() {
     
     private fun showPresetSitesDialog() {
         val presets = arrayOf(
-            "YouTube (via Invidious)",
-            "Dailymotion",
-            "Vimeo",
-            "Rumble",
-            "Odysee",
-            "BitChute",
-            "Internet Archive",
-            "Add All Public Sites"
+            "📺 YouTube (via Invidious)",
+            "🎬 Dailymotion",
+            "🎥 Vimeo",
+            "🔊 Rumble",
+            "🌊 Odysee",
+            "💬 BitChute",
+            "📚 Internet Archive",
+            "──────────────",
+            "🔗 Invidious Instances...",
+            "🔗 PeerTube Instances...",
+            "──────────────",
+            "⚡ Add All Public Sites"
         )
         
         AlertDialog.Builder(this)
-            .setTitle("Add Preset Video Sites")
+            .setTitle("Add Video Sites")
             .setItems(presets) { _, which ->
                 when (which) {
                     0 -> addPresetSite(VideoSiteType.YOUTUBE)
@@ -157,11 +259,145 @@ class VideoSitesActivity : AppCompatActivity() {
                     4 -> addPresetSite(VideoSiteType.ODYSEE)
                     5 -> addPresetSite(VideoSiteType.BITCHUTE)
                     6 -> addPresetSite(VideoSiteType.ARCHIVE_ORG)
-                    7 -> addAllPresets()
+                    8 -> showInvidiousInstancesDialog()
+                    9 -> showPeerTubeInstancesDialog()
+                    11 -> addAllPresets()
                 }
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+    
+    private fun showInvidiousInstancesDialog() {
+        val instances = arrayOf(
+            "yewtu.be (Germany)",
+            "vid.puffyan.us (USA)",
+            "invidious.snopyta.org (Finland)",
+            "invidious.kavin.rocks (India)",
+            "inv.riverside.rocks (USA)",
+            "invidious.namazso.eu (Germany)",
+            "invidio.xamh.de (Germany)",
+            "inv.bp.projectsegfau.lt (France)",
+            "invidious.osi.kr (South Korea)",
+            "invidious.slipfox.xyz (USA)"
+        )
+        
+        val instanceUrls = listOf(
+            "https://yewtu.be",
+            "https://vid.puffyan.us",
+            "https://invidious.snopyta.org",
+            "https://invidious.kavin.rocks",
+            "https://inv.riverside.rocks",
+            "https://invidious.namazso.eu",
+            "https://invidio.xamh.de",
+            "https://inv.bp.projectsegfau.lt",
+            "https://invidious.osi.kr",
+            "https://invidious.slipfox.xyz"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🔗 Invidious Instances (Privacy YouTube)")
+            .setItems(instances) { _, which ->
+                val url = instanceUrls[which]
+                val name = instances[which].substringBefore(" (")
+                addInvidiousInstance(url, name)
+            }
+            .setNeutralButton("Add Custom") { _, _ ->
+                showCustomInstanceDialog("Invidious")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showPeerTubeInstancesDialog() {
+        val instances = arrayOf(
+            "framatube.org (France)",
+            "peertube.social (Germany)",
+            "video.blender.org (Netherlands)",
+            "tilvids.com (USA)",
+            "tube.tchncs.de (Germany)",
+            "diode.zone (France)",
+            "videos.pair2jeux.tube (France)",
+            "peertube.uno (Spain)",
+            "video.liberta.vip (Italy)"
+        )
+        
+        val instanceUrls = listOf(
+            "https://framatube.org",
+            "https://peertube.social",
+            "https://video.blender.org",
+            "https://tilvids.com",
+            "https://tube.tchncs.de",
+            "https://diode.zone",
+            "https://videos.pair2jeux.tube",
+            "https://peertube.uno",
+            "https://video.liberta.vip"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("🔗 PeerTube Instances (Federated Video)")
+            .setItems(instances) { _, which ->
+                val url = instanceUrls[which]
+                val name = instances[which].substringBefore(" (")
+                addPeerTubeInstance(url, name)
+            }
+            .setNeutralButton("Add Custom") { _, _ ->
+                showCustomInstanceDialog("PeerTube")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showCustomInstanceDialog(type: String) {
+        val editText = EditText(this).apply {
+            hint = "https://instance.example.com"
+            setPadding(48, 32, 48, 32)
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("Add Custom $type Instance")
+            .setMessage("Enter the base URL of the $type instance:")
+            .setView(editText)
+            .setPositiveButton("Add") { _, _ ->
+                val url = editText.text.toString().trim()
+                if (url.isNotEmpty()) {
+                    deepDiscoverSite(url)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun addInvidiousInstance(url: String, name: String) {
+        val config = VideoSiteConfig(
+            id = "invidious_${name.lowercase().replace(".", "_")}",
+            name = "Invidious ($name)",
+            baseUrl = url,
+            siteType = VideoSiteType.YOUTUBE,
+            instanceUrl = url,
+            apiEndpoint = "$url/api/v1/search",
+            searchPath = "/search?q={query}"
+        )
+        
+        videoService.saveSite(config)
+        refreshSiteList()
+        Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun addPeerTubeInstance(url: String, name: String) {
+        val config = VideoSiteConfig(
+            id = "peertube_${name.lowercase().replace(".", "_")}",
+            name = "PeerTube ($name)",
+            baseUrl = url,
+            siteType = VideoSiteType.PEERTUBE,
+            instanceUrl = url,
+            apiEndpoint = "$url/api/v1/search/videos",
+            searchPath = "/search?search={query}"
+        )
+        
+        videoService.saveSite(config)
+        refreshSiteList()
+        Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
     }
     
     private fun addPresetSite(type: VideoSiteType) {

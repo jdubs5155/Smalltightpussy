@@ -3023,6 +3023,7 @@ drawable ic_mtrl_chip_checked_black
 drawable ic_mtrl_chip_checked_circle
 drawable ic_mtrl_chip_close_circle
 drawable ic_search_black_24
+drawable ic_video_placeholder
 drawable indeterminate_static
 drawable m3_avd_hide_password
 drawable m3_avd_show_password
@@ -3096,6 +3097,7 @@ drawable notification_template_icon_bg
 drawable notification_template_icon_low_bg
 drawable notification_tile_bg
 drawable notify_panel_notification_icon_bg
+drawable radio_selector
 drawable test_level_drawable
 drawable tooltip_frame_dark
 drawable tooltip_frame_light
@@ -3198,12 +3200,18 @@ id bounceBoth
 id bounceEnd
 id bounceStart
 id buttonAddCustomURLs
+id buttonAddPreset
+id buttonAddSite
 id buttonAddTracker
+id buttonCopyAllTrackers
+id buttonDelete
+id buttonDownload
 id buttonImportIndexers
 id buttonLoadBuiltInProviders
 id buttonManageBuiltInProviders
 id buttonManageIndexers
 id buttonManageTrackers
+id buttonManageVideoSites
 id buttonMassImportJackett
 id buttonMassImportProwlarr
 id buttonPanel
@@ -3211,10 +3219,14 @@ id buttonRefresh
 id buttonResetDefaults
 id buttonSaveCustomSite
 id buttonSaveSettings
+id buttonScanTrackers
 id buttonSearch
 id buttonSettings
+id buttonTest
+id buttonTestAll
 id buttonUseAll
 id buttonUseTop50
+id buttonViewDatabase
 id buttonViewSavedSites
 id button_analyze
 id button_disable_all
@@ -3366,6 +3378,7 @@ id ifRoom
 id ignore
 id ignoreRequest
 id image
+id imageThumbnail
 id immediateStop
 id included
 id indeterminate
@@ -3507,10 +3520,15 @@ id progress_circular
 id progress_horizontal
 id prowlarrIndexersLayout
 id radio
+id radioGroupMode
+id radioTorrents
+id radioVideos
 id ratio
 id rectangles
 id recyclerTrackers
 id recyclerViewResults
+id recyclerViewSites
+id recyclerViewVideoResults
 id recycler_providers
 id report_drawn
 id reverseSawtooth
@@ -3584,6 +3602,7 @@ id submenuarrow
 id submit_area
 id supportScrollUp
 id switchEnableTrackers
+id switchEnabled
 id switch_provider_enabled
 id tabMode
 id tag_accessibility_actions
@@ -3602,12 +3621,20 @@ id tag_window_insets_animation_callback
 id text
 id text2
 id textCategory
+id textChannel
+id textDuration
+id textEmptyMessage
 id textEnd
 id textHealth
 id textIndexer
 id textLeechers
 id textSeeders
+id textSiteCount
+id textSiteName
+id textSiteType
+id textSiteUrl
 id textSize
+id textSource
 id textSpacerNoButtons
 id textSpacerNoTitle
 id textStart
@@ -3616,6 +3643,8 @@ id textTitle
 id textTop
 id textTrackerInfo
 id textTrackerStats
+id textVideoTitle
+id textViews
 id text_header
 id text_input_end_icon
 id text_input_error_icon
@@ -3638,6 +3667,7 @@ id titleDividerNoCustom
 id title_template
 id toggle
 id toggleDescriptiveSearch
+id toggleDownloadableOnly
 id top
 id topBar
 id topPanel
@@ -3797,6 +3827,7 @@ layout activity_settings
 layout activity_smart_provider_add
 layout activity_tracker_management
 layout activity_unified_provider_management
+layout activity_video_sites
 layout custom_dialog
 layout design_bottom_navigation_item
 layout design_bottom_sheet_dialog
@@ -3818,6 +3849,8 @@ layout ime_secondary_split_test_activity
 layout item_provider
 layout item_provider_header
 layout item_torrent
+layout item_video_result
+layout item_video_site
 layout m3_alert_dialog
 layout m3_alert_dialog_actions
 layout m3_alert_dialog_title
@@ -5339,4 +5372,5 @@ styleable ViewPager2 android_orientation
 styleable ViewStubCompat android_id android_layout android_inflatedId
 styleable ViewTransition android_id SharedValue SharedValueId clearsTag duration ifTagNotSet ifTagSet motionInterpolator motionTarget onStateTransition pathMotionArc setsTag transitionDisable upDuration viewTransitionMode
 styleable include constraintSet
+xml file_paths
 xml network_security_config

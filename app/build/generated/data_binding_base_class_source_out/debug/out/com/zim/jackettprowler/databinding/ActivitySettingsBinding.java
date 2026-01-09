@@ -37,6 +37,9 @@ public final class ActivitySettingsBinding implements ViewBinding {
   public final Button buttonManageTrackers;
 
   @NonNull
+  public final Button buttonManageVideoSites;
+
+  @NonNull
   public final Button buttonSaveSettings;
 
   @NonNull
@@ -66,17 +69,18 @@ public final class ActivitySettingsBinding implements ViewBinding {
   private ActivitySettingsBinding(@NonNull ScrollView rootView, @NonNull Button buttonAddCustomURLs,
       @NonNull Button buttonImportIndexers, @NonNull Button buttonManageBuiltInProviders,
       @NonNull Button buttonManageIndexers, @NonNull Button buttonManageTrackers,
-      @NonNull Button buttonSaveSettings, @NonNull CheckBox checkEnableQb,
-      @NonNull EditText editJackettApiKey, @NonNull EditText editJackettUrl,
-      @NonNull EditText editProwlarrApiKey, @NonNull EditText editProwlarrUrl,
-      @NonNull EditText editQbBaseUrl, @NonNull EditText editQbPassword,
-      @NonNull EditText editQbUsername) {
+      @NonNull Button buttonManageVideoSites, @NonNull Button buttonSaveSettings,
+      @NonNull CheckBox checkEnableQb, @NonNull EditText editJackettApiKey,
+      @NonNull EditText editJackettUrl, @NonNull EditText editProwlarrApiKey,
+      @NonNull EditText editProwlarrUrl, @NonNull EditText editQbBaseUrl,
+      @NonNull EditText editQbPassword, @NonNull EditText editQbUsername) {
     this.rootView = rootView;
     this.buttonAddCustomURLs = buttonAddCustomURLs;
     this.buttonImportIndexers = buttonImportIndexers;
     this.buttonManageBuiltInProviders = buttonManageBuiltInProviders;
     this.buttonManageIndexers = buttonManageIndexers;
     this.buttonManageTrackers = buttonManageTrackers;
+    this.buttonManageVideoSites = buttonManageVideoSites;
     this.buttonSaveSettings = buttonSaveSettings;
     this.checkEnableQb = checkEnableQb;
     this.editJackettApiKey = editJackettApiKey;
@@ -145,6 +149,12 @@ public final class ActivitySettingsBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.buttonManageVideoSites;
+      Button buttonManageVideoSites = ViewBindings.findChildViewById(rootView, id);
+      if (buttonManageVideoSites == null) {
+        break missingId;
+      }
+
       id = R.id.buttonSaveSettings;
       Button buttonSaveSettings = ViewBindings.findChildViewById(rootView, id);
       if (buttonSaveSettings == null) {
@@ -201,9 +211,9 @@ public final class ActivitySettingsBinding implements ViewBinding {
 
       return new ActivitySettingsBinding((ScrollView) rootView, buttonAddCustomURLs,
           buttonImportIndexers, buttonManageBuiltInProviders, buttonManageIndexers,
-          buttonManageTrackers, buttonSaveSettings, checkEnableQb, editJackettApiKey,
-          editJackettUrl, editProwlarrApiKey, editProwlarrUrl, editQbBaseUrl, editQbPassword,
-          editQbUsername);
+          buttonManageTrackers, buttonManageVideoSites, buttonSaveSettings, checkEnableQb,
+          editJackettApiKey, editJackettUrl, editProwlarrApiKey, editProwlarrUrl, editQbBaseUrl,
+          editQbPassword, editQbUsername);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));

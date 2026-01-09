@@ -9,6 +9,8 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.Spinner;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -39,7 +41,19 @@ public final class ActivityMainBinding implements ViewBinding {
   public final EditText editTextQuery;
 
   @NonNull
+  public final RadioGroup radioGroupMode;
+
+  @NonNull
+  public final RadioButton radioTorrents;
+
+  @NonNull
+  public final RadioButton radioVideos;
+
+  @NonNull
   public final RecyclerView recyclerViewResults;
+
+  @NonNull
+  public final RecyclerView recyclerViewVideoResults;
 
   @NonNull
   public final Spinner spinnerSource;
@@ -51,23 +65,33 @@ public final class ActivityMainBinding implements ViewBinding {
   public final CheckBox toggleDescriptiveSearch;
 
   @NonNull
+  public final CheckBox toggleDownloadableOnly;
+
+  @NonNull
   public final LinearLayout topBar;
 
   private ActivityMainBinding(@NonNull ConstraintLayout rootView,
       @NonNull ImageButton buttonRefresh, @NonNull Button buttonSearch,
       @NonNull ImageButton buttonSettings, @NonNull EditText editTextQuery,
-      @NonNull RecyclerView recyclerViewResults, @NonNull Spinner spinnerSource,
+      @NonNull RadioGroup radioGroupMode, @NonNull RadioButton radioTorrents,
+      @NonNull RadioButton radioVideos, @NonNull RecyclerView recyclerViewResults,
+      @NonNull RecyclerView recyclerViewVideoResults, @NonNull Spinner spinnerSource,
       @NonNull TextView textStatus, @NonNull CheckBox toggleDescriptiveSearch,
-      @NonNull LinearLayout topBar) {
+      @NonNull CheckBox toggleDownloadableOnly, @NonNull LinearLayout topBar) {
     this.rootView = rootView;
     this.buttonRefresh = buttonRefresh;
     this.buttonSearch = buttonSearch;
     this.buttonSettings = buttonSettings;
     this.editTextQuery = editTextQuery;
+    this.radioGroupMode = radioGroupMode;
+    this.radioTorrents = radioTorrents;
+    this.radioVideos = radioVideos;
     this.recyclerViewResults = recyclerViewResults;
+    this.recyclerViewVideoResults = recyclerViewVideoResults;
     this.spinnerSource = spinnerSource;
     this.textStatus = textStatus;
     this.toggleDescriptiveSearch = toggleDescriptiveSearch;
+    this.toggleDownloadableOnly = toggleDownloadableOnly;
     this.topBar = topBar;
   }
 
@@ -122,9 +146,33 @@ public final class ActivityMainBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.radioGroupMode;
+      RadioGroup radioGroupMode = ViewBindings.findChildViewById(rootView, id);
+      if (radioGroupMode == null) {
+        break missingId;
+      }
+
+      id = R.id.radioTorrents;
+      RadioButton radioTorrents = ViewBindings.findChildViewById(rootView, id);
+      if (radioTorrents == null) {
+        break missingId;
+      }
+
+      id = R.id.radioVideos;
+      RadioButton radioVideos = ViewBindings.findChildViewById(rootView, id);
+      if (radioVideos == null) {
+        break missingId;
+      }
+
       id = R.id.recyclerViewResults;
       RecyclerView recyclerViewResults = ViewBindings.findChildViewById(rootView, id);
       if (recyclerViewResults == null) {
+        break missingId;
+      }
+
+      id = R.id.recyclerViewVideoResults;
+      RecyclerView recyclerViewVideoResults = ViewBindings.findChildViewById(rootView, id);
+      if (recyclerViewVideoResults == null) {
         break missingId;
       }
 
@@ -146,6 +194,12 @@ public final class ActivityMainBinding implements ViewBinding {
         break missingId;
       }
 
+      id = R.id.toggleDownloadableOnly;
+      CheckBox toggleDownloadableOnly = ViewBindings.findChildViewById(rootView, id);
+      if (toggleDownloadableOnly == null) {
+        break missingId;
+      }
+
       id = R.id.topBar;
       LinearLayout topBar = ViewBindings.findChildViewById(rootView, id);
       if (topBar == null) {
@@ -153,8 +207,9 @@ public final class ActivityMainBinding implements ViewBinding {
       }
 
       return new ActivityMainBinding((ConstraintLayout) rootView, buttonRefresh, buttonSearch,
-          buttonSettings, editTextQuery, recyclerViewResults, spinnerSource, textStatus,
-          toggleDescriptiveSearch, topBar);
+          buttonSettings, editTextQuery, radioGroupMode, radioTorrents, radioVideos,
+          recyclerViewResults, recyclerViewVideoResults, spinnerSource, textStatus,
+          toggleDescriptiveSearch, toggleDownloadableOnly, topBar);
     }
     String missingId = rootView.getResources().getResourceName(id);
     throw new NullPointerException("Missing required view with ID: ".concat(missingId));
