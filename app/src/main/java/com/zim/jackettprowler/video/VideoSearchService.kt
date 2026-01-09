@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Service for searching and scraping clearnet video sites
+ * Now with site-specific extractors for adult sites!
  */
 class VideoSearchService(private val context: Context) {
     
@@ -31,6 +32,15 @@ class VideoSearchService(private val context: Context) {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.5")
+                .header("DNT", "1")
+                .header("Connection", "keep-alive")
+                .build()
+            chain.proceed(request)
+        }
         .build()
     
     private val gson = Gson()
@@ -87,8 +97,19 @@ class VideoSearchService(private val context: Context) {
     
     /**
      * Search a specific video site
+     * Uses site-specific extractors for adult sites
      */
     suspend fun searchSite(site: VideoSiteConfig, query: String, limit: Int = 20): List<VideoResult> = withContext(Dispatchers.IO) {
+        // Check if this is an adult site with a dedicated extractor
+        if (site.isAdult || site.id.startsWith("adult_")) {
+            val extractor = AdultSiteExtractors.getExtractor(site.id)
+            if (extractor != null && extractor !is AdultSiteExtractors.GenericAdultExtractor) {
+                Log.d(TAG, "Using site-specific extractor for ${site.name}")
+                return@withContext extractor.search(query, limit)
+            }
+        }
+        
+        // Standard extraction for non-adult sites
         return@withContext when (site.siteType) {
             VideoSiteType.YOUTUBE -> searchYouTube(site, query, limit)
             VideoSiteType.DAILYMOTION -> searchDailymotion(site, query, limit)

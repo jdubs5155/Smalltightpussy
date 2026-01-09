@@ -765,7 +765,9 @@ class MainActivity : AppCompatActivity() {
         // Enhance magnet link with trackers before downloading
         val downloadLink = if (result.isMagnetLink()) {
             val originalLink = result.getDownloadLink()
-            val enhancedLink = trackerManager.enhanceMagnetLink(originalLink)
+            // Clean and properly format the magnet link for LibreTorrent compatibility
+            val cleanedLink = cleanMagnetLink(originalLink)
+            val enhancedLink = trackerManager.enhanceMagnetLink(cleanedLink)
             
             // Show tracker stats in status
             val stats = trackerManager.getTrackerStats(enhancedLink)
@@ -798,7 +800,15 @@ class MainActivity : AppCompatActivity() {
             else -> {
                 // Use Android intent for other clients
                 try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadLink))
+                    // LibreTorrent requires proper URI encoding
+                    val safeLink = if (downloadLink.startsWith("magnet:")) {
+                        // Ensure the magnet link is properly encoded
+                        ensureMagnetLinkEncoding(downloadLink)
+                    } else {
+                        downloadLink
+                    }
+                    
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeLink))
                     intent.setPackage(client.type)
                     startActivity(intent)
                     binding.textStatus.text = "✓ Opening in ${client.displayName}"
@@ -814,6 +824,62 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+    
+    /**
+     * Clean magnet link by removing invalid characters and ensuring proper format
+     */
+    private fun cleanMagnetLink(magnetLink: String): String {
+        if (!magnetLink.startsWith("magnet:")) return magnetLink
+        
+        // Remove any leading/trailing whitespace
+        var cleaned = magnetLink.trim()
+        
+        // Ensure magnet:? prefix is correct
+        if (cleaned.startsWith("magnet:") && !cleaned.startsWith("magnet:?")) {
+            cleaned = cleaned.replace("magnet:", "magnet:?")
+        }
+        
+        // Fix double question marks
+        cleaned = cleaned.replace("magnet:??", "magnet:?")
+        
+        // Ensure xt parameter exists (required for LibreTorrent)
+        if (!cleaned.contains("xt=")) {
+            // Try to extract info hash from other parts of the link
+            val hashPattern = Regex("[a-fA-F0-9]{40}")
+            val match = hashPattern.find(cleaned)
+            if (match != null) {
+                val hash = match.value.lowercase()
+                if (!cleaned.contains("urn:btih:")) {
+                    cleaned = "magnet:?xt=urn:btih:$hash${cleaned.substringAfter("magnet:?").let { if (it.isNotEmpty()) "&$it" else "" }}"
+                }
+            }
+        }
+        
+        return cleaned
+    }
+    
+    /**
+     * Ensure magnet link has proper URI encoding for LibreTorrent
+     */
+    private fun ensureMagnetLinkEncoding(magnetLink: String): String {
+        // LibreTorrent is picky about encoding - ensure special chars are properly encoded
+        // But we don't want to double-encode
+        var result = magnetLink
+        
+        // Don't modify if link looks already properly encoded
+        if (magnetLink.contains("%") && !magnetLink.contains(" ")) {
+            return magnetLink
+        }
+        
+        // Encode spaces
+        result = result.replace(" ", "%20")
+        
+        // Encode brackets that might cause issues
+        result = result.replace("[", "%5B")
+        result = result.replace("]", "%5D")
+        
+        return result
     }
 
     data class TorrentClientOption(
