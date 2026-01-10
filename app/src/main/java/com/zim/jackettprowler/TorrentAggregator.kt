@@ -2,26 +2,30 @@ package com.zim.jackettprowler
 
 import android.content.Context
 import com.zim.jackettprowler.providers.ProviderRegistry
+import com.zim.jackettprowler.services.RealSourceManager
+import com.zim.jackettprowler.services.VerifiedSiteRegistry
 import kotlinx.coroutines.*
 
 /**
  * Aggregates torrent results from multiple sources:
  * - Torznab APIs (Jackett, Prowlarr)
  * - Imported indexers from Jackett/Prowlarr
- * - Built-in torrent providers (60+ sites)
+ * - VERIFIED real sources (auto-configured and tested)
  * - Custom scraper sites
  * - Onion sites via Tor
  * 
- * Now with intelligent pattern learning!
+ * NOW USES REAL VERIFIED SOURCES - NOT PRESETS!
  */
 class TorrentAggregator(private val context: Context) {
     private val customSiteManager = CustomSiteManager(context)
     private val torProxyManager = TorProxyManager(context)
     private val scraperService = ScraperService(torProxyManager, context)
     private val indexerImporter = IndexerImporter(context)
+    private val realSourceManager = RealSourceManager(context)
     
     /**
      * Search all enabled sources and aggregate results
+     * NOW PRIORITIZES VERIFIED REAL SOURCES!
      */
     suspend fun searchAll(
         query: String,
@@ -31,7 +35,8 @@ class TorrentAggregator(private val context: Context) {
         includeCustomSites: Boolean = true,
         includeOnionSites: Boolean = false,
         includeBuiltInProviders: Boolean = true,
-        includeImportedIndexers: Boolean = true
+        includeImportedIndexers: Boolean = true,
+        includeVerifiedSources: Boolean = true  // NEW: Use real verified sources
     ): AggregatedResults = withContext(Dispatchers.IO) {
         val allResults = mutableSetOf<TorrentResult>()
         val sourceStatus = mutableMapOf<String, SourceResult>()
@@ -69,10 +74,21 @@ class TorrentAggregator(private val context: Context) {
             }
         }
         
-        // Search built-in providers (60+ sites) as fallback
+        // NEW: Search VERIFIED real sources (these are tested and working!)
+        if (includeVerifiedSources) {
+            val verifiedSources = realSourceManager.getEnabledSources()
+            if (verifiedSources.isNotEmpty()) {
+                searchCustomSites(query, verifiedSources, limit, allResults, sourceStatus)
+            }
+        }
+        
+        // Search built-in providers as fallback
         if (includeBuiltInProviders) {
             val builtInConfigs = getEnabledBuiltInProviders()
-            searchCustomSites(query, builtInConfigs, limit, allResults, sourceStatus)
+            // Filter out any that are already in verified sources
+            val verifiedIds = realSourceManager.getEnabledSources().map { it.id }.toSet()
+            val uniqueBuiltIns = builtInConfigs.filter { it.id !in verifiedIds }
+            searchCustomSites(query, uniqueBuiltIns, limit, allResults, sourceStatus)
         }
         
         // Search custom clearnet sites
@@ -109,11 +125,25 @@ class TorrentAggregator(private val context: Context) {
         val enabledIds = prefs.getStringSet("enabled_providers", null)
         
         return if (enabledIds == null) {
-            // Default: enable only public providers
-            ProviderRegistry.getPublicConfigs()
+            // Default: enable only verified providers from the registry
+            VerifiedSiteRegistry.getEnabledConfigs()
         } else {
             ProviderRegistry.getAllConfigs().filter { it.id in enabledIds }
         }
+    }
+    
+    /**
+     * Get verified sources count
+     */
+    fun getVerifiedSourcesCount(): Int {
+        return realSourceManager.getEnabledSources().size
+    }
+    
+    /**
+     * Get source statistics
+     */
+    fun getSourceStats(): RealSourceManager.SourceStats {
+        return realSourceManager.getSourceStats()
     }
     
     /**

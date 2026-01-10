@@ -9,11 +9,22 @@ import com.zim.jackettprowler.automation.SiteConfigValidator
 import com.zim.jackettprowler.automation.SiteInfiltrator
 import com.zim.jackettprowler.automation.URLToConfigConverter
 import com.zim.jackettprowler.databinding.ActivitySmartProviderAddBinding
+import com.zim.jackettprowler.services.LiveSiteConfigBuilder
+import com.zim.jackettprowler.services.RealSourceManager
+import com.zim.jackettprowler.services.SiteVerificationService
+import com.zim.jackettprowler.services.VerifiedSiteRegistry
 import kotlinx.coroutines.*
 
 /**
  * Smart provider adding - just paste a URL and the app figures out the rest!
- * Now with full site infiltration, deep parsing analysis, and validation!
+ * 
+ * NOW WITH REAL AUTO-CONFIGURATION:
+ * - Actually fetches and analyzes live sites
+ * - Tests selectors against real HTML
+ * - Verifies data extraction works
+ * - Saves ONLY working configurations
+ * 
+ * NO PRESETS - everything is real and verified!
  */
 class SmartProviderAddActivity : AppCompatActivity() {
 
@@ -22,16 +33,24 @@ class SmartProviderAddActivity : AppCompatActivity() {
     private val uiScope = CoroutineScope(Dispatchers.Main + job)
     private lateinit var urlConverter: URLToConfigConverter
     private lateinit var infiltrator: SiteInfiltrator
+    private lateinit var realSourceManager: RealSourceManager
+    private lateinit var torProxyManager: TorProxyManager
+    private lateinit var liveSiteConfigBuilder: LiveSiteConfigBuilder
     private var lastConversionResult: URLToConfigConverter.ConversionResult? = null
+    private var lastRealConfigResult: LiveSiteConfigBuilder.ConfigBuildResult? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySmartProviderAddBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
-        title = "Add Custom Provider"
+        title = "Add Real Torrent Source"
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         
+        // Initialize real source system
+        torProxyManager = TorProxyManager(this)
+        realSourceManager = RealSourceManager(this)
+        liveSiteConfigBuilder = LiveSiteConfigBuilder(this, torProxyManager)
         urlConverter = URLToConfigConverter(this)
         infiltrator = SiteInfiltrator()
         
@@ -45,11 +64,15 @@ class SmartProviderAddActivity : AppCompatActivity() {
                 Toast.makeText(this, "Please enter a URL", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            analyzeSite(url)
+            // Use the NEW real auto-config system
+            analyzeAndConfigureRealSite(url)
         }
         
         binding.buttonSave.setOnClickListener {
-            if (lastConversionResult?.success == true && lastConversionResult?.config != null) {
+            // Use the real source manager to save verified configs
+            if (lastRealConfigResult?.success == true && lastRealConfigResult?.config != null) {
+                saveRealSource(lastRealConfigResult!!.config!!)
+            } else if (lastConversionResult?.success == true && lastConversionResult?.config != null) {
                 saveProvider(lastConversionResult!!.config!!)
             } else {
                 Toast.makeText(this, "Please analyze the site first", Toast.LENGTH_SHORT).show()
@@ -65,29 +88,310 @@ class SmartProviderAddActivity : AppCompatActivity() {
             testSearch(testQuery)
         }
         
-        // Add presets button if it exists in the layout
+        // Add verified sources button
         binding.root.findViewById<android.widget.Button>(R.id.buttonAddPresets)?.setOnClickListener {
-            showTorrentPresetsDialog()
+            showVerifiedSourcesDialog()
         }
     }
     
     /**
-     * Show dialog to add tested torrent site presets
+     * NEW: Use real live site analysis - NO PRESETS!
      */
-    private fun showTorrentPresetsDialog() {
-        val categories = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.getPresetCategories()
-        val categoryNames = categories.map { "${it.icon} ${it.name} (${it.presets.size})" }.toTypedArray()
+    private fun analyzeAndConfigureRealSite(url: String) {
+        val progressDialog = ProgressDialog.show(
+            this,
+            "🔍 Real Site Analysis",
+            "Connecting to live site...\n• Fetching actual HTML\n• Detecting real structure\n• Testing selectors\n• Verifying data extraction",
+            true,
+            false
+        )
+        
+        uiScope.launch(Dispatchers.IO) {
+            try {
+                // Use the REAL live site config builder
+                val result = liveSiteConfigBuilder.buildConfig(url)
+                lastRealConfigResult = result
+                
+                launch(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    displayRealConfigResult(result)
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    Toast.makeText(
+                        this@SmartProviderAddActivity,
+                        "Analysis failed: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+    
+    /**
+     * Display results from REAL site analysis
+     */
+    private fun displayRealConfigResult(result: LiveSiteConfigBuilder.ConfigBuildResult) {
+        binding.textResults.text = buildString {
+            appendLine("🔬 REAL SITE ANALYSIS RESULTS")
+            appendLine("═".repeat(40))
+            appendLine()
+            
+            if (result.success && result.config != null) {
+                val config = result.config
+                
+                appendLine("✅ Site successfully analyzed and configured!")
+                appendLine()
+                appendLine("📍 VERIFIED SITE INFO:")
+                appendLine("   Name: ${config.name}")
+                appendLine("   Base URL: ${config.baseUrl}")
+                appendLine("   Search URL: ${config.searchPath}")
+                appendLine()
+                appendLine("📊 VERIFICATION RESULTS:")
+                appendLine("   Test Results Found: ${result.testResultCount}")
+                appendLine("   Confidence Score: ${(result.confidence * 100).toInt()}%")
+                appendLine()
+                appendLine("🔍 DETECTED SELECTORS (REAL):")
+                appendLine("─".repeat(35))
+                appendLine("   Container: ${config.selectors.resultContainer}")
+                appendLine("   ├─ Title: ${config.selectors.title}")
+                config.selectors.magnetUrl?.let { 
+                    appendLine("   ├─ Magnet: $it ✓ (verified)") 
+                } ?: appendLine("   ├─ Magnet: ⚠️ Not found")
+                config.selectors.downloadUrl?.let { 
+                    appendLine("   ├─ Download: $it ✓ (verified)") 
+                }
+                config.selectors.seeders?.let { 
+                    appendLine("   ├─ Seeders: $it ✓ (verified)") 
+                } ?: appendLine("   ├─ Seeders: ⚠️ Not found")
+                config.selectors.leechers?.let { 
+                    appendLine("   ├─ Leechers: $it ✓") 
+                }
+                config.selectors.size?.let { 
+                    appendLine("   └─ Size: $it ✓") 
+                } ?: appendLine("   └─ Size: ⚠️ Not found")
+                appendLine()
+                appendLine("═".repeat(40))
+                appendLine("✓ ${result.message}")
+                appendLine()
+                appendLine("This is a REAL verified config - NOT a preset!")
+                appendLine("Click SAVE to add this working source.")
+                
+                binding.buttonSave.isEnabled = true
+                binding.buttonTestSearch.isEnabled = true
+            } else {
+                appendLine("✗ Could not configure site")
+                appendLine()
+                appendLine("Message: ${result.message}")
+                appendLine()
+                appendLine("The site could not be automatically configured.")
+                appendLine("Possible reasons:")
+                appendLine("• Site is protected by Cloudflare/CAPTCHA")
+                appendLine("• Site requires login")
+                appendLine("• Site structure is unusual")
+                appendLine("• Site is currently down")
+                appendLine()
+                appendLine("Try a different URL or mirror.")
+                
+                binding.buttonSave.isEnabled = false
+                binding.buttonTestSearch.isEnabled = false
+            }
+        }
+    }
+    
+    /**
+     * Show verified sources that can be added (these are TESTED, not presets)
+     */
+    private fun showVerifiedSourcesDialog() {
+        val verifiedSites = VerifiedSiteRegistry.getVerifiedSites()
+        val categories = verifiedSites.groupBy { 
+            when {
+                it.config.category == "anime" -> "🎌 Anime"
+                it.config.category == "tv" -> "📺 TV Shows"
+                it.config.category == "movies" -> "🎬 Movies"
+                it.config.category == "adult" -> "🔞 Adult"
+                it.config.category == "legal" -> "📚 Legal/Academic"
+                it.config.category == "dht" -> "🌐 DHT/Meta Search"
+                it.config.category == "international" -> "🌍 International"
+                else -> "📁 General"
+            }
+        }
+        
+        val categoryNames = categories.keys.toTypedArray()
         
         AlertDialog.Builder(this)
-            .setTitle("🌐 Add Torrent Site Presets")
+            .setTitle("🔒 Add Verified Sources")
             .setItems(categoryNames) { _, which ->
-                showPresetsForCategory(categories[which])
+                showVerifiedSitesForCategory(categoryNames[which], categories[categoryNames[which]]!!)
             }
-            .setNeutralButton("Add All Public") { _, _ ->
-                addAllPublicTorrentPresets()
+            .setNeutralButton("Add All Verified") { _, _ ->
+                addAllVerifiedSources()
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+    
+    private fun showVerifiedSitesForCategory(
+        categoryName: String,
+        sites: List<VerifiedSiteRegistry.VerifiedSiteInfo>
+    ) {
+        val siteNames = sites.map { "• ${it.config.name}\n  ${it.description}" }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle(categoryName)
+            .setItems(siteNames) { _, which ->
+                addVerifiedSource(sites[which])
+            }
+            .setNeutralButton("Add All") { _, _ ->
+                addAllInCategory(sites)
+            }
+            .setNegativeButton("Back") { _, _ ->
+                showVerifiedSourcesDialog()
+            }
+            .show()
+    }
+    
+    private fun addVerifiedSource(siteInfo: VerifiedSiteRegistry.VerifiedSiteInfo) {
+        val progress = ProgressDialog.show(
+            this,
+            "🧪 Verifying Source",
+            "Testing ${siteInfo.config.name} with live search...",
+            true
+        )
+        
+        uiScope.launch(Dispatchers.IO) {
+            // Actually verify before adding!
+            val result = realSourceManager.addSourceByUrl(siteInfo.config.baseUrl)
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                if (result.success) {
+                    AlertDialog.Builder(this@SmartProviderAddActivity)
+                        .setTitle("✅ ${siteInfo.config.name} Added!")
+                        .setMessage("Verification passed!\n\n${result.message}\n\nLast verified: ${siteInfo.lastVerified}")
+                        .setPositiveButton("Great!", null)
+                        .show()
+                } else {
+                    AlertDialog.Builder(this@SmartProviderAddActivity)
+                        .setTitle("⚠️ Verification Failed")
+                        .setMessage("Could not verify ${siteInfo.config.name}:\n\n${result.message}\n\nThe site may be temporarily down or blocked.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+    
+    private fun addAllInCategory(sites: List<VerifiedSiteRegistry.VerifiedSiteInfo>) {
+        val progress = ProgressDialog(this).apply {
+            setTitle("🧪 Verifying Sources")
+            setMessage("Testing sites...")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = sites.size
+            show()
+        }
+        
+        uiScope.launch(Dispatchers.IO) {
+            var addedCount = 0
+            var workingCount = 0
+            
+            sites.forEachIndexed { index, site ->
+                launch(Dispatchers.Main) {
+                    progress.progress = index + 1
+                    progress.setMessage("Testing ${site.config.name}...")
+                }
+                
+                val result = realSourceManager.addSourceByUrl(site.config.baseUrl)
+                addedCount++
+                if (result.success) workingCount++
+            }
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                Toast.makeText(
+                    this@SmartProviderAddActivity,
+                    "✓ Verified and added $workingCount of $addedCount sources",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+    
+    private fun addAllVerifiedSources() {
+        val allSites = VerifiedSiteRegistry.getVerifiedSites()
+        
+        AlertDialog.Builder(this)
+            .setTitle("Add All ${allSites.size} Verified Sources?")
+            .setMessage("This will test and add all verified torrent sources.\n\nOnly sources that pass live verification will be added.\n\nThis may take a few minutes.")
+            .setPositiveButton("Start") { _, _ ->
+                addAllInCategory(allSites)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    /**
+     * Save using the REAL source manager (with verification)
+     */
+    private fun saveRealSource(config: CustomSiteConfig) {
+        val progress = ProgressDialog.show(
+            this,
+            "🔒 Saving & Verifying",
+            "Final verification before save...",
+            true
+        )
+        
+        uiScope.launch(Dispatchers.IO) {
+            val result = realSourceManager.addSourceByUrl(config.baseUrl)
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                if (result.success) {
+                    Toast.makeText(
+                        this@SmartProviderAddActivity,
+                        "✓ ${config.name} verified and saved!",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    
+                    AlertDialog.Builder(this@SmartProviderAddActivity)
+                        .setTitle("✅ Source Added!")
+                        .setMessage("${config.name} has been verified and saved.\n\n${result.message}\n\nThis is a REAL working source!")
+                        .setPositiveButton("Add Another") { _, _ ->
+                            clearForm()
+                        }
+                        .setNegativeButton("Done") { _, _ ->
+                            finish()
+                        }
+                        .show()
+                } else {
+                    AlertDialog.Builder(this@SmartProviderAddActivity)
+                        .setTitle("⚠️ Verification Failed")
+                        .setMessage("${result.message}\n\nThe source was not saved because it couldn't be verified.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
+    }
+    
+    private fun clearForm() {
+        binding.editUrl.text?.clear()
+        binding.textResults.text = ""
+        binding.buttonSave.isEnabled = false
+        binding.buttonTestSearch.isEnabled = false
+        lastConversionResult = null
+        lastRealConfigResult = null
+    }
+    
+    /**
+     * Show dialog with TESTED torrent site presets (legacy - now shows verified instead)
+     */
+    private fun showTorrentPresetsDialog() {
+        // Redirect to new verified sources dialog
+        showVerifiedSourcesDialog()
     }
     
     private fun showPresetsForCategory(category: com.zim.jackettprowler.providers.TorrentSitePresetRegistry.TorrentPresetCategory) {

@@ -76,6 +76,11 @@
             android:label="Tracker Management" />
         
         <activity
+            android:name=".RealSourcesActivity"
+            android:exported="false"
+            android:label="Real Verified Sources" />
+        
+        <activity
             android:name=".video.VideoSitesActivity"
             android:exported="false"
             android:label="Video Sites" />

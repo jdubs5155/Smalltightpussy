@@ -76,8 +76,8 @@ class SettingsActivity : AppCompatActivity() {
         }
         
         binding.buttonManageBuiltInProviders.setOnClickListener {
-            // Also open unified provider management
-            val intent = Intent(this, UnifiedProviderManagementActivity::class.java)
+            // Open REAL verified sources management
+            val intent = Intent(this, RealSourcesActivity::class.java)
             startActivity(intent)
         }
         

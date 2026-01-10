@@ -1,26 +1,36 @@
 # JackettProwlarrClient - AI Coding Agent Instructions
 
 ## Project Overview
-Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Prowlarr), custom web scrapers, and Tor-enabled .onion sites. Uses Kotlin with coroutines for async operations. **NEW**: Supports importing individual indexers from Jackett/Prowlarr, includes 60+ built-in torrent providers as fallback, and now has **clearnet video search** with support for 10+ video platforms.
+Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Prowlarr), custom web scrapers, and Tor-enabled .onion sites. Uses Kotlin with coroutines for async operations. **NEW**: Supports importing individual indexers from Jackett/Prowlarr, includes **REAL VERIFIED SOURCES** (not presets!), and now has **clearnet video search** with support for 10+ video platforms.
 
 ## Architecture
 
 ### Core Components
 - **TorznabService**: Torznab API client for Jackett/Prowlarr - auto-detects API paths (/api/v1/search for Prowlarr, /api/v2.0 for Jackett)
 - **IndexerImporter**: Imports individual indexers from Jackett/Prowlarr with their unique Torznab URLs - allows per-indexer toggling
-- **ProviderRegistry**: 60+ built-in torrent providers (1337x, TPB, YTS, EZTV, Nyaa, etc.) - works without Jackett/Prowlarr
+- **LiveSiteConfigBuilder** (NEW): Auto-configures torrent sites from URL - fetches live HTML, detects real selectors, tests extraction
+- **SiteVerificationService** (NEW): Verifies site configs by performing actual searches and checking real data
+- **RealSourceManager** (NEW): Manages ONLY verified, working sources - no presets, all live-tested
+- **VerifiedSiteRegistry** (NEW): Registry of known-working site configurations with tested CSS selectors
 - **ScraperService**: HTML scraping engine using Jsoup - extracts torrent data from custom sites via CSS/XPath selectors
-- **TorrentAggregator**: Orchestrates parallel searches across: Jackett/Prowlarr APIs → Imported indexers → Built-in providers → Custom scrapers → Onion sites
+- **TorrentAggregator**: Orchestrates parallel searches across: Jackett/Prowlarr APIs → Verified real sources → Imported indexers → Custom scrapers → Onion sites
 - **TorProxyManager**: SOCKS proxy manager for Orbot/Tor integration to access .onion sites
 - **QbittorrentClient**: qBittorrent Web UI API client for sending torrents to remote clients
 - **DownloadHistoryManager**: JSON-persisted download tracking (last 100 downloads)
 - **VideoSearchService**: Clearnet video search with 10+ platforms (YouTube via Invidious, Dailymotion, Vimeo, Rumble, Odysee, BitChute, PeerTube, Archive.org, Twitch)
 - **VideoSiteInfiltrator**: Auto-detects and configures video sites from URL (like torrent site infiltration)
 
+### Real Source System (NEW - NOT PRESETS!)
+The app now uses a **real, verified source system** instead of generic presets:
+1. **LiveSiteConfigBuilder**: When user enters a URL, fetches live HTML and detects actual selectors
+2. **SiteVerificationService**: Tests configs by performing real searches and verifying data extraction
+3. **RealSourceManager**: Stores ONLY sources that have been verified to return real data
+4. **VerifiedSiteRegistry**: Contains known-working configs (1337x, Nyaa, EZTV, etc.) with tested selectors
+
 ### Data Flow
 1. User enters search query in MainActivity
 2. **Mode Toggle**: Torrents mode → TorznabService/TorrentAggregator | Videos mode → VideoSearchService
-3. For torrents: If Torznab APIs unavailable, searches fallback to: imported indexers → built-in providers → custom scrapers
+3. For torrents: Searches verified real sources → Jackett/Prowlarr → imported indexers → custom scrapers
 4. For videos: Searches all enabled video sites in parallel
 5. Results parsed into `TorrentResult` or `VideoResult` objects
 6. TorrentAdapter/VideoResultAdapter displays results in RecyclerView
@@ -30,10 +40,10 @@ Android BitTorrent client that searches torrents via **Torznab API** (Jackett/Pr
 - **Import from Jackett/Prowlarr**: SettingsActivity → "Import Indexers" button fetches all configured indexers
 - **Per-indexer Torznab URLs**: Each indexer gets its own Torznab endpoint (e.g., `/api/v2.0/indexers/1337x/results/torznab`)
 - **Toggle system**: IndexerManagementActivity allows enabling/disabling individual imported indexers
-- **Built-in providers**: 60+ providers in ProviderRegistry - enabled by default for public trackers
-- **Storage**: Imported indexers saved to SharedPreferences as JSON via IndexerImporter
+- **Real verified sources**: RealSourcesActivity manages auto-configured, verified working sources
+- **Storage**: Verified sources saved to `real_verified_sources` SharedPreferences as JSON
 
-### Video Search System (NEW)
+### Video Search System
 - **VideoSiteConfig**: Data class for video site configuration with selectors
 - **VideoSiteType**: Enum for known platforms (YOUTUBE, DAILYMOTION, VIMEO, RUMBLE, ODYSEE, BITCHUTE, PEERTUBE, ARCHIVE_ORG, TWITCH, GENERIC)
 - **VideoSearchService**: Searches configured video sites in parallel, handles API/scraping differences per platform
