@@ -572,11 +572,46 @@ class LiveSiteConfigBuilder(
         return score
     }
     
+    // Cloudflare bypass service for protected sites
+    private val cloudflareBypass by lazy { CloudflareBypassService(context) }
+    
     private suspend fun fetchDocument(url: String): Document? {
+        // First try with Cloudflare bypass
+        return try {
+            Log.d(TAG, "Fetching with Cloudflare bypass: $url")
+            val result = cloudflareBypass.fetch(url)
+            
+            if (result.success && result.document != null) {
+                Log.d(TAG, "✅ Cloudflare bypass successful (method: ${result.bypassMethod})")
+                result.document
+            } else if (result.wasBlocked) {
+                Log.w(TAG, "⚠️ Cloudflare blocked, trying direct request")
+                fetchDocumentDirect(url)
+            } else {
+                Log.w(TAG, "Fetch failed: ${result.error}, trying direct request")
+                fetchDocumentDirect(url)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Cloudflare bypass failed: ${e.message}, trying direct")
+            fetchDocumentDirect(url)
+        }
+    }
+    
+    private fun fetchDocumentDirect(url: String): Document? {
         return try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Accept-Encoding", "gzip, deflate, br")
+                .header("DNT", "1")
+                .header("Connection", "keep-alive")
+                .header("Upgrade-Insecure-Requests", "1")
+                .header("Sec-Fetch-Dest", "document")
+                .header("Sec-Fetch-Mode", "navigate")
+                .header("Sec-Fetch-Site", "none")
+                .header("Sec-Fetch-User", "?1")
                 .build()
             
             client.newCall(request).execute().use { response ->
@@ -586,7 +621,7 @@ class LiveSiteConfigBuilder(
                 } else null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch: $url - ${e.message}")
+            Log.e(TAG, "Direct fetch failed: $url - ${e.message}")
             null
         }
     }

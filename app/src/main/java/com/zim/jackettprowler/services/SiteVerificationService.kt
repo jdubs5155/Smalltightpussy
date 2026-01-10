@@ -149,14 +149,25 @@ class SiteVerificationService(
     
     /**
      * Quick check if a site is accessible (doesn't verify selectors)
+     * Now with Cloudflare bypass support
      */
     suspend fun quickCheck(baseUrl: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val connection = java.net.URL(baseUrl).openConnection()
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
-            connection.getInputStream().close()
-            true
+            // Use Cloudflare bypass service for better success rate
+            val bypassService = CloudflareBypassService(context)
+            val result = bypassService.fetch(baseUrl)
+            
+            if (result.success && !result.wasBlocked) {
+                Log.d(TAG, "Quick check passed for $baseUrl (method: ${result.bypassMethod})")
+                true
+            } else if (result.wasBlocked) {
+                Log.w(TAG, "Quick check: Cloudflare blocked for $baseUrl")
+                // Still consider it "accessible" - we just need to solve the challenge
+                true
+            } else {
+                Log.e(TAG, "Quick check failed for $baseUrl: ${result.error}")
+                false
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Quick check failed for $baseUrl: ${e.message}")
             false

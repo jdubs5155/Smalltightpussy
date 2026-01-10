@@ -1,6 +1,8 @@
 package com.zim.jackettprowler
 
 import android.content.Context
+import android.util.Log
+import com.zim.jackettprowler.services.CloudflareBypassService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
@@ -12,14 +14,19 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Web scraping service for extracting torrent data from HTML pages
- * Now with integrated pattern learning for automatic improvement!
+ * Now with integrated pattern learning and Cloudflare bypass!
  */
 class ScraperService(
     private val torProxyManager: TorProxyManager? = null,
     private val context: Context? = null
 ) {
+    companion object {
+        private const val TAG = "ScraperService"
+    }
+    
     private val lastRequestTime = mutableMapOf<String, Long>()
     private val patternLearning = context?.let { PatternLearningSystem(it) }
+    private val cloudflareBypass = context?.let { CloudflareBypassService(it) }
     
     /**
      * Search a custom site and extract torrent results
@@ -94,23 +101,54 @@ class ScraperService(
     
     private suspend fun fetchHtml(url: String, siteConfig: CustomSiteConfig): String {
         return if (siteConfig.requiresTor || siteConfig.isOnionSite) {
-            // Use Tor proxy
+            // Use Tor proxy for .onion sites
             torProxyManager?.fetchViaProxy(url, siteConfig.headers) 
                 ?: throw IOException("Tor proxy not available for onion site")
-        } else {
-            // Normal HTTP request
-            val connection = Jsoup.connect(url)
-                .timeout(30000)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .followRedirects(true)
+        } else if (cloudflareBypass != null) {
+            // Use Cloudflare bypass service for better success rate
+            Log.d(TAG, "Fetching with Cloudflare bypass: $url")
+            val result = cloudflareBypass.fetch(url, siteConfig.headers)
             
-            // Add custom headers
-            siteConfig.headers.forEach { (key, value) ->
-                connection.header(key, value)
+            if (result.success && result.html != null) {
+                Log.d(TAG, "✅ Cloudflare bypass successful (method: ${result.bypassMethod})")
+                result.html
+            } else if (result.wasBlocked) {
+                Log.w(TAG, "⚠️ Cloudflare blocked request: ${result.error}")
+                // Fallback to direct request
+                fetchHtmlDirect(url, siteConfig)
+            } else {
+                Log.e(TAG, "❌ Fetch failed: ${result.error}")
+                throw IOException("Failed to fetch: ${result.error}")
             }
-            
-            connection.get().html()
+        } else {
+            // Fallback to direct request
+            fetchHtmlDirect(url, siteConfig)
         }
+    }
+    
+    private fun fetchHtmlDirect(url: String, siteConfig: CustomSiteConfig): String {
+        // Normal HTTP request with enhanced headers
+        val connection = Jsoup.connect(url)
+            .timeout(30000)
+            .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .followRedirects(true)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Accept-Encoding", "gzip, deflate, br")
+            .header("DNT", "1")
+            .header("Connection", "keep-alive")
+            .header("Upgrade-Insecure-Requests", "1")
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
+            .header("Sec-Fetch-User", "?1")
+        
+        // Add custom headers from config
+        siteConfig.headers.forEach { (key, value) ->
+            connection.header(key, value)
+        }
+        
+        return connection.get().html()
     }
     
     private fun extractResults(
