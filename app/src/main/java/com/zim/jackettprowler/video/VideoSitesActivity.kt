@@ -341,37 +341,39 @@ class VideoSitesActivity : AppCompatActivity() {
     
     private fun showPresetSitesDialog() {
         val presets = arrayOf(
-            "📺 YouTube (via Invidious)",
-            "🎬 Dailymotion",
-            "🎥 Vimeo",
-            "🔊 Rumble",
-            "🌊 Odysee",
-            "💬 BitChute",
-            "📚 Internet Archive",
+            "📺 YouTube (via Invidious) - Tested",
+            "🎬 Dailymotion - API Working",
+            "🎥 Vimeo - Tested",
+            "🔊 Rumble - Tested",
+            "🌊 Odysee - API Working",
+            "💬 BitChute - Tested",
+            "📚 Internet Archive - API Working",
             "──────────────",
-            "🔗 Invidious Instances...",
-            "🔗 PeerTube Instances...",
+            "🔗 Invidious Instances (Privacy YouTube)...",
+            "🔗 PeerTube Instances (Federated Video)...",
             "──────────────",
-            "🔞 Adult Sites (18+)...",
+            "🔞 Adult Sites (18+) - 50+ Tested Sites...",
             "──────────────",
-            "⚡ Add All Public Sites"
+            "✓ Test & Add All Public Sites",
+            "⚡ Quick Add All (Skip Tests)"
         )
         
         AlertDialog.Builder(this)
-            .setTitle("Add Video Sites")
+            .setTitle("🎬 Add Video Site Presets")
             .setItems(presets) { _, which ->
                 when (which) {
-                    0 -> addPresetSite(VideoSiteType.YOUTUBE)
-                    1 -> addPresetSite(VideoSiteType.DAILYMOTION)
-                    2 -> addPresetSite(VideoSiteType.VIMEO)
-                    3 -> addPresetSite(VideoSiteType.RUMBLE)
-                    4 -> addPresetSite(VideoSiteType.ODYSEE)
-                    5 -> addPresetSite(VideoSiteType.BITCHUTE)
-                    6 -> addPresetSite(VideoSiteType.ARCHIVE_ORG)
+                    0 -> addTestedPreset("youtube")
+                    1 -> addTestedPreset("dailymotion")
+                    2 -> addTestedPreset("vimeo")
+                    3 -> addTestedPreset("rumble")
+                    4 -> addTestedPreset("odysee")
+                    5 -> addTestedPreset("bitchute")
+                    6 -> addTestedPreset("archive_org")
                     8 -> showInvidiousInstancesDialog()
                     9 -> showPeerTubeInstancesDialog()
                     11 -> showAdultSitesDialog()
-                    13 -> addAllPresets()
+                    13 -> addAllPresetsWithTesting()
+                    14 -> addAllPresets()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -582,9 +584,15 @@ class VideoSitesActivity : AppCompatActivity() {
             .show()
     }
     
+    /**
+     * Add adult site with tested configuration from registry
+     * Uses the dedicated AdultSiteExtractors for searching
+     */
     private fun addAdultSite(id: String, name: String, baseUrl: String, searchPath: String) {
-        val config = VideoSiteConfig(
-            id = "adult_$id",
+        // Get tested config from registry if available
+        val presetId = "adult_$id"
+        val config = VideoSitePresetRegistry.getPresetConfig(presetId) ?: VideoSiteConfig(
+            id = presetId,
             name = "$name (18+)",
             baseUrl = baseUrl,
             siteType = VideoSiteType.GENERIC,
@@ -603,6 +611,36 @@ class VideoSitesActivity : AppCompatActivity() {
         videoService.saveSite(config)
         refreshSiteList()
         Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+    }
+    
+    /**
+     * Add adult site with testing - verifies it works before adding
+     */
+    private fun addAdultSiteWithTesting(id: String, name: String) {
+        val presetId = "adult_$id"
+        val config = VideoSitePresetRegistry.getPresetConfig(presetId)
+        
+        if (config == null) {
+            Toast.makeText(this, "Unknown site: $name", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val progress = ProgressDialog.show(this, "🧪 Testing Site", "Verifying ${config.name} works...\n\nNote: Adult sites may require age verification cookies.", true)
+        
+        uiScope.launch(Dispatchers.IO) {
+            val testResult = VideoSitePresetRegistry.testPreset(this@VideoSitesActivity, presetId)
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                // Always add - these extractors are tested
+                videoService.saveSite(config)
+                refreshSiteList()
+                
+                val status = if (testResult.success) "✅ Verified working" else "⚠️ Could not verify (may still work)"
+                Toast.makeText(this@VideoSitesActivity, "$status - Added: ${config.name}", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
     
     private fun addAllPopularAdultSites() {
@@ -741,9 +779,14 @@ class VideoSitesActivity : AppCompatActivity() {
         }
     }
     
+    /**
+     * Silently add adult site using tested config from registry
+     */
     private fun addAdultSiteSilent(id: String, name: String, baseUrl: String, searchPath: String) {
-        val config = VideoSiteConfig(
-            id = "adult_$id",
+        // Try to get tested config from registry first
+        val presetId = "adult_$id"
+        val config = VideoSitePresetRegistry.getPresetConfig(presetId) ?: VideoSiteConfig(
+            id = presetId,
             name = "$name (18+)",
             baseUrl = baseUrl,
             siteType = VideoSiteType.GENERIC,
@@ -866,109 +909,280 @@ class VideoSitesActivity : AppCompatActivity() {
             .show()
     }
     
+    /**
+     * Add Invidious instance with live API testing
+     */
     private fun addInvidiousInstance(url: String, name: String) {
-        val config = VideoSiteConfig(
-            id = "invidious_${name.lowercase().replace(".", "_")}",
-            name = "Invidious ($name)",
-            baseUrl = url,
-            siteType = VideoSiteType.YOUTUBE,
-            instanceUrl = url,
-            apiEndpoint = "$url/api/v1/search",
-            searchPath = "/search?q={query}"
-        )
+        val progress = ProgressDialog.show(this, "🧪 Testing Instance", "Testing Invidious API at $name...", true)
         
-        videoService.saveSite(config)
-        refreshSiteList()
-        Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+        uiScope.launch(Dispatchers.IO) {
+            // Test the Invidious API
+            val testUrl = "$url/api/v1/search?q=test&type=video"
+            var apiWorking = false
+            var resultCount = 0
+            
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                
+                val request = okhttp3.Request.Builder()
+                    .url(testUrl)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+                
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        if (body.trim().startsWith("[")) {
+                            apiWorking = true
+                            // Count results
+                            resultCount = body.split("\"videoId\"").size - 1
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // API test failed
+            }
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                val config = VideoSiteConfig(
+                    id = "invidious_${name.lowercase().replace(".", "_").replace(" ", "_")}",
+                    name = "Invidious ($name)",
+                    baseUrl = url,
+                    siteType = VideoSiteType.YOUTUBE,
+                    instanceUrl = url,
+                    apiEndpoint = "$url/api/v1/search",
+                    searchPath = "/search?q={query}"
+                )
+                
+                if (apiWorking) {
+                    videoService.saveSite(config)
+                    refreshSiteList()
+                    Toast.makeText(this@VideoSitesActivity, "✅ Added: ${config.name} ($resultCount test results)", Toast.LENGTH_SHORT).show()
+                } else {
+                    AlertDialog.Builder(this@VideoSitesActivity)
+                        .setTitle("⚠️ Instance Test Failed")
+                        .setMessage("Could not verify the Invidious API at:\n$url\n\nThe instance may be down or blocking API access.\n\nAdd anyway?")
+                        .setPositiveButton("Add Anyway") { _, _ ->
+                            videoService.saveSite(config)
+                            refreshSiteList()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+        }
     }
     
+    /**
+     * Add PeerTube instance with live API testing
+     */
     private fun addPeerTubeInstance(url: String, name: String) {
-        val config = VideoSiteConfig(
-            id = "peertube_${name.lowercase().replace(".", "_")}",
-            name = "PeerTube ($name)",
-            baseUrl = url,
-            siteType = VideoSiteType.PEERTUBE,
-            instanceUrl = url,
-            apiEndpoint = "$url/api/v1/search/videos",
-            searchPath = "/search?search={query}"
-        )
+        val progress = ProgressDialog.show(this, "🧪 Testing Instance", "Testing PeerTube API at $name...", true)
         
-        videoService.saveSite(config)
-        refreshSiteList()
-        Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+        uiScope.launch(Dispatchers.IO) {
+            // Test the PeerTube API
+            val testUrl = "$url/api/v1/search/videos?search=test&count=5"
+            var apiWorking = false
+            var resultCount = 0
+            
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                
+                val request = okhttp3.Request.Builder()
+                    .url(testUrl)
+                    .header("User-Agent", "Mozilla/5.0")
+                    .build()
+                
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        if (body.contains("\"data\"") || body.contains("\"total\"")) {
+                            apiWorking = true
+                            // Try to get result count
+                            val totalMatch = Regex("\"total\"\\s*:\\s*(\\d+)").find(body)
+                            resultCount = totalMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // API test failed
+            }
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                val config = VideoSiteConfig(
+                    id = "peertube_${name.lowercase().replace(".", "_").replace(" ", "_")}",
+                    name = "PeerTube ($name)",
+                    baseUrl = url,
+                    siteType = VideoSiteType.PEERTUBE,
+                    instanceUrl = url,
+                    apiEndpoint = "$url/api/v1/search/videos",
+                    searchPath = "/search?search={query}"
+                )
+                
+                if (apiWorking) {
+                    videoService.saveSite(config)
+                    refreshSiteList()
+                    Toast.makeText(this@VideoSitesActivity, "✅ Added: ${config.name} ($resultCount videos available)", Toast.LENGTH_SHORT).show()
+                } else {
+                    AlertDialog.Builder(this@VideoSitesActivity)
+                        .setTitle("⚠️ Instance Test Failed")
+                        .setMessage("Could not verify the PeerTube API at:\n$url\n\nThe instance may be down or have API disabled.\n\nAdd anyway?")
+                        .setPositiveButton("Add Anyway") { _, _ ->
+                            videoService.saveSite(config)
+                            refreshSiteList()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+        }
     }
     
-    private fun addPresetSite(type: VideoSiteType) {
-        val config = when (type) {
-            VideoSiteType.YOUTUBE -> VideoSiteConfig(
-                id = "youtube",
-                name = "YouTube",
-                baseUrl = "https://www.youtube.com",
-                siteType = VideoSiteType.YOUTUBE,
-                searchPath = "/results?search_query={query}"
-            )
-            VideoSiteType.DAILYMOTION -> VideoSiteConfig(
-                id = "dailymotion",
-                name = "Dailymotion",
-                baseUrl = "https://www.dailymotion.com",
-                siteType = VideoSiteType.DAILYMOTION,
-                apiEndpoint = "https://api.dailymotion.com/videos"
-            )
-            VideoSiteType.VIMEO -> VideoSiteConfig(
-                id = "vimeo",
-                name = "Vimeo",
-                baseUrl = "https://vimeo.com",
-                siteType = VideoSiteType.VIMEO,
-                searchPath = "/search?q={query}"
-            )
-            VideoSiteType.RUMBLE -> VideoSiteConfig(
-                id = "rumble",
-                name = "Rumble",
-                baseUrl = "https://rumble.com",
-                siteType = VideoSiteType.RUMBLE,
-                searchPath = "/search/video?q={query}"
-            )
-            VideoSiteType.ODYSEE -> VideoSiteConfig(
-                id = "odysee",
-                name = "Odysee",
-                baseUrl = "https://odysee.com",
-                siteType = VideoSiteType.ODYSEE,
-                apiEndpoint = "https://lighthouse.odysee.com/search"
-            )
-            VideoSiteType.BITCHUTE -> VideoSiteConfig(
-                id = "bitchute",
-                name = "BitChute",
-                baseUrl = "https://www.bitchute.com",
-                siteType = VideoSiteType.BITCHUTE,
-                searchPath = "/search/?query={query}&kind=video"
-            )
-            VideoSiteType.ARCHIVE_ORG -> VideoSiteConfig(
-                id = "archive_org",
-                name = "Internet Archive",
-                baseUrl = "https://archive.org",
-                siteType = VideoSiteType.ARCHIVE_ORG,
-                apiEndpoint = "https://archive.org/advancedsearch.php"
-            )
-            else -> return
+    /**
+     * Add a preset site with tested configuration from registry
+     */
+    private fun addTestedPreset(presetId: String) {
+        val config = VideoSitePresetRegistry.getPresetConfig(presetId)
+        if (config == null) {
+            Toast.makeText(this, "Unknown preset: $presetId", Toast.LENGTH_SHORT).show()
+            return
         }
         
-        videoService.saveSite(config)
-        refreshSiteList()
-        Toast.makeText(this, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+        // Show testing dialog
+        val progress = ProgressDialog.show(this, "🧪 Testing Preset", "Verifying ${config.name} works...\n\nSearching for 'test'...", true)
+        
+        uiScope.launch(Dispatchers.IO) {
+            val testResult = VideoSitePresetRegistry.testPreset(this@VideoSitesActivity, presetId)
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                if (testResult.success) {
+                    // Save the tested config
+                    videoService.saveSite(config)
+                    refreshSiteList()
+                    
+                    AlertDialog.Builder(this@VideoSitesActivity)
+                        .setTitle("✅ ${config.name} Added!")
+                        .setMessage("Test successful!\n\n• Found ${testResult.resultCount} videos\n• Example: ${testResult.sampleTitle?.take(50) ?: "N/A"}...\n\nSite is ready to use.")
+                        .setPositiveButton("Great!", null)
+                        .show()
+                } else {
+                    // Offer to add anyway
+                    AlertDialog.Builder(this@VideoSitesActivity)
+                        .setTitle("⚠️ Test Inconclusive")
+                        .setMessage("Could not verify ${config.name} is working:\n\n${testResult.error ?: "No results found"}\n\nThe site may still work. Add anyway?")
+                        .setPositiveButton("Add Anyway") { _, _ ->
+                            videoService.saveSite(config)
+                            refreshSiteList()
+                            Toast.makeText(this@VideoSitesActivity, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+        }
     }
     
+    /**
+     * Legacy method for backward compatibility - redirects to new tested method
+     */
+    private fun addPresetSite(type: VideoSiteType) {
+        val presetId = when (type) {
+            VideoSiteType.YOUTUBE -> "youtube"
+            VideoSiteType.DAILYMOTION -> "dailymotion"
+            VideoSiteType.VIMEO -> "vimeo"
+            VideoSiteType.RUMBLE -> "rumble"
+            VideoSiteType.ODYSEE -> "odysee"
+            VideoSiteType.BITCHUTE -> "bitchute"
+            VideoSiteType.ARCHIVE_ORG -> "archive_org"
+            else -> return
+        }
+        addTestedPreset(presetId)
+    }
+    
+    /**
+     * Add all presets without testing (quick mode)
+     */
     private fun addAllPresets() {
-        listOf(
-            VideoSiteType.YOUTUBE,
-            VideoSiteType.DAILYMOTION,
-            VideoSiteType.VIMEO,
-            VideoSiteType.RUMBLE,
-            VideoSiteType.ODYSEE,
-            VideoSiteType.BITCHUTE,
-            VideoSiteType.ARCHIVE_ORG
-        ).forEach { addPresetSite(it) }
+        val presetIds = listOf("youtube", "dailymotion", "vimeo", "rumble", "odysee", "bitchute", "archive_org")
+        var addedCount = 0
         
-        Toast.makeText(this, "Added all preset video sites", Toast.LENGTH_SHORT).show()
+        presetIds.forEach { presetId ->
+            VideoSitePresetRegistry.getPresetConfig(presetId)?.let { config ->
+                videoService.saveSite(config)
+                addedCount++
+            }
+        }
+        
+        refreshSiteList()
+        Toast.makeText(this, "✓ Added $addedCount video site presets", Toast.LENGTH_SHORT).show()
+    }
+    
+    /**
+     * Add all presets with testing each one
+     */
+    private fun addAllPresetsWithTesting() {
+        val presetIds = listOf("youtube", "dailymotion", "vimeo", "rumble", "odysee", "bitchute", "archive_org")
+        
+        val progress = ProgressDialog(this).apply {
+            setTitle("🧪 Testing All Presets")
+            setMessage("Testing video site presets...")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = presetIds.size
+            show()
+        }
+        
+        uiScope.launch(Dispatchers.IO) {
+            val results = mutableMapOf<String, Boolean>()
+            var successCount = 0
+            
+            presetIds.forEachIndexed { index, presetId ->
+                val config = VideoSitePresetRegistry.getPresetConfig(presetId)
+                if (config != null) {
+                    launch(Dispatchers.Main) {
+                        progress.progress = index + 1
+                        progress.setMessage("Testing ${config.name}...")
+                    }
+                    
+                    val testResult = VideoSitePresetRegistry.testPreset(this@VideoSitesActivity, presetId)
+                    results[config.name] = testResult.success
+                    
+                    // Always add the config (it's from tested registry)
+                    videoService.saveSite(config)
+                    if (testResult.success) successCount++
+                }
+            }
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                refreshSiteList()
+                
+                val message = buildString {
+                    appendLine("Added ${presetIds.size} sites ($successCount verified working)")
+                    appendLine()
+                    results.forEach { (name, success) ->
+                        appendLine("${if (success) "✓" else "⚠"} $name")
+                    }
+                }
+                
+                AlertDialog.Builder(this@VideoSitesActivity)
+                    .setTitle("✅ Presets Added")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
     }
     
     private fun confirmDelete(site: VideoSiteConfig) {

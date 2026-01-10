@@ -64,6 +64,175 @@ class SmartProviderAddActivity : AppCompatActivity() {
             }
             testSearch(testQuery)
         }
+        
+        // Add presets button if it exists in the layout
+        binding.root.findViewById<android.widget.Button>(R.id.buttonAddPresets)?.setOnClickListener {
+            showTorrentPresetsDialog()
+        }
+    }
+    
+    /**
+     * Show dialog to add tested torrent site presets
+     */
+    private fun showTorrentPresetsDialog() {
+        val categories = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.getPresetCategories()
+        val categoryNames = categories.map { "${it.icon} ${it.name} (${it.presets.size})" }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle("🌐 Add Torrent Site Presets")
+            .setItems(categoryNames) { _, which ->
+                showPresetsForCategory(categories[which])
+            }
+            .setNeutralButton("Add All Public") { _, _ ->
+                addAllPublicTorrentPresets()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun showPresetsForCategory(category: com.zim.jackettprowler.providers.TorrentSitePresetRegistry.TorrentPresetCategory) {
+        val presetNames = category.presets.map { "• ${it.name} - ${it.description}" }.toTypedArray()
+        
+        AlertDialog.Builder(this)
+            .setTitle("${category.icon} ${category.name}")
+            .setItems(presetNames) { _, which ->
+                addTorrentPresetWithTesting(category.presets[which].id)
+            }
+            .setNeutralButton("Add All") { _, _ ->
+                addAllPresetsInCategory(category)
+            }
+            .setNegativeButton("Back") { _, _ ->
+                showTorrentPresetsDialog()
+            }
+            .show()
+    }
+    
+    private fun addTorrentPresetWithTesting(presetId: String) {
+        val config = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.getPresetConfig(presetId)
+        if (config == null) {
+            Toast.makeText(this, "Unknown preset: $presetId", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        val progress = ProgressDialog.show(this, "🧪 Testing Preset", "Verifying ${config.name} is working...", true)
+        
+        uiScope.launch(Dispatchers.IO) {
+            val testResult = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.testPreset(this@SmartProviderAddActivity, presetId)
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                val customSiteManager = CustomSiteManager(this@SmartProviderAddActivity)
+                
+                if (testResult.success) {
+                    customSiteManager.addSite(config)
+                    AlertDialog.Builder(this@SmartProviderAddActivity)
+                        .setTitle("✅ ${config.name} Added!")
+                        .setMessage("Test successful!\n\n• Found ${testResult.resultCount} torrents\n• Example: ${testResult.sampleTitle?.take(50) ?: "N/A"}...\n\nSite is ready to use.")
+                        .setPositiveButton("Great!", null)
+                        .show()
+                } else {
+                    AlertDialog.Builder(this@SmartProviderAddActivity)
+                        .setTitle("⚠️ Test Inconclusive")
+                        .setMessage("Could not verify ${config.name}:\n\n${testResult.error ?: "No results found"}\n\nThe site may still work. Add anyway?")
+                        .setPositiveButton("Add Anyway") { _, _ ->
+                            customSiteManager.addSite(config)
+                            Toast.makeText(this@SmartProviderAddActivity, "Added: ${config.name}", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+        }
+    }
+    
+    private fun addAllPresetsInCategory(category: com.zim.jackettprowler.providers.TorrentSitePresetRegistry.TorrentPresetCategory) {
+        val progress = ProgressDialog(this).apply {
+            setTitle("🧪 Testing Presets")
+            setMessage("Testing ${category.presets.size} sites...")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = category.presets.size
+            show()
+        }
+        
+        uiScope.launch(Dispatchers.IO) {
+            val customSiteManager = CustomSiteManager(this@SmartProviderAddActivity)
+            var addedCount = 0
+            var workingCount = 0
+            
+            category.presets.forEachIndexed { index, preset ->
+                launch(Dispatchers.Main) {
+                    progress.progress = index + 1
+                    progress.setMessage("Testing ${preset.name}...")
+                }
+                
+                val config = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.getPresetConfig(preset.id)
+                if (config != null) {
+                    val testResult = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.testPreset(this@SmartProviderAddActivity, preset.id)
+                    customSiteManager.addSite(config)
+                    addedCount++
+                    if (testResult.success) workingCount++
+                }
+            }
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                Toast.makeText(this@SmartProviderAddActivity, "✓ Added $addedCount sites ($workingCount verified working)", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    private fun addAllPublicTorrentPresets() {
+        val publicPresets = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.getPublicPresets()
+        
+        val progress = ProgressDialog(this).apply {
+            setTitle("🧪 Testing Public Trackers")
+            setMessage("Testing ${publicPresets.size} sites...")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = publicPresets.size
+            show()
+        }
+        
+        uiScope.launch(Dispatchers.IO) {
+            val customSiteManager = CustomSiteManager(this@SmartProviderAddActivity)
+            var addedCount = 0
+            var workingCount = 0
+            val results = mutableMapOf<String, Boolean>()
+            
+            publicPresets.forEachIndexed { index, preset ->
+                launch(Dispatchers.Main) {
+                    progress.progress = index + 1
+                    progress.setMessage("Testing ${preset.name}...")
+                }
+                
+                val config = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.getPresetConfig(preset.id)
+                if (config != null) {
+                    val testResult = com.zim.jackettprowler.providers.TorrentSitePresetRegistry.testPreset(this@SmartProviderAddActivity, preset.id)
+                    customSiteManager.addSite(config)
+                    addedCount++
+                    results[preset.name] = testResult.success
+                    if (testResult.success) workingCount++
+                }
+            }
+            
+            launch(Dispatchers.Main) {
+                progress.dismiss()
+                
+                val message = buildString {
+                    appendLine("Added $addedCount sites ($workingCount verified working)")
+                    appendLine()
+                    results.forEach { (name, success) ->
+                        appendLine("${if (success) "✓" else "⚠"} $name")
+                    }
+                }
+                
+                AlertDialog.Builder(this@SmartProviderAddActivity)
+                    .setTitle("✅ Public Trackers Added")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
     }
     
     private fun analyzeSite(url: String) {
