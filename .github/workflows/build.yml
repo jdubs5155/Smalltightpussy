@@ -2,7 +2,7 @@ name: Build and Release APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'copilot/**' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:  # Allow manual trigger
