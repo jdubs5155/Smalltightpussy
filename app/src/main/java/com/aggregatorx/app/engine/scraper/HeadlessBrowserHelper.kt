@@ -167,6 +167,7 @@ object HeadlessBrowserHelper {
 
     /**
      * Enhanced page fetch with shadow DOM support and aggressive ad removal
+     * Also handles video pre-roll ads for proper content extraction
      */
     fun fetchPageContentWithShadowAndAdSkip(url: String, waitSelector: String? = null, timeout: Int = 15000): String? {
         val page = createPage()
@@ -189,6 +190,9 @@ object HeadlessBrowserHelper {
                 removeAdElements(page)
                 Thread.sleep(300)
             }
+            
+            // Handle video pre-roll ads (wait for skip and click)
+            handleVideoAds(page, 10000) // Wait up to 10 seconds
             
             // Handle cookie consent
             handleCookieConsent(page)
@@ -304,6 +308,7 @@ object HeadlessBrowserHelper {
     /**
      * Extract video URLs from a page (handles dynamic content)
      * Returns list of video URL strings for use by VideoExtractorEngine
+     * Enhanced to skip video ads and filter out ad-related URLs
      */
     fun extractVideoUrls(url: String, timeout: Int = 20000): List<String> {
         val page = createPage()
@@ -321,15 +326,25 @@ object HeadlessBrowserHelper {
             page.navigate(url, Page.NavigateOptions().setTimeout(timeout.toDouble()))
             page.waitForLoadState(LoadState.NETWORKIDLE, Page.WaitForLoadStateOptions().setTimeout(timeout.toDouble()))
             
-            // Handle ads first
+            // Handle popup ads first - multiple passes
             repeat(3) {
                 autoClickCloseButtons(page)
                 Thread.sleep(300)
             }
             
-            // Look for play buttons and click them
+            // Look for play buttons and click them to start the player
             clickPlayButtons(page)
             Thread.sleep(1000)
+            
+            // CRITICAL: Handle video ads - wait for skip button and click it
+            // This handles pre-roll ads that play before the main content
+            handleVideoAds(page, 15000) // Wait up to 15 seconds for ad skip
+            
+            // After skipping ads, wait a moment for main content to load
+            Thread.sleep(1500)
+            
+            // Remove ad elements from DOM
+            removeAdElements(page)
             
             // Extract from HTML
             val htmlUrls = extractVideoUrlsFromHtml(page)
@@ -343,10 +358,17 @@ object HeadlessBrowserHelper {
             val elementUrls = extractFromVideoElements(page)
             videoUrls.addAll(elementUrls)
             
+            // Filter out ad URLs and sort by quality + content likelihood
             return videoUrls.distinct()
-                .sortedByDescending { getQualityScore(detectQualityFromUrl(it)) }
+                .filter { !isAdUrl(it) }
+                .sortedWith(compareBy(
+                    // Primary sort: prefer likely main content
+                    { if (isLikelyMainContent(it)) 0 else 1 },
+                    // Secondary sort: prefer higher quality
+                    { -getQualityScore(detectQualityFromUrl(it)) }
+                ))
         } catch (e: Exception) {
-            return videoUrls
+            return videoUrls.filter { !isAdUrl(it) }
         } finally {
             try { page.close() } catch (_: Exception) {}
         }
@@ -385,6 +407,133 @@ object HeadlessBrowserHelper {
                     Thread.sleep(500)
                 }
             } catch (_: Exception) {}
+        }
+    }
+    
+    /**
+     * Handle video ads with skip buttons - waits for skip to become available and clicks it
+     * This is critical for sites that play pre-roll video ads before main content
+     */
+    private fun handleVideoAds(page: Page, maxWaitMs: Int = 15000) {
+        val skipButtonSelectors = listOf(
+            // YouTube-style skip
+            ".ytp-ad-skip-button", ".ytp-ad-skip-button-modern", ".ytp-skip-ad-button",
+            "[class*='skip-ad']", "[class*='skip-button']", "[class*='skipButton']",
+            
+            // Generic video ad skip buttons
+            ".skip-ad", ".skip-ad-button", ".skipAd", ".skip-advertisement",
+            ".ad-skip", ".ad-skip-button", ".adSkipButton", ".skip-btn",
+            "#skip-button", "#skip-ad", "#skipAd", "#ad-skip-button",
+            
+            // Video.js style
+            ".vjs-ad-skip", ".vjs-skip-button", ".ima-skip-button",
+            
+            // JW Player style  
+            ".jw-skip", ".jw-skipAd", ".jwplayer .skip",
+            
+            // Common patterns
+            "button[class*='skip']", "div[class*='skip']", "span[class*='skip']",
+            "[aria-label*='skip' i]", "[aria-label*='Skip' i]",
+            "[title*='skip' i]", "[title*='Skip' i]",
+            
+            // Countdown-based skip (click when visible)
+            ".ad-countdown", ".skip-countdown", ".ad-skip-countdown",
+            
+            // Close ad overlay buttons
+            ".ad-close-button", ".close-ad", ".ad-overlay-close",
+            ".video-ad-close", ".preroll-skip", ".preroll-close"
+        )
+        
+        val startTime = System.currentTimeMillis()
+        var adSkipped = false
+        
+        // Keep trying to skip ads for up to maxWaitMs
+        while (System.currentTimeMillis() - startTime < maxWaitMs && !adSkipped) {
+            // Try each skip selector
+            for (selector in skipButtonSelectors) {
+                try {
+                    val element = page.querySelector(selector)
+                    if (element != null && element.isVisible) {
+                        element.click(com.microsoft.playwright.ElementHandle.ClickOptions().setTimeout(500.0))
+                        Thread.sleep(300)
+                        adSkipped = true
+                        break
+                    }
+                } catch (_: Exception) {}
+            }
+            
+            // Also try JavaScript-based skip
+            if (!adSkipped) {
+                try {
+                    page.evaluate("""
+                        () => {
+                            // Find and click any skip-like button
+                            const skipPatterns = ['skip', 'Skip', 'SKIP', 'close', 'dismiss'];
+                            const buttons = document.querySelectorAll('button, div[role="button"], a, span');
+                            for (const btn of buttons) {
+                                const text = btn.innerText || btn.textContent || '';
+                                const className = btn.className || '';
+                                for (const pattern of skipPatterns) {
+                                    if ((text.includes(pattern) || className.toLowerCase().includes(pattern.toLowerCase())) 
+                                        && btn.offsetParent !== null) {
+                                        btn.click();
+                                        return true;
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                    """)
+                } catch (_: Exception) {}
+            }
+            
+            // Check if ad is playing and wait a bit
+            val adPlaying = isAdCurrentlyPlaying(page)
+            if (adPlaying && !adSkipped) {
+                Thread.sleep(1000) // Wait 1 second before trying again
+            } else if (!adPlaying) {
+                // No ad playing, we can exit
+                break
+            }
+        }
+    }
+    
+    /**
+     * Check if a video ad is currently playing
+     */
+    private fun isAdCurrentlyPlaying(page: Page): Boolean {
+        return try {
+            val result = page.evaluate("""
+                () => {
+                    // Check for common ad indicators
+                    const adIndicators = [
+                        '.ad-playing', '.ad-showing', '.ytp-ad-player-overlay',
+                        '[class*="ad-container"]', '[class*="ad-player"]',
+                        '.ima-ad-container', '.video-ads', '.preroll',
+                        '[data-ad-playing="true"]'
+                    ];
+                    
+                    for (const selector of adIndicators) {
+                        const el = document.querySelector(selector);
+                        if (el && el.offsetParent !== null) return true;
+                    }
+                    
+                    // Check video element for ad-related attributes
+                    const videos = document.querySelectorAll('video');
+                    for (const v of videos) {
+                        const src = v.src || v.currentSrc || '';
+                        if (src.includes('ad') || src.includes('preroll') || 
+                            src.includes('doubleclick') || src.includes('googlesyndication')) {
+                            if (!v.paused && !v.ended) return true;
+                        }
+                    }
+                    
+                    return false;
+                }
+            """)
+            result == true
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -489,11 +638,65 @@ object HeadlessBrowserHelper {
     }
 
     /**
-     * Check if URL is a video URL
+     * Check if URL is a video URL (excluding ad networks)
      */
     private fun isVideoUrl(url: String): Boolean {
         val videoExtensions = listOf(".mp4", ".m3u8", ".webm", ".mpd", ".flv", ".mkv", ".ts", ".mov")
-        return videoExtensions.any { url.lowercase().contains(it) }
+        val hasVideoExtension = videoExtensions.any { url.lowercase().contains(it) }
+        
+        // Must have video extension AND not be from ad network
+        return hasVideoExtension && !isAdUrl(url)
+    }
+    
+    /**
+     * Check if URL is from an ad network - filter these out from video results
+     */
+    private fun isAdUrl(url: String): Boolean {
+        val adPatterns = listOf(
+            // Google ad networks
+            "doubleclick", "googlesyndication", "googleadservices", "googleads",
+            "google.com/pagead", "googlevideo.com/videogoodput", "google.com/ads",
+            
+            // Major ad networks
+            "adsense", "adservice", "adserver", "adtech", "adnxs", "adzerk",
+            "advertising.com", "openx.net", "pubmatic", "rubiconproject",
+            "taboola", "outbrain", "criteo", "moatads", "amazon-adsystem",
+            
+            // Video ad specific
+            "imasdk", "ima3", "/ads/", "/ad/", "/adv/", "/advertisement/",
+            "preroll", "midroll", "postroll", "/vast/", "/vpaid/", "/vmap/",
+            "spotx", "teads", "unruly", "tremor", "freewheel", "jwpltx",
+            
+            // Tracking and analytics (often serve ads)
+            "scorecardresearch", "quantserve", "mixpanel", "segment.io",
+            
+            // Common ad URL patterns
+            "ad.php", "ads.php", "advert", "/banner/", "popup",
+            "sponsored", "promo.mp4", "commercial", 
+            
+            // Short ad indicators
+            "15sec", "30sec", "15s.", "30s.", "_ad_", "-ad-", "_ad.", "-ad.",
+            
+            // CDN ad paths
+            "/adcontent/", "/adserving/", "/adcreative/"
+        )
+        
+        val urlLower = url.lowercase()
+        return adPatterns.any { urlLower.contains(it) }
+    }
+    
+    /**
+     * Check if URL looks like main content (higher priority)
+     */
+    private fun isLikelyMainContent(url: String): Boolean {
+        val contentIndicators = listOf(
+            "episode", "movie", "film", "video", "watch", "play", "stream",
+            "media", "content", "source", "master", "index.m3u8", "playlist.m3u8",
+            "1080", "720", "480", "hd", "sd", "quality", "hls", "dash"
+        )
+        
+        val urlLower = url.lowercase()
+        return contentIndicators.any { urlLower.contains(it) } && !isAdUrl(url)
     }
 
     /**
