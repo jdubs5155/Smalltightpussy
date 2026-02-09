@@ -1,61 +1,42 @@
-# Built application files
+# Gradle files
+.gradle/
+build/
+*/build/
+app/build/
+
+# Local configuration
+local.properties
+*.iml
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# APK files (built artifacts)
 *.apk
 *.ap_
 *.aab
 
-# Files for the ART/Dalvik VM
-*.dex
-
-# Java class files
-*.class
-
-# Generated files
-bin/
-gen/
-out/
-release/
-
-# Gradle files
-.gradle/
-build/
-gradle-app.setting
-!gradle-wrapper.jar
-
-# Local configuration file (sdk path, etc)
-local.properties
-
-# IntelliJ
-*.iml
-.idea/
-
-# Android Studio Navigation editor temp files
-.navigation/
-
-# Android Studio captures folder
-captures/
-
-# Keystore files
-*.jks
+# Signing
 *.keystore
+*.jks
 
-# External native build folder generated in Android Studio 2.2 and later
-.externalNativeBuild
-.cxx/
-
-# Version control
-.svn/
-
-# OS-specific files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Misc
+# Log files
 *.log
-*.swp
-*~
+
+# Test output
+/test-results/
+/reports/
+
+# Kotlin
 .kotlin/
+
+# Jupyter
+*.ipynb_checkpoints/
+new-workspace.jupyterlab-workspace

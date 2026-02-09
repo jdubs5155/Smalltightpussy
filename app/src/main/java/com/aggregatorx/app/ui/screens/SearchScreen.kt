@@ -1,0 +1,572 @@
+package com.aggregatorx.app.ui.screens
+
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.aggregatorx.app.data.model.ProviderSearchResults
+import com.aggregatorx.app.data.model.SearchResult
+import com.aggregatorx.app.ui.components.*
+import com.aggregatorx.app.ui.theme.*
+import com.aggregatorx.app.ui.viewmodel.SearchUiState
+import com.aggregatorx.app.ui.viewmodel.SearchViewModel
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchScreen(
+    viewModel: SearchViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val providerResults by viewModel.providerResults.collectAsState()
+    val context = LocalContext.current
+    
+    val listState = rememberLazyListState()
+    
+    // Download state
+    var showDownloadDialog by remember { mutableStateOf(false) }
+    var downloadResult by remember { mutableStateOf<SearchResult?>(null) }
+    
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(DarkBackground, DarkSurface)
+                )
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Header with animated gradient
+            AnimatedHeader()
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Search bar
+            FuturisticSearchBar(
+                query = uiState.query,
+                onQueryChange = viewModel::updateQuery,
+                onSearch = viewModel::search,
+                isLoading = uiState.isSearching
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Search stats
+            AnimatedVisibility(
+                visible = uiState.searchCompleted || uiState.isSearching,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                SearchStatsBar(
+                    totalResults = uiState.totalResults,
+                    successfulProviders = uiState.successfulProviders,
+                    failedProviders = uiState.failedProviders,
+                    isSearching = uiState.isSearching
+                )
+            }
+            
+            // Content
+            when {
+                uiState.isSearching && providerResults.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            FuturisticLoader(size = 64.dp)
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                text = "Searching across providers...",
+                                color = TextSecondary,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+                
+                providerResults.isNotEmpty() -> {
+                    ProviderResultsList(
+                        providerResults = providerResults,
+                        topResults = uiState.aggregatedResults?.topResults ?: emptyList(),
+                        listState = listState,
+                        onResultClick = { result ->
+                            // Open in external browser
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
+                            context.startActivity(intent)
+                        },
+                        onDownload = { result ->
+                            downloadResult = result
+                            showDownloadDialog = true
+                        },
+                        onOpenExternal = { result ->
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                
+                uiState.recentSearches.isNotEmpty() && !uiState.searchCompleted -> {
+                    RecentSearches(
+                        searches = uiState.recentSearches,
+                        onSearchClick = viewModel::searchFromHistory,
+                        onClearAll = viewModel::clearSearchHistory,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                
+                else -> {
+                    EmptySearchState(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f)
+                    )
+                }
+            }
+        }
+        
+        // Error snackbar
+        uiState.error?.let { error ->
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                containerColor = AccentRed.copy(alpha = 0.9f),
+                contentColor = TextPrimary,
+                action = {
+                    TextButton(onClick = viewModel::clearError) {
+                        Text("Dismiss", color = TextPrimary)
+                    }
+                }
+            ) {
+                Text(error)
+            }
+        }
+    }
+    
+    // Download Confirmation Dialog
+    if (showDownloadDialog && downloadResult != null) {
+        AlertDialog(
+            onDismissRequest = { showDownloadDialog = false },
+            containerColor = DarkCard,
+            title = {
+                Text("Download", color = TextPrimary)
+            },
+            text = {
+                Text(
+                    "Download \"${downloadResult?.title}\"?",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        downloadResult?.let { result ->
+                            viewModel.downloadResult(result)
+                            Toast.makeText(context, "Download started: ${result.title}", Toast.LENGTH_SHORT).show()
+                        }
+                        showDownloadDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                ) {
+                    Text("Download", color = DarkBackground)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDownloadDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun AnimatedHeader() {
+    val infiniteTransition = rememberInfiniteTransition()
+    val offset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        )
+    )
+    
+    Column {
+        Text(
+            text = "AggregatorX",
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.drawBehind {
+                val brush = Brush.horizontalGradient(
+                    colors = listOf(CyberCyan, CyberBlue, CyberPurple, CyberCyan),
+                    startX = size.width * offset.toFloat() - size.width,
+                    endX = size.width * offset.toFloat()
+                )
+            },
+            color = CyberCyan
+        )
+        Text(
+            text = "Search across all your providers",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary
+        )
+    }
+}
+
+@Composable
+fun SearchStatsBar(
+    totalResults: Int,
+    successfulProviders: Int,
+    failedProviders: Int,
+    isSearching: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(DarkCard)
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        StatItem(
+            icon = Icons.Default.Summarize,
+            value = totalResults.toString(),
+            label = "Results",
+            color = CyberCyan
+        )
+        StatItem(
+            icon = Icons.Default.CheckCircle,
+            value = successfulProviders.toString(),
+            label = "Success",
+            color = AccentGreen
+        )
+        StatItem(
+            icon = Icons.Default.Error,
+            value = failedProviders.toString(),
+            label = "Failed",
+            color = if (failedProviders > 0) AccentRed else TextTertiary
+        )
+        if (isSearching) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = CyberCyan,
+                strokeWidth = 2.dp
+            )
+        }
+    }
+}
+
+@Composable
+fun StatItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = value,
+            color = color,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = label,
+            color = TextTertiary,
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
+}
+
+@Composable
+fun ProviderResultsList(
+    providerResults: List<ProviderSearchResults>,
+    topResults: List<SearchResult>,
+    listState: LazyListState,
+    onResultClick: (SearchResult) -> Unit,
+    onDownload: (SearchResult) -> Unit = {},
+    onOpenExternal: (SearchResult) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        state = listState,
+        modifier = modifier,
+        contentPadding = PaddingValues(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Top Results Section
+        if (topResults.isNotEmpty()) {
+            item {
+                Text(
+                    text = "🏆 Top Results",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AccentYellow,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            
+            items(topResults.take(5)) { result ->
+                SearchResultCard(
+                    result = result,
+                    onClick = { onResultClick(result) },
+                    onDownload = { onDownload(result) },
+                    onOpenExternal = { onOpenExternal(result) },
+                    showControls = true
+                )
+            }
+            
+            item {
+                Divider(
+                    color = DarkSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            }
+        }
+        
+        // Provider sections
+        providerResults.forEach { providerResult ->
+            item {
+                ProviderResultsHeader(
+                    providerName = providerResult.provider.name,
+                    resultCount = providerResult.results.size,
+                    searchTime = providerResult.searchTime,
+                    success = providerResult.success,
+                    errorMessage = providerResult.errorMessage
+                )
+            }
+            
+            if (providerResult.success && providerResult.results.isNotEmpty()) {
+                items(providerResult.results) { result ->
+                    SearchResultCard(
+                        result = result,
+                        onClick = { onResultClick(result) },
+                        onDownload = { onDownload(result) },
+                        onOpenExternal = { onOpenExternal(result) },
+                        showControls = true,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
+            } else if (!providerResult.success) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = providerResult.errorMessage ?: "No results",
+                            color = TextTertiary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+            
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun RecentSearches(
+    searches: List<com.aggregatorx.app.data.model.SearchHistoryEntry>,
+    onSearchClick: (String) -> Unit,
+    onClearAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Recent Searches",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextSecondary
+            )
+            TextButton(onClick = onClearAll) {
+                Text("Clear All", color = CyberCyan)
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(searches) { search ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSearchClick(search.query) },
+                    colors = CardDefaults.cardColors(containerColor = DarkCard),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            tint = TextTertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = search.query,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "${search.resultCount} results from ${search.providersSearched} providers",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextTertiary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ArrowForward,
+                            contentDescription = null,
+                            tint = CyberCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptySearchState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Search,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = TextTertiary.copy(alpha = 0.5f)
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "Start searching",
+            style = MaterialTheme.typography.headlineSmall,
+            color = TextSecondary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Enter a search term to find content\nacross all your configured providers",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextTertiary,
+            textAlign = TextAlign.Center
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        // Feature highlights
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            FeatureChip(
+                icon = Icons.Default.Speed,
+                text = "Fast",
+                color = AccentGreen
+            )
+            FeatureChip(
+                icon = Icons.Default.Hub,
+                text = "Multi-provider",
+                color = CyberCyan
+            )
+            FeatureChip(
+                icon = Icons.Default.AutoAwesome,
+                text = "Smart Ranking",
+                color = CyberPurple
+            )
+        }
+    }
+}
+
+@Composable
+fun FeatureChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    color: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.1f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = text,
+                color = color,
+                style = MaterialTheme.typography.labelMedium
+            )
+        }
+    }
+}

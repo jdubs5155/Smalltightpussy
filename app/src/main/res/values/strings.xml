@@ -1,18 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Jackett Prowlarr Client</string>
-
-    <string-array name="source_array">
-        <item>All Sources (Everything)</item>
-        <item>Jackett</item>
-        <item>Prowlarr</item>
-    </string-array>
-
-    <!-- Advanced / settings -->
-    <string name="settings_title">Settings</string>
-    <string name="qb_enabled_label">Enable qBittorrent API</string>
-    <string name="qb_base_url_label">qBittorrent URL</string>
-    <string name="qb_username_label">Username</string>
-    <string name="qb_password_label">Password</string>
-    <string name="save_button">Save</string>
+    <string name="app_name">AggregatorX</string>
 </resources>

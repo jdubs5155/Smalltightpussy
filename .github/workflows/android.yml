@@ -1,10 +1,12 @@
-name: Android CI
+name: Android Build
 
 on:
   push:
-    branches: ["main", "copilot/**"]
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
   pull_request:
-    branches: ["main"]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -13,23 +15,14 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
-        distribution: 'temurin'
         java-version: '17'
-
-    - name: Cache Gradle
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
+        distribution: 'temurin'
+        cache: gradle
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
@@ -37,8 +30,66 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
-    - name: Upload APK artifact
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
+    - name: Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: AggregatorX-debug
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 30
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: AggregatorX-release
+        path: app/build/outputs/apk/release/*.apk
+        retention-days: 90
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build Release APK
+      run: ./gradlew assembleRelease
+
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: app/build/outputs/apk/release/*.apk
+        name: Release v${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## AggregatorX v${{ steps.get_version.outputs.VERSION }}
+          
+          ### Features
+          - 🌙 **Pastel Dark Theme** - Easy on eyes with soft, muted colors
+          - 🖱️ **Auto-Click Ad Bypass** - Automatically dismisses popups and ads
+          - 🔍 **AI-Powered Scraping** - Smart content extraction
+          - 📱 **Modern Material3 UI** - Beautiful Jetpack Compose interface
+          
+          ### Download
+          Download the APK file below and install on your Android device.
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

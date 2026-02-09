@@ -1,3 +1,12 @@
 {
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python-envs.pythonProjects": [],
+    "chat.mcp.serverSampling": {
+        "JackettProwlarrClient/.vscode/mcp.json: microsoft/playwright-mcp": {
+            "allowedModels": [
+                "copilot/claude-sonnet-4.5",
+                "copilot/claude-opus-4.5"
+            ]
+        }
+    }
 }

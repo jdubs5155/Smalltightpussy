@@ -1,27 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
+        android:name=".AggregatorXApp"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.JackettProwlarrClient"
-        android:networkSecurityConfig="@xml/network_security_config"
+        android:theme="@style/Theme.AggregatorX"
         android:usesCleartextTraffic="true"
-        android:requestLegacyExternalStorage="true">
-
-        <!-- FileProvider for sharing downloaded videos -->
+        android:requestLegacyExternalStorage="true"
+        tools:targetApi="34">
+        
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.AggregatorX">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        
+        <!-- FileProvider for sharing downloaded files -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -31,69 +46,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <!-- Background Service Daemon -->
-        <service
-            android:name=".services.BackgroundServiceDaemon"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-        
-        <!-- Boot Receiver to restart daemon -->
-        <receiver
-            android:name=".services.BootReceiver"
-            android:exported="true"
-            android:enabled="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
-        <activity
-            android:name=".CustomURLsActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".IndexerManagementActivity"
-            android:exported="false" />
-        
-        <activity
-            android:name=".UnifiedProviderManagementActivity"
-            android:exported="false"
-            android:label="All Providers" />
-        
-        <activity
-            android:name=".SmartProviderAddActivity"
-            android:exported="false"
-            android:label="Add Custom Provider" />
-
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false" />
-        
-        <activity
-            android:name=".TrackerManagementActivity"
-            android:exported="false"
-            android:label="Tracker Management" />
-        
-        <activity
-            android:name=".RealSourcesActivity"
-            android:exported="false"
-            android:label="Real Verified Sources" />
-        
-        <activity
-            android:name=".video.VideoSitesActivity"
-            android:exported="false"
-            android:label="Video Sites" />
-
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
     </application>
 
 </manifest>
