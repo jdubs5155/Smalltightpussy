@@ -4,8 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.data.repository.AggregatorRepository
-import com.aggregatorx.app.engine.UnifiedContentEngine
-import com.aggregatorx.app.engine.EngineState
 import com.aggregatorx.app.engine.media.DownloadManager
 import com.aggregatorx.app.engine.media.DownloadState
 import com.aggregatorx.app.engine.media.VideoExtractorEngine
@@ -19,8 +17,7 @@ import javax.inject.Inject
 class SearchViewModel @Inject constructor(
     private val repository: AggregatorRepository,
     private val videoExtractor: VideoExtractorEngine,
-    private val downloadManager: DownloadManager,
-    private val unifiedEngine: UnifiedContentEngine
+    private val downloadManager: DownloadManager
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -32,24 +29,9 @@ class SearchViewModel @Inject constructor(
     private val _videoExtractionState = MutableStateFlow<VideoExtractionState>(VideoExtractionState.Idle)
     val videoExtractionState: StateFlow<VideoExtractionState> = _videoExtractionState.asStateFlow()
     
-    // Unified engine state
-    val engineState: StateFlow<EngineState> = unifiedEngine.engineState
-    val engineError: StateFlow<String?> = unifiedEngine.lastError
-    
     val downloads: StateFlow<Map<String, DownloadState>> = downloadManager.downloads
     
     init {
-        // Initialize the unified engine
-        viewModelScope.launch {
-            val initResult = unifiedEngine.initialize()
-            if (initResult.success) {
-                _uiState.update { it.copy(
-                    proxyActive = initResult.proxyReady,
-                    proxyInfo = initResult.proxyInfo
-                )}
-            }
-        }
-        
         // Load recent searches
         viewModelScope.launch {
             repository.getRecentSearches().collect { searches ->
@@ -133,72 +115,38 @@ class SearchViewModel @Inject constructor(
     
     /**
      * Extract video URL from a page URL - suspend function for inline preview
-     * Uses unified engine with Netherlands proxy for geo-restricted content
      * Returns the extracted video URL or null if extraction fails
      */
     suspend fun extractVideoUrlForPreview(pageUrl: String): String? {
         return try {
-            // Use unified engine with proxy support
-            val result = unifiedEngine.prepareVideoPlayback(
-                pageUrl = pageUrl,
-                useProxy = _uiState.value.proxyActive
-            )
-            
-            if (result.success) {
-                result.streamUrl
-            } else {
-                // Fallback to direct extraction
-                videoExtractor.extractVideoUrlForPreview(pageUrl)
-            }
+            videoExtractor.extractVideoUrlForPreview(pageUrl)
         } catch (e: Exception) {
             null
         }
     }
     
     /**
-     * Extract video URL from a search result page with automatic recovery
+     * Extract video URL from a search result page
      */
     fun extractVideoUrl(result: SearchResult) {
         viewModelScope.launch {
             _videoExtractionState.value = VideoExtractionState.Extracting(result.title)
             
             try {
-                // Use unified engine with proxy and automatic recovery
-                val playbackResult = unifiedEngine.prepareVideoPlayback(
-                    pageUrl = result.url,
-                    useProxy = true
-                )
+                val extractionResult = videoExtractor.extractVideoUrl(result.url)
                 
-                if (playbackResult.success && playbackResult.streamUrl != null) {
+                if (extractionResult.success && extractionResult.videoUrl != null) {
                     _videoExtractionState.value = VideoExtractionState.Success(
-                        videoUrl = playbackResult.streamUrl,
+                        videoUrl = extractionResult.videoUrl,
                         title = result.title,
-                        quality = playbackResult.quality,
-                        isStream = playbackResult.streamType in listOf("HLS", "DASH"),
-                        headers = playbackResult.headers,
-                        usedProxy = playbackResult.usedProxy
+                        quality = extractionResult.quality,
+                        isStream = extractionResult.format in listOf("m3u8", "mpd", "hls"),
+                        headers = emptyMap()
                     )
                 } else {
-                    // Try automatic recovery
-                    val recoveryResult = unifiedEngine.recoverFromPlaybackError(
-                        pageUrl = result.url,
-                        errorMessage = playbackResult.error ?: "Playback failed"
+                    _videoExtractionState.value = VideoExtractionState.Error(
+                        extractionResult.error ?: "Could not extract video URL"
                     )
-                    
-                    if (recoveryResult.success && recoveryResult.streamUrl != null) {
-                        _videoExtractionState.value = VideoExtractionState.Success(
-                            videoUrl = recoveryResult.streamUrl,
-                            title = result.title,
-                            quality = recoveryResult.quality,
-                            isStream = recoveryResult.streamType in listOf("HLS", "DASH"),
-                            headers = recoveryResult.headers,
-                            usedProxy = recoveryResult.usedProxy
-                        )
-                    } else {
-                        _videoExtractionState.value = VideoExtractionState.Error(
-                            recoveryResult.error ?: "Could not extract video URL"
-                        )
-                    }
                 }
             } catch (e: Exception) {
                 _videoExtractionState.value = VideoExtractionState.Error(
@@ -263,14 +211,11 @@ data class SearchUiState(
     val successfulProviders: Int = 0,
     val failedProviders: Int = 0,
     val recentSearches: List<SearchHistoryEntry> = emptyList(),
-    val error: String? = null,
-    // Proxy/VPN status
-    val proxyActive: Boolean = false,
-    val proxyInfo: String? = null
+    val error: String? = null
 )
 
 /**
- * State for video extraction process with enhanced proxy support
+ * State for video extraction process
  */
 sealed class VideoExtractionState {
     object Idle : VideoExtractionState()
@@ -280,8 +225,7 @@ sealed class VideoExtractionState {
         val title: String,
         val quality: String?,
         val isStream: Boolean,
-        val headers: Map<String, String> = emptyMap(),
-        val usedProxy: Boolean = false
+        val headers: Map<String, String> = emptyMap()
     ) : VideoExtractionState()
     data class Error(val message: String) : VideoExtractionState()
 }

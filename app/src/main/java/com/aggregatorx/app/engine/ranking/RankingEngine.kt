@@ -7,46 +7,63 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.ln
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Intelligent Result Ranking Engine
  * 
  * Uses multiple factors to rank and score search results:
- * - Text relevance (TF-IDF inspired)
+ * - Text relevance (TF-IDF inspired with fuzzy matching)
  * - Provider reliability score
  * - Content freshness
  * - User engagement signals (seeders, views, ratings)
  * - Quality indicators
+ * 
+ * Features:
+ * - Error providers automatically sorted to bottom
+ * - Fuzzy/partial matching for better results
+ * - Related content discovery even with partial matches
  */
 @Singleton
 class RankingEngine @Inject constructor() {
     
     companion object {
         // Scoring weights
-        private const val WEIGHT_TEXT_RELEVANCE = 0.35f
-        private const val WEIGHT_PROVIDER_SCORE = 0.15f
+        private const val WEIGHT_TEXT_RELEVANCE = 0.40f
+        private const val WEIGHT_PROVIDER_SCORE = 0.10f
         private const val WEIGHT_FRESHNESS = 0.15f
         private const val WEIGHT_ENGAGEMENT = 0.20f
         private const val WEIGHT_QUALITY = 0.15f
         
         // Text matching bonuses
-        private const val EXACT_MATCH_BONUS = 30f
-        private const val TITLE_START_BONUS = 20f
-        private const val ALL_TERMS_BONUS = 15f
-        private const val WORD_ORDER_BONUS = 10f
+        private const val EXACT_MATCH_BONUS = 35f
+        private const val TITLE_START_BONUS = 25f
+        private const val ALL_TERMS_BONUS = 20f
+        private const val WORD_ORDER_BONUS = 15f
+        private const val PARTIAL_MATCH_BONUS = 10f
+        private const val FUZZY_MATCH_BONUS = 5f
+        
+        // Minimum score thresholds
+        private const val MIN_SCORE_FOR_TOP = 0.15f
+        private const val MIN_SCORE_FOR_RELATED = 0.08f
     }
     
     /**
      * Rank and aggregate results from all providers
+     * Error providers are automatically placed at the bottom
      */
     fun rankAndAggregate(
         query: String,
         providerResults: List<ProviderSearchResults>
     ): AggregatedSearchResults {
         val startTime = System.currentTimeMillis()
+        
+        // Separate successful and failed providers
+        val successfulProviders = providerResults.filter { it.success }
+        val failedProviders = providerResults.filter { !it.success }
 
-        // Calculate scores for all results
-        val scoredResults = providerResults.flatMap { pr ->
+        // Calculate scores for all results from successful providers
+        val scoredResults = successfulProviders.flatMap { pr ->
             pr.results.map { result ->
                 ScoredResult(
                     result = result,
@@ -56,22 +73,23 @@ class RankingEngine @Inject constructor() {
             }
         }
 
-        // Get top results across all providers
+        // Get top results - best matches first
         val topResults = scoredResults
+            .filter { it.score >= MIN_SCORE_FOR_TOP }
             .sortedByDescending { it.score }
-            .take(20)
+            .take(25)
             .map { it.result.copy(relevanceScore = it.score) }
 
-        // Find related/similar results (by title/keywords)
+        // Find related/similar results (partial matches, fuzzy matches)
         val relatedResults = scoredResults
-            .filter { it.score > 0.2f }
+            .filter { it.score >= MIN_SCORE_FOR_RELATED && it.score < MIN_SCORE_FOR_TOP }
             .sortedByDescending { it.score }
-            .distinctBy { it.result.title.lowercase() }
-            .take(20)
+            .distinctBy { normalizeTitle(it.result.title) }
+            .take(30)
             .map { it.result.copy(relevanceScore = it.score) }
 
-        // Re-rank results within each provider
-        val rankedProviderResults = providerResults.map { pr ->
+        // Re-rank results within each successful provider
+        val rankedSuccessfulProviders = successfulProviders.map { pr ->
             val rankedResults = pr.results
                 .map { result ->
                     result.copy(
@@ -81,15 +99,18 @@ class RankingEngine @Inject constructor() {
                 .sortedByDescending { it.relevanceScore }
 
             pr.copy(results = rankedResults)
-        }
+        }.sortedByDescending { it.results.firstOrNull()?.relevanceScore ?: 0f }
+        
+        // Failed providers go at the bottom - keep original error info
+        val orderedProviderResults = rankedSuccessfulProviders + failedProviders
 
         return AggregatedSearchResults(
             query = query,
-            providerResults = rankedProviderResults,
-            totalResults = providerResults.sumOf { it.results.size },
+            providerResults = orderedProviderResults,
+            totalResults = successfulProviders.sumOf { it.results.size },
             searchTime = System.currentTimeMillis() - startTime,
-            successfulProviders = providerResults.count { it.success },
-            failedProviders = providerResults.count { !it.success },
+            successfulProviders = successfulProviders.size,
+            failedProviders = failedProviders.size,
             topResults = topResults,
             relatedResults = relatedResults
         )
@@ -117,7 +138,7 @@ class RankingEngine @Inject constructor() {
     }
     
     /**
-     * Calculate text relevance score using enhanced TF-IDF-like approach
+     * Calculate text relevance score using enhanced TF-IDF-like approach with fuzzy matching
      */
     private fun calculateTextRelevance(title: String, description: String?, query: String): Float {
         val titleLower = title.lowercase()
@@ -125,11 +146,11 @@ class RankingEngine @Inject constructor() {
         val queryLower = query.lowercase()
         val queryTerms = queryLower.split(Regex("\\s+")).filter { it.length > 1 }
         
-        if (queryTerms.isEmpty()) return 0f
+        if (queryTerms.isEmpty()) return 0.1f  // Give small score even with empty query
         
         var score = 0f
         
-        // Exact match in title
+        // Exact match in title - highest priority
         if (titleLower.contains(queryLower)) {
             score += EXACT_MATCH_BONUS
         }
@@ -139,36 +160,52 @@ class RankingEngine @Inject constructor() {
             score += TITLE_START_BONUS
         }
         
-        // Term frequency analysis
+        // Term frequency analysis with fuzzy matching
         var titleMatches = 0
         var descMatches = 0
+        var fuzzyMatches = 0
         val matchedTerms = mutableListOf<String>()
         
         queryTerms.forEach { term ->
-            // Title matching (higher weight)
+            // Exact title matching (higher weight)
             val titleOccurrences = countOccurrences(titleLower, term)
             if (titleOccurrences > 0) {
                 titleMatches++
                 matchedTerms.add(term)
                 // TF-IDF inspired: diminishing returns for repeated terms
-                score += (1 + ln(titleOccurrences.toDouble())).toFloat() * 5f
+                score += (1 + ln(titleOccurrences.toDouble())).toFloat() * 6f
                 
                 // Position bonus - earlier matches are better
                 val position = titleLower.indexOf(term)
-                score += max(0f, 5f - (position / 20f))
+                score += max(0f, 6f - (position / 15f))
+            } else {
+                // Try fuzzy matching for typos/variations
+                val fuzzyMatch = findFuzzyMatch(titleLower, term)
+                if (fuzzyMatch != null) {
+                    fuzzyMatches++
+                    score += FUZZY_MATCH_BONUS
+                }
+                
+                // Partial match - term contains part of query or vice versa
+                if (term.length >= 3 && titleLower.contains(term.dropLast(1))) {
+                    score += PARTIAL_MATCH_BONUS * 0.5f
+                }
             }
             
-            // Description matching (lower weight)
+            // Description matching (lower weight but still valuable)
             val descOccurrences = countOccurrences(descLower, term)
             if (descOccurrences > 0) {
                 descMatches++
-                score += (1 + ln(descOccurrences.toDouble())).toFloat() * 2f
+                score += (1 + ln(descOccurrences.toDouble())).toFloat() * 3f
             }
         }
         
         // All terms matched bonus
         if (titleMatches == queryTerms.size) {
             score += ALL_TERMS_BONUS
+        } else if (titleMatches + fuzzyMatches >= queryTerms.size * 0.7) {
+            // Partial match bonus when most terms found
+            score += ALL_TERMS_BONUS * 0.5f
         }
         
         // Word order preservation bonus
@@ -176,16 +213,69 @@ class RankingEngine @Inject constructor() {
             score += WORD_ORDER_BONUS
         }
         
-        // Coverage ratio
-        val coverageRatio = titleMatches.toFloat() / queryTerms.size
-        score *= (0.5f + coverageRatio * 0.5f)
+        // Coverage ratio - how much of query is matched
+        val coverageRatio = (titleMatches + fuzzyMatches * 0.5f) / queryTerms.size
+        score *= (0.4f + coverageRatio * 0.6f)
         
-        // Length penalty for very long titles
+        // Give minimum score if ANY match found (for related results)
+        if (titleMatches > 0 || descMatches > 0 || fuzzyMatches > 0) {
+            score = max(score, 5f)
+        }
+        
+        // Length penalty for very long titles (likely spam)
         if (title.length > 150) {
-            score *= 0.9f
+            score *= 0.85f
         }
         
         return score.coerceIn(0f, 100f) / 100f
+    }
+    
+    /**
+     * Find fuzzy match using Levenshtein-like distance
+     */
+    private fun findFuzzyMatch(text: String, term: String): String? {
+        if (term.length < 3) return null
+        
+        // Split text into words
+        val words = text.split(Regex("\\W+"))
+        
+        for (word in words) {
+            if (word.length < term.length - 2 || word.length > term.length + 2) continue
+            
+            // Calculate similarity
+            val similarity = calculateSimilarity(word, term)
+            if (similarity >= 0.75f) {
+                return word
+            }
+        }
+        return null
+    }
+    
+    /**
+     * Calculate string similarity (0-1)
+     */
+    private fun calculateSimilarity(s1: String, s2: String): Float {
+        if (s1 == s2) return 1f
+        if (s1.isEmpty() || s2.isEmpty()) return 0f
+        
+        val longer = if (s1.length > s2.length) s1 else s2
+        val shorter = if (s1.length > s2.length) s2 else s1
+        
+        // Quick check - if one starts with other
+        if (longer.startsWith(shorter) || longer.endsWith(shorter)) return 0.9f
+        
+        // Simple character overlap check
+        val commonChars = shorter.count { longer.contains(it) }
+        return commonChars.toFloat() / longer.length
+    }
+    
+    /**
+     * Normalize title for deduplication
+     */
+    private fun normalizeTitle(title: String): String {
+        return title.lowercase()
+            .replace(Regex("[^a-z0-9]"), "")
+            .take(50)
     }
     
     /**

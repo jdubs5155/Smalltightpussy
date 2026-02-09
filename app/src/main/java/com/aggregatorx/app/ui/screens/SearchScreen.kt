@@ -33,6 +33,7 @@ import com.aggregatorx.app.ui.components.*
 import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.ui.viewmodel.SearchUiState
 import com.aggregatorx.app.ui.viewmodel.SearchViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -336,57 +337,140 @@ fun ProviderResultsList(
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        state = listState,
-        modifier = modifier,
-        contentPadding = PaddingValues(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        // Top Results Section
-        if (topResults.isNotEmpty()) {
-            item {
-                Text(
-                    text = "🏆 Top Results",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = AccentYellow,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-            
-            items(topResults.take(5)) { result ->
-                SearchResultCard(
-                    result = result,
-                    onClick = { onResultClick(result) },
-                    onDownload = { onDownload(result) },
-                    onOpenExternal = { onOpenExternal(result) },
-                    showControls = true,
-                    onExtractVideoUrl = onExtractVideoUrl
-                )
-            }
-            
-            item {
-                Divider(
-                    color = DarkSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 16.dp)
-                )
+    // Separate successful and failed providers (failed go to bottom)
+    val successfulProviders = providerResults.filter { it.success && it.results.isNotEmpty() }
+    val emptyProviders = providerResults.filter { it.success && it.results.isEmpty() }
+    val failedProviders = providerResults.filter { !it.success }
+    
+    // Provider quick-jump tabs
+    var selectedProviderIndex by remember { mutableStateOf(-1) } // -1 = Top Results
+    val coroutineScope = rememberCoroutineScope()
+    
+    Column(modifier = modifier) {
+        // Provider Tab Bar for quick navigation
+        if (successfulProviders.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) {
+                // Top Results tab
+                item {
+                    ProviderTabChip(
+                        name = "🏆 Top",
+                        count = topResults.size,
+                        isSelected = selectedProviderIndex == -1,
+                        isError = false,
+                        onClick = {
+                            selectedProviderIndex = -1
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(0)
+                            }
+                        }
+                    )
+                }
+                
+                // Provider tabs
+                items(successfulProviders.size) { index ->
+                    val provider = successfulProviders[index]
+                    ProviderTabChip(
+                        name = provider.provider.name,
+                        count = provider.results.size,
+                        isSelected = selectedProviderIndex == index,
+                        isError = false,
+                        onClick = {
+                            selectedProviderIndex = index
+                            // Calculate scroll position (top results + providers before this one)
+                            val scrollTo = 1 + (if (topResults.isNotEmpty()) topResults.size + 2 else 0) +
+                                successfulProviders.take(index).sumOf { it.results.size + 2 }
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(scrollTo)
+                            }
+                        }
+                    )
+                }
+                
+                // Failed providers indicator
+                if (failedProviders.isNotEmpty()) {
+                    item {
+                        ProviderTabChip(
+                            name = "⚠️ Failed",
+                            count = failedProviders.size,
+                            isSelected = false,
+                            isError = true,
+                            onClick = {
+                                // Scroll to bottom
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
         
-        // Provider sections
-        providerResults.forEach { providerResult ->
-            item {
-                ProviderResultsHeader(
-                    providerName = providerResult.provider.name,
-                    resultCount = providerResult.results.size,
-                    searchTime = providerResult.searchTime,
-                    success = providerResult.success,
-                    errorMessage = providerResult.errorMessage
-                )
+        // Main results list with improved scrolling
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            // Improve scroll performance
+            userScrollEnabled = true
+        ) {
+            // Top Results Section
+            if (topResults.isNotEmpty()) {
+                item(key = "top_header") {
+                    Text(
+                        text = "🏆 Top Results",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = AccentYellow,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                
+                items(
+                    items = topResults.take(10),
+                    key = { "top_${it.url.hashCode()}" }
+                ) { result ->
+                    SearchResultCard(
+                        result = result,
+                        onClick = { onResultClick(result) },
+                        onDownload = { onDownload(result) },
+                        onOpenExternal = { onOpenExternal(result) },
+                        showControls = true,
+                        onExtractVideoUrl = onExtractVideoUrl
+                    )
+                }
+                
+                item(key = "top_divider") {
+                    Divider(
+                        color = DarkSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                }
             }
             
-            if (providerResult.success && providerResult.results.isNotEmpty()) {
-                items(providerResult.results) { result ->
+            // Provider sections - Successful providers with results first
+            successfulProviders.forEach { providerResult ->
+                item(key = "header_${providerResult.provider.id}") {
+                    ProviderResultsHeader(
+                        providerName = providerResult.provider.name,
+                        resultCount = providerResult.results.size,
+                        searchTime = providerResult.searchTime,
+                        success = true,
+                        errorMessage = null
+                    )
+                }
+                
+                items(
+                    items = providerResult.results,
+                    key = { "${providerResult.provider.id}_${it.url.hashCode()}" }
+                ) { result ->
                     SearchResultCard(
                         result = result,
                         onClick = { onResultClick(result) },
@@ -394,28 +478,177 @@ fun ProviderResultsList(
                         onOpenExternal = { onOpenExternal(result) },
                         showControls = true,
                         onExtractVideoUrl = onExtractVideoUrl,
-                        modifier = Modifier.padding(horizontal = 8.dp)
+                        modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }
-            } else if (!providerResult.success) {
-                item {
-                    Box(
+                
+                item(key = "spacer_${providerResult.provider.id}") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+            
+            // Empty providers (searched but no results)
+            if (emptyProviders.isNotEmpty()) {
+                item(key = "empty_header") {
+                    Text(
+                        text = "No Results From:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextTertiary,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                
+                item(key = "empty_list") {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = providerResult.errorMessage ?: "No results",
-                            color = TextTertiary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                        emptyProviders.forEach { provider ->
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = DarkCard
+                            ) {
+                                Text(
+                                    text = provider.provider.name,
+                                    color = TextTertiary,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
             
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
+            // Failed providers at the BOTTOM
+            if (failedProviders.isNotEmpty()) {
+                item(key = "failed_header") {
+                    Divider(
+                        color = AccentRed.copy(alpha = 0.3f),
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                    Text(
+                        text = "⚠️ Provider Errors",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = AccentRed.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                
+                items(
+                    items = failedProviders,
+                    key = { "failed_${it.provider.id}" }
+                ) { providerResult ->
+                    FailedProviderCard(
+                        providerName = providerResult.provider.name,
+                        errorMessage = providerResult.errorMessage ?: "Connection failed"
+                    )
+                }
+            }
+            
+            // Bottom padding for better scrolling
+            item(key = "bottom_spacer") {
+                Spacer(modifier = Modifier.height(80.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun ProviderTabChip(
+    name: String,
+    count: Int,
+    isSelected: Boolean,
+    isError: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor = when {
+        isError -> AccentRed.copy(alpha = 0.2f)
+        isSelected -> CyberCyan.copy(alpha = 0.3f)
+        else -> DarkCard
+    }
+    val textColor = when {
+        isError -> AccentRed
+        isSelected -> CyberCyan
+        else -> TextSecondary
+    }
+    
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = backgroundColor,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = name,
+                color = textColor,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1
+            )
+            if (count > 0) {
+                Surface(
+                    shape = CircleShape,
+                    color = textColor.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = count.toString(),
+                        color = textColor,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FailedProviderCard(
+    providerName: String,
+    errorMessage: String
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = AccentRed.copy(alpha = 0.1f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Error,
+                contentDescription = null,
+                tint = AccentRed.copy(alpha = 0.7f),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = providerName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextTertiary,
+                    maxLines = 1
+                )
             }
         }
     }
