@@ -1,0 +1,78 @@
+package com.aggregatorx.app.di
+
+import android.content.Context
+import com.aggregatorx.app.engine.UnifiedContentEngine
+import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
+import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
+import com.aggregatorx.app.engine.analyzer.UniversalFormatParser
+import com.aggregatorx.app.engine.media.VideoExtractorEngine
+import com.aggregatorx.app.engine.media.VideoStreamResolver
+import com.aggregatorx.app.engine.network.ProxyVPNEngine
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
+
+/**
+ * Dependency Injection Module for AggregatorX Engine Components
+ * Provides all engine-related dependencies with proper scoping
+ */
+@Module
+@InstallIn(SingletonComponent::class)
+object EngineModule {
+    
+    @Provides
+    @Singleton
+    fun provideProxyVPNEngine(): ProxyVPNEngine {
+        return ProxyVPNEngine()
+    }
+    
+    // VideoExtractorEngine is provided by DatabaseModule
+    
+    @Provides
+    @Singleton
+    fun provideVideoStreamResolver(
+        proxyVPNEngine: ProxyVPNEngine,
+        videoExtractorEngine: VideoExtractorEngine
+    ): VideoStreamResolver {
+        return VideoStreamResolver(proxyVPNEngine, videoExtractorEngine)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSiteAnalyzerEngine(): SiteAnalyzerEngine {
+        return SiteAnalyzerEngine()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSmartContentClassifier(): SmartContentClassifier {
+        return SmartContentClassifier()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideUniversalFormatParser(): UniversalFormatParser {
+        return UniversalFormatParser()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideUnifiedContentEngine(
+        proxyVPNEngine: ProxyVPNEngine,
+        videoStreamResolver: VideoStreamResolver,
+        smartContentClassifier: SmartContentClassifier,
+        universalFormatParser: UniversalFormatParser,
+        siteAnalyzerEngine: SiteAnalyzerEngine
+    ): UnifiedContentEngine {
+        return UnifiedContentEngine(
+            proxyVPNEngine,
+            videoStreamResolver,
+            smartContentClassifier,
+            universalFormatParser,
+            siteAnalyzerEngine
+        )
+    }
+}

@@ -11,10 +11,10 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * AggravatedX - Pastel Dark Theme
- * Designed to be easy on eyes with soft, muted colors
+ * AggregatorX - VIBRANT Neon Dark Theme
+ * Bright, modern, eye-catching colors for maximum visibility
  */
-private val PastelDarkColorScheme = darkColorScheme(
+private val VibrantDarkColorScheme = darkColorScheme(
     primary = CyberCyan,
     onPrimary = DarkBackground,
     primaryContainer = CyberCyanDark,
@@ -42,15 +42,15 @@ private val PastelDarkColorScheme = darkColorScheme(
     inverseSurface = TextPrimary,
     inverseOnSurface = DarkBackground,
     inversePrimary = CyberCyanDark,
-    surfaceTint = CyberCyan.copy(alpha = 0.1f)
+    surfaceTint = CyberCyan.copy(alpha = 0.15f)
 )
 
 @Composable
 fun AggregatorXTheme(
-    darkTheme: Boolean = true, // Always dark - pastel theme for comfort
+    darkTheme: Boolean = true, // Always dark - vibrant neon theme
     content: @Composable () -> Unit
 ) {
-    val colorScheme = PastelDarkColorScheme
+    val colorScheme = VibrantDarkColorScheme
     
     val view = LocalView.current
     if (!view.isInEditMode) {

@@ -3,64 +3,64 @@ package com.aggregatorx.app.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ==========================================
-// AggravatedX - Pastel Dark Theme (Easy on Eyes)
+// AggregatorX - VIBRANT Dark Theme (Bright & Modern)
 // ==========================================
 
-// Primary Colors - Soft Pastel palette (muted, easy on eyes)
-val CyberCyan = Color(0xFF7EC8E3)       // Soft pastel cyan
-val CyberCyanDark = Color(0xFF5BA3C0)   // Muted cyan
-val CyberBlue = Color(0xFFA8D8E5)       // Soft pastel blue
-val CyberBlueDark = Color(0xFF82B6C4)   // Muted blue
-val CyberPurple = Color(0xFFB8A9C9)     // Soft lavender
-val CyberPink = Color(0xFFD4A5A5)       // Muted rose
+// Primary Colors - VIVID & BRIGHT Neon palette
+val CyberCyan = Color(0xFF00F5FF)       // Bright electric cyan
+val CyberCyanDark = Color(0xFF00D4E5)   // Vibrant cyan
+val CyberBlue = Color(0xFF00BFFF)       // Deep sky blue
+val CyberBlueDark = Color(0xFF1E90FF)   // Dodger blue
+val CyberPurple = Color(0xFFDA70D6)     // Orchid purple
+val CyberPink = Color(0xFFFF69B4)       // Hot pink
 
-// Background Colors - Deep & Restful
-val DarkBackground = Color(0xFF121418)   // Very dark charcoal
-val DarkSurface = Color(0xFF1A1E24)      // Dark slate
-val DarkSurfaceVariant = Color(0xFF232930) // Slate variant
-val DarkCard = Color(0xFF2A3038)         // Card background
-val DarkCardHover = Color(0xFF333B44)    // Hover state
+// Background Colors - Deep & Rich
+val DarkBackground = Color(0xFF0A0E14)   // Deep space black
+val DarkSurface = Color(0xFF141A22)      // Rich dark blue
+val DarkSurfaceVariant = Color(0xFF1C242E) // Dark slate blue
+val DarkCard = Color(0xFF242D3A)         // Card background
+val DarkCardHover = Color(0xFF2E3A48)    // Hover state with glow
 
-// Accent Colors - Muted Pastels
-val AccentGreen = Color(0xFF98C9A3)      // Soft sage green
-val AccentOrange = Color(0xFFE5B88C)     // Muted peach
-val AccentRed = Color(0xFFD88888)        // Soft coral red
-val AccentYellow = Color(0xFFE5D88C)     // Muted gold
+// Accent Colors - VIVID & SATURATED
+val AccentGreen = Color(0xFF00FF88)      // Bright mint green
+val AccentOrange = Color(0xFFFF9F43)     // Vivid orange
+val AccentRed = Color(0xFFFF6B6B)        // Bright coral red
+val AccentYellow = Color(0xFFFFD93D)     // Bright gold
 
-// Text Colors - Comfortable Contrast
-val TextPrimary = Color(0xFFE8EAF0)      // Soft white (not pure white)
-val TextSecondary = Color(0xFFB0B8C8)    // Muted gray-blue
-val TextTertiary = Color(0xFF7A8595)     // Subtle gray
-val TextMuted = Color(0xFF5A6575)        // Very muted
+// Text Colors - BRIGHT & CRISP for high readability
+val TextPrimary = Color(0xFFFFFEFF)      // Pure bright white
+val TextSecondary = Color(0xFFD0D8E8)    // Light gray-blue (brighter)
+val TextTertiary = Color(0xFF9EABC0)     // Clear medium gray
+val TextMuted = Color(0xFF6E7A90)        // Muted but visible
 
-// Gradient Colors - Soft transitions
-val GradientStart = Color(0xFF7EC8E3)    // Pastel cyan
-val GradientMid = Color(0xFFA8B8D8)      // Pastel blue-gray
-val GradientEnd = Color(0xFFB8A9C9)      // Pastel lavender
+// Gradient Colors - VIVID Neon transitions
+val GradientStart = Color(0xFF00F5FF)    // Electric cyan
+val GradientMid = Color(0xFF7B68EE)      // Medium slate blue
+val GradientEnd = Color(0xFFDA70D6)      // Orchid purple
 
-// Status Colors - Muted for comfort
-val StatusSuccess = Color(0xFF98C9A3)    // Soft sage
-val StatusWarning = Color(0xFFE5D88C)    // Muted gold
-val StatusError = Color(0xFFD88888)      // Soft coral
-val StatusInfo = Color(0xFF7EC8E3)       // Pastel cyan
+// Status Colors - BRIGHT & Clear
+val StatusSuccess = Color(0xFF00FF88)    // Bright mint
+val StatusWarning = Color(0xFFFFD93D)    // Bright gold
+val StatusError = Color(0xFFFF6B6B)      // Vivid coral
+val StatusInfo = Color(0xFF00BFFF)       // Deep sky blue
 
-// Provider Category Colors - Soft pastels
-val CategoryStreaming = Color(0xFFD4A5A5) // Muted rose
-val CategoryTorrent = Color(0xFFB8A9C9)   // Soft lavender
-val CategoryNews = Color(0xFF98C9A3)      // Sage green
-val CategoryMedia = Color(0xFFA8B8D8)     // Pastel blue
-val CategoryGeneral = Color(0xFF7EC8E3)   // Pastel cyan
-val CategoryAPI = Color(0xFFE5D88C)       // Muted gold
+// Provider Category Colors - VIBRANT
+val CategoryStreaming = Color(0xFFFF69B4) // Hot pink
+val CategoryTorrent = Color(0xFFDA70D6)   // Orchid purple
+val CategoryNews = Color(0xFF00FF88)      // Bright mint
+val CategoryMedia = Color(0xFF00BFFF)     // Sky blue
+val CategoryGeneral = Color(0xFF00F5FF)   // Electric cyan
+val CategoryAPI = Color(0xFFFFD93D)       // Bright gold
 
-// AI/Smart Feature Colors
-val AIAccent = Color(0xFFA8D0E8)          // AI indicator blue
-val SmartFeature = Color(0xFFB8C9D4)      // Smart feature highlight
+// AI/Smart Feature Colors - GLOWING
+val AIAccent = Color(0xFF00E5FF)          // Bright AI cyan
+val SmartFeature = Color(0xFF7B68EE)      // Medium slate blue (glowing)
 
-// Download/Media Colors
-val DownloadActive = Color(0xFF7EC8E3)    // Active download
-val DownloadComplete = Color(0xFF98C9A3)  // Complete
-val DownloadPaused = Color(0xFFE5D88C)    // Paused
-val DownloadError = Color(0xFFD88888)     // Error
+// Download/Media Colors - VIVID
+val DownloadActive = Color(0xFF00F5FF)    // Active download - electric
+val DownloadComplete = Color(0xFF00FF88)  // Complete - bright mint
+val DownloadPaused = Color(0xFFFFD93D)    // Paused - gold
+val DownloadError = Color(0xFFFF6B6B)     // Error - coral
 
 // Score Colors - Progressive pastels
 fun getScoreColor(score: Float): Color {

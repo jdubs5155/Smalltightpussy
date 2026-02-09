@@ -20,29 +20,49 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.aggregatorx.app.ui.theme.*
+import com.aggregatorx.app.engine.media.RecoveryStrategy
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
- * Video Player Dialog
- * Full-screen video player with controls
+ * AggregatorX Enhanced Video Player Dialog
+ * 
+ * Features:
+ * - Intelligent stream format detection (HLS, DASH, Progressive)
+ * - Custom HTTP headers support for restricted content
+ * - Automatic retry with different sources
+ * - Netherlands proxy awareness
+ * - Quality selection
+ * - Smart error recovery
+ * - Beautiful animated controls
  */
 @Composable
 fun VideoPlayerDialog(
     videoUrl: String,
     title: String,
     onDismiss: () -> Unit,
-    onDownload: () -> Unit = {}
+    onDownload: () -> Unit = {},
+    headers: Map<String, String>? = null,
+    onStreamError: ((String, RecoveryStrategy?) -> Unit)? = null
 ) {
     val context = LocalContext.current
     var isPlaying by remember { mutableStateOf(true) }
@@ -52,23 +72,62 @@ fun VideoPlayerDialog(
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var showControls by remember { mutableStateOf(true) }
+    var retryCount by remember { mutableStateOf(0) }
+    var currentQuality by remember { mutableStateOf("Auto") }
+    var showProxyBadge by remember { mutableStateOf(false) }
     
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.parse(videoUrl))
-            setMediaItem(mediaItem)
-            prepare()
-            playWhenReady = true
-        }
+    // Create HTTP data source with custom headers
+    val httpDataSourceFactory = remember(videoUrl, headers) {
+        DefaultHttpDataSource.Factory()
+            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .setConnectTimeoutMs(30000)
+            .setReadTimeoutMs(60000)
+            .setAllowCrossProtocolRedirects(true)
+            .apply {
+                headers?.let { hdrs ->
+                    setDefaultRequestProperties(hdrs)
+                }
+            }
     }
     
-    // Player listener
+    // Create appropriate media source based on URL
+    val exoPlayer = remember(videoUrl, retryCount) {
+        ExoPlayer.Builder(context)
+            .setSeekBackIncrementMs(10000)
+            .setSeekForwardIncrementMs(10000)
+            .build().apply {
+                val mediaSource = when {
+                    videoUrl.contains(".m3u8", ignoreCase = true) -> {
+                        // HLS Stream
+                        HlsMediaSource.Factory(httpDataSourceFactory)
+                            .setAllowChunklessPreparation(true)
+                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    }
+                    videoUrl.contains(".mpd", ignoreCase = true) -> {
+                        // DASH Stream
+                        DashMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    }
+                    else -> {
+                        // Progressive (MP4, WebM, etc.)
+                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    }
+                }
+                setMediaSource(mediaSource)
+                prepare()
+                playWhenReady = true
+            }
+    }
+    
+    // Player listener with enhanced error handling
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
                     duration = exoPlayer.duration
+                    hasError = false // Clear error on successful playback
                 }
             }
             
@@ -77,8 +136,49 @@ fun VideoPlayerDialog(
             }
             
             override fun onPlayerError(error: PlaybackException) {
+                val errorCode = error.errorCode
+                val errorMsg = when (errorCode) {
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> 
+                        "Network connection failed - Check your connection"
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> 
+                        "Connection timeout - Server may be slow"
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> 
+                        "Source unavailable (${error.message}) - Trying alternate source..."
+                    PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> 
+                        "Invalid content type - May need proxy"
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> 
+                        "Stream manifest error - Trying direct playback..."
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> 
+                        "Unsupported stream format"
+                    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> 
+                        "Behind live window - Restarting stream..."
+                    else -> error.message ?: "Playback error (code: $errorCode)"
+                }
+                
                 hasError = true
-                errorMessage = error.message ?: "Playback error"
+                errorMessage = errorMsg
+                
+                // Determine recovery strategy
+                val recovery = when (errorCode) {
+                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> RecoveryStrategy.USE_NETHERLANDS_PROXY
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> RecoveryStrategy.TRY_PROXY
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> RecoveryStrategy.TRY_ALTERNATE_SOURCE
+                    else -> RecoveryStrategy.TRY_ALL_METHODS
+                }
+                
+                // Notify parent for stream recovery
+                onStreamError?.invoke(errorMsg, recovery)
+                
+                // Auto retry for certain errors (up to 3 times)
+                if (retryCount < 3 && errorCode in listOf(
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+                )) {
+                    CoroutineScope(Dispatchers.Main).launch {
+                        delay(2000)
+                        retryCount++
+                    }
+                }
             }
         }
         
@@ -126,35 +226,127 @@ fun VideoPlayerDialog(
                 }
         ) {
             if (hasError) {
-                // Error state
+                // Enhanced Error state with recovery options
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    DarkBackground,
+                                    DarkSurface,
+                                    DarkBackground
+                                )
+                            )
+                        )
                         .padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Error,
-                        contentDescription = null,
-                        tint = AccentRed,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Error icon with glow effect
+                    Box(
+                        modifier = Modifier
+                            .size(80.dp)
+                            .background(
+                                AccentRed.copy(alpha = 0.15f),
+                                CircleShape
+                            )
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = null,
+                            tint = AccentRed,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
                     Text(
                         text = "Playback Error",
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
                         color = TextPrimary
                     )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
                     Text(
                         text = errorMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Button(onClick = onDismiss) {
-                        Text("Close")
+                    
+                    if (retryCount > 0) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Retry attempt: $retryCount/3",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = CyberCyan
+                        )
                     }
+                    
+                    Spacer(modifier = Modifier.height(32.dp))
+                    
+                    // Recovery action buttons
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // Retry button
+                        Button(
+                            onClick = { retryCount++ },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CyberCyan,
+                                contentColor = DarkBackground
+                            ),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Retry",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        
+                        // Close button
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = TextPrimary
+                            ),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Close",
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // Hint text
+                    Text(
+                        text = "💡 Tip: Try enabling Netherlands proxy in Settings for geo-restricted content",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AIAccent,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
                 }
             } else {
                 // Video player
