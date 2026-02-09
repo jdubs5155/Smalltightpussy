@@ -66,8 +66,70 @@ class VideoExtractorEngine @Inject constructor() {
     }
     
     /**
+     * Smart video preview extraction - optimized for inline preview playback
+     * Tries fast methods first, falls back to headless browser with auto-click if needed
+     * Returns just the URL string for preview, or null if extraction fails
+     */
+    suspend fun extractVideoUrlForPreview(pageUrl: String): String? = withContext(Dispatchers.IO) {
+        try {
+            // Quick check: Is this a direct video URL already?
+            if (VIDEO_EXTENSIONS.any { pageUrl.endsWith(it, ignoreCase = true) }) {
+                return@withContext pageUrl
+            }
+            
+            // Try fast HTML extraction first (no headless browser needed)
+            val fastResult = extractVideoUrlFast(pageUrl)
+            if (fastResult != null) {
+                return@withContext fastResult
+            }
+            
+            // Fall back to full extraction with headless browser + auto-click
+            val fullResult = extractVideoUrl(pageUrl)
+            if (fullResult.success && fullResult.videoUrl != null) {
+                return@withContext fullResult.videoUrl
+            }
+            
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Fast video extraction without headless browser
+     * Used for sites that don't require JavaScript rendering
+     */
+    private suspend fun extractVideoUrlFast(pageUrl: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val document = Jsoup.connect(pageUrl)
+                .userAgent(USER_AGENT)
+                .timeout(8000)
+                .followRedirects(true)
+                .ignoreHttpErrors(true)
+                .get()
+            
+            // Try quick extraction methods
+            val allVideos = mutableListOf<VideoUrlInfo>()
+            
+            extractFromVideoTag(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromSourceTag(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromScripts(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
+            
+            if (allVideos.isNotEmpty()) {
+                return@withContext selectHighestQuality(allVideos).url
+            }
+            
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
      * Extract video URL from a content page - tries multiple methods
      * Auto-selects the highest quality available
+     * Uses headless browser with auto-click ad bypass for JS-heavy sites
      */
     suspend fun extractVideoUrl(pageUrl: String): VideoExtractionResult = withContext(Dispatchers.IO) {
         try {

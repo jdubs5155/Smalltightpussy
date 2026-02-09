@@ -135,6 +135,9 @@ fun SearchScreen(
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
                             context.startActivity(intent)
                         },
+                        onExtractVideoUrl = { url ->
+                            viewModel.extractVideoUrlForPreview(url)
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -330,6 +333,7 @@ fun ProviderResultsList(
     onResultClick: (SearchResult) -> Unit,
     onDownload: (SearchResult) -> Unit = {},
     onOpenExternal: (SearchResult) -> Unit = {},
+    onExtractVideoUrl: (suspend (String) -> String?)? = null,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -356,7 +360,8 @@ fun ProviderResultsList(
                     onClick = { onResultClick(result) },
                     onDownload = { onDownload(result) },
                     onOpenExternal = { onOpenExternal(result) },
-                    showControls = true
+                    showControls = true,
+                    onExtractVideoUrl = onExtractVideoUrl
                 )
             }
             
@@ -388,6 +393,7 @@ fun ProviderResultsList(
                         onDownload = { onDownload(result) },
                         onOpenExternal = { onOpenExternal(result) },
                         showControls = true,
+                        onExtractVideoUrl = onExtractVideoUrl,
                         modifier = Modifier.padding(horizontal = 8.dp)
                     )
                 }

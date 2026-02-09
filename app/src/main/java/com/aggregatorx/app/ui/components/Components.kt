@@ -1,10 +1,14 @@
 package com.aggregatorx.app.ui.components
 
+import android.net.Uri
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -26,16 +30,27 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Futuristic Search Bar with glow effect
@@ -411,7 +426,229 @@ fun StatChip(
 }
 
 /**
- * Search Result Card Component - Enhanced with Video Preview & Download
+ * Inline Thumbnail Preview with Video Playback
+ * Plays video directly within the thumbnail box when tapped
+ */
+@Composable
+fun InlineThumbnailPreview(
+    thumbnailUrl: String?,
+    videoUrl: String?,
+    duration: String? = null,
+    modifier: Modifier = Modifier,
+    onLongPress: () -> Unit = {},
+    onVideoExtractionNeeded: (suspend () -> String?)? = null
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    var isPlaying by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var extractedVideoUrl by remember { mutableStateOf<String?>(videoUrl) }
+    var extractionFailed by remember { mutableStateOf(false) }
+    var imageLoadFailed by remember { mutableStateOf(false) }
+    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+    
+    // Create ExoPlayer when we have a video URL and want to play
+    DisposableEffect(isPlaying, extractedVideoUrl) {
+        if (isPlaying && !extractedVideoUrl.isNullOrEmpty()) {
+            val player = ExoPlayer.Builder(context).build().apply {
+                val mediaItem = MediaItem.fromUri(Uri.parse(extractedVideoUrl))
+                setMediaItem(mediaItem)
+                repeatMode = Player.REPEAT_MODE_ALL
+                volume = 0f // Muted preview
+                prepare()
+                playWhenReady = true
+            }
+            exoPlayer = player
+        }
+        
+        onDispose {
+            exoPlayer?.release()
+            exoPlayer = null
+        }
+    }
+    
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(DarkSurfaceVariant)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        if (isPlaying) {
+                            // Stop preview
+                            isPlaying = false
+                            exoPlayer?.release()
+                            exoPlayer = null
+                        } else if (!extractedVideoUrl.isNullOrEmpty()) {
+                            // Play directly if we have URL
+                            isPlaying = true
+                        } else if (onVideoExtractionNeeded != null && !extractionFailed) {
+                            // Try to extract video URL
+                            isLoading = true
+                            scope.launch {
+                                try {
+                                    val url = onVideoExtractionNeeded()
+                                    if (!url.isNullOrEmpty()) {
+                                        extractedVideoUrl = url
+                                        isPlaying = true
+                                    } else {
+                                        extractionFailed = true
+                                    }
+                                } catch (e: Exception) {
+                                    extractionFailed = true
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        }
+                    },
+                    onLongPress = { onLongPress() }
+                )
+            }
+    ) {
+        // Show video player when playing
+        if (isPlaying && exoPlayer != null) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                update = { playerView ->
+                    playerView.player = exoPlayer
+                }
+            )
+            
+            // Stop button overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = "Stop Preview",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            
+            // "Playing" indicator
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(4.dp),
+                shape = RoundedCornerShape(4.dp),
+                color = AccentGreen.copy(alpha = 0.9f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text = "LIVE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontSize = 8.sp
+                    )
+                }
+            }
+        } else {
+            // Show thumbnail
+            if (!thumbnailUrl.isNullOrEmpty() && !imageLoadFailed) {
+                AsyncImage(
+                    model = thumbnailUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    onError = { imageLoadFailed = true },
+                    onLoading = { imageLoadFailed = false }
+                )
+            }
+            
+            // Placeholder when no image
+            if (thumbnailUrl.isNullOrEmpty() || imageLoadFailed) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(DarkSurfaceVariant, DarkBackground)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        tint = TextTertiary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+            
+            // Play overlay (when not playing)
+            if (!extractionFailed) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            color = CyberCyan,
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.PlayCircle,
+                            contentDescription = "Play Preview",
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            }
+            
+            // Duration badge
+            duration?.let { dur ->
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color.Black.copy(alpha = 0.7f)
+                ) {
+                    Text(
+                        text = dur,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Search Result Card Component - Enhanced with Inline Video Preview & Download
  */
 @Composable
 fun SearchResultCard(
@@ -420,11 +657,13 @@ fun SearchResultCard(
     onDownload: () -> Unit = {},
     onOpenExternal: () -> Unit = {},
     showControls: Boolean = true,
+    onExtractVideoUrl: (suspend (String) -> String?)? = null,
     modifier: Modifier = Modifier
 ) {
     val scoreColor = getScoreColor(result.relevanceScore)
     
-    var showPreview by remember { mutableStateOf(false) }
+    var showFullscreenPlayer by remember { mutableStateOf(false) }
+    
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -450,58 +689,32 @@ fun SearchResultCard(
                     .fillMaxWidth()
                     .padding(12.dp)
             ) {
-                // Thumbnail with preview dialog
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(DarkSurfaceVariant)
-                        .clickable(
-                            enabled = !result.url.isNullOrEmpty(),
-                            onClick = {
-                                if (!result.url.isNullOrEmpty()) showPreview = true
-                            }
-                        )
-                ) {
-                    var imageLoadFailed by remember { mutableStateOf(false) }
-                    if (!result.thumbnailUrl.isNullOrEmpty() && !imageLoadFailed) {
-                        AsyncImage(
-                            model = result.thumbnailUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            onError = { imageLoadFailed = true },
-                            onLoading = { imageLoadFailed = false }
-                        )
-                    }
-                    if (result.thumbnailUrl.isNullOrEmpty() || imageLoadFailed) {
-                        // Placeholder
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(DarkSurfaceVariant, DarkBackground)
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = null,
-                                tint = TextTertiary,
-                                modifier = Modifier.size(36.dp)
-                            )
+                // Inline Thumbnail Preview with video playback
+                InlineThumbnailPreview(
+                    thumbnailUrl = result.thumbnailUrl,
+                    videoUrl = null, // Will be extracted on tap
+                    duration = result.duration,
+                    modifier = Modifier.size(100.dp),
+                    onLongPress = {
+                        // Long press opens fullscreen player
+                        if (!result.url.isNullOrEmpty()) {
+                            showFullscreenPlayer = true
                         }
-                    }
-                }
-                if (showPreview && !result.url.isNullOrEmpty()) {
+                    },
+                    onVideoExtractionNeeded = if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null) {
+                        { onExtractVideoUrl(result.url) }
+                    } else null
+                )
+                
+                // Fullscreen player dialog (on long press)
+                if (showFullscreenPlayer && !result.url.isNullOrEmpty()) {
                     VideoPlayerDialog(
                         videoUrl = result.url,
                         title = result.title,
-                        onDismiss = { showPreview = false }
+                        onDismiss = { showFullscreenPlayer = false }
                     )
                 }
+                
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(
                     modifier = Modifier.weight(1f)

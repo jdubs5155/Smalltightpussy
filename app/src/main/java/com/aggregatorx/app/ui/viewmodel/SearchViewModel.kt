@@ -114,6 +114,20 @@ class SearchViewModel @Inject constructor(
     }
     
     /**
+     * Extract video URL from a page URL - suspend function for inline preview
+     * Uses smart extraction: tries fast methods first, falls back to headless browser with auto-click
+     * Returns the extracted video URL or null if extraction fails
+     */
+    suspend fun extractVideoUrlForPreview(pageUrl: String): String? {
+        return try {
+            // Use the optimized preview extraction which handles ads automatically
+            videoExtractor.extractVideoUrlForPreview(pageUrl)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
      * Extract video URL from a search result page
      */
     fun extractVideoUrl(result: SearchResult) {
