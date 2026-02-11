@@ -287,3 +287,20 @@ data class SearchHistoryEntry(
     val providersSearched: Int = 0,
     val successfulProviders: Int = 0
 )
+
+/**
+ * User Preferences - Tracks user behavior for intelligent suggestions
+ * When no results found for query, uses these preferences to suggest content
+ */
+@Entity(tableName = "user_preferences")
+@Serializable
+data class UserPreferences(
+    @PrimaryKey
+    val id: Int = 1, // Single row for user preferences
+    val clickedCategories: String = "[]", // JSON array of clicked categories
+    val watchedGenres: String = "[]", // JSON array of watched genres
+    val preferredQualities: String = "[\"1080p\", \"720p\"]", // JSON array of preferred qualities
+    val recentClicks: String = "[]", // JSON array of recently clicked items
+    val favoriteProviders: String = "[]", // JSON array of favorite provider IDs
+    val lastUpdated: Long = System.currentTimeMillis()
+)

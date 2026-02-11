@@ -661,8 +661,11 @@ fun SearchResultCard(
     modifier: Modifier = Modifier
 ) {
     val scoreColor = getScoreColor(result.relevanceScore)
+    val scope = rememberCoroutineScope()
     
     var showFullscreenPlayer by remember { mutableStateOf(false) }
+    var fullscreenVideoUrl by remember { mutableStateOf<String?>(null) }
+    var isExtractingForFullscreen by remember { mutableStateOf(false) }
     
     Card(
         modifier = modifier
@@ -696,8 +699,31 @@ fun SearchResultCard(
                     duration = result.duration,
                     modifier = Modifier.size(100.dp),
                     onLongPress = {
-                        // Long press opens fullscreen player
-                        if (!result.url.isNullOrEmpty()) {
+                        // Long press opens fullscreen player - extract video URL first
+                        if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null && !isExtractingForFullscreen) {
+                            isExtractingForFullscreen = true
+                            scope.launch {
+                                try {
+                                    val extractedUrl = onExtractVideoUrl(result.url)
+                                    if (!extractedUrl.isNullOrEmpty()) {
+                                        fullscreenVideoUrl = extractedUrl
+                                        showFullscreenPlayer = true
+                                    } else {
+                                        // Fallback to using the page URL directly
+                                        fullscreenVideoUrl = result.url
+                                        showFullscreenPlayer = true
+                                    }
+                                } catch (e: Exception) {
+                                    // Fallback to page URL on error
+                                    fullscreenVideoUrl = result.url
+                                    showFullscreenPlayer = true
+                                } finally {
+                                    isExtractingForFullscreen = false
+                                }
+                            }
+                        } else if (!result.url.isNullOrEmpty()) {
+                            // No extraction function provided, use page URL
+                            fullscreenVideoUrl = result.url
                             showFullscreenPlayer = true
                         }
                     },
@@ -706,12 +732,15 @@ fun SearchResultCard(
                     } else null
                 )
                 
-                // Fullscreen player dialog (on long press)
-                if (showFullscreenPlayer && !result.url.isNullOrEmpty()) {
+                // Fullscreen player dialog (on long press) - uses extracted video URL
+                if (showFullscreenPlayer && !fullscreenVideoUrl.isNullOrEmpty()) {
                     VideoPlayerDialog(
-                        videoUrl = result.url,
+                        videoUrl = fullscreenVideoUrl!!,
                         title = result.title,
-                        onDismiss = { showFullscreenPlayer = false }
+                        onDismiss = { 
+                            showFullscreenPlayer = false
+                            fullscreenVideoUrl = null
+                        }
                     )
                 }
                 

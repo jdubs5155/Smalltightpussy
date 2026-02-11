@@ -11,19 +11,20 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * AggregatorX - VIBRANT Neon Dark Theme
- * Bright, modern, eye-catching colors for maximum visibility
+ * AggregatorX - DARK RED NIGHT THEME
+ * Pure black backgrounds with vibrant red accents
+ * Perfect for night/dark viewing
  */
-private val VibrantDarkColorScheme = darkColorScheme(
-    primary = CyberCyan,
+private val DarkRedNightColorScheme = darkColorScheme(
+    primary = CyberCyan, // Now crimson red
     onPrimary = DarkBackground,
     primaryContainer = CyberCyanDark,
     onPrimaryContainer = TextPrimary,
-    secondary = CyberBlue,
+    secondary = CyberBlue, // Bright red
     onSecondary = DarkBackground,
     secondaryContainer = CyberBlueDark,
     onSecondaryContainer = TextPrimary,
-    tertiary = CyberPurple,
+    tertiary = CyberPurple, // Pink-red
     onTertiary = DarkBackground,
     tertiaryContainer = CyberPurple.copy(alpha = 0.3f),
     onTertiaryContainer = TextPrimary,
@@ -31,9 +32,9 @@ private val VibrantDarkColorScheme = darkColorScheme(
     onError = TextPrimary,
     errorContainer = AccentRed.copy(alpha = 0.2f),
     onErrorContainer = AccentRed,
-    background = DarkBackground,
+    background = DarkBackground, // Pure black
     onBackground = TextPrimary,
-    surface = DarkSurface,
+    surface = DarkSurface, // Almost black
     onSurface = TextPrimary,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = TextSecondary,
@@ -42,15 +43,15 @@ private val VibrantDarkColorScheme = darkColorScheme(
     inverseSurface = TextPrimary,
     inverseOnSurface = DarkBackground,
     inversePrimary = CyberCyanDark,
-    surfaceTint = CyberCyan.copy(alpha = 0.15f)
+    surfaceTint = CyberCyan.copy(alpha = 0.15f) // Red tint
 )
 
 @Composable
 fun AggregatorXTheme(
-    darkTheme: Boolean = true, // Always dark - vibrant neon theme
+    darkTheme: Boolean = true, // Always dark - night red theme
     content: @Composable () -> Unit
 ) {
-    val colorScheme = VibrantDarkColorScheme
+    val colorScheme = DarkRedNightColorScheme
     
     val view = LocalView.current
     if (!view.isInEditMode) {

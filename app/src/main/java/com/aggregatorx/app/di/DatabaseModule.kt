@@ -49,6 +49,11 @@ object DatabaseModule {
     }
     
     @Provides
+    fun provideUserPreferencesDao(database: AggregatorDatabase): UserPreferencesDao {
+        return database.userPreferencesDao()
+    }
+    
+    @Provides
     @Singleton
     fun provideSmartNavigationEngine(): SmartNavigationEngine {
         return SmartNavigationEngine()

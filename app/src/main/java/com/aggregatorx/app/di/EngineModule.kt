@@ -2,6 +2,7 @@ package com.aggregatorx.app.di
 
 import android.content.Context
 import com.aggregatorx.app.engine.UnifiedContentEngine
+import com.aggregatorx.app.engine.ai.AIDecisionEngine
 import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
 import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
 import com.aggregatorx.app.engine.analyzer.UniversalFormatParser
@@ -27,6 +28,12 @@ object EngineModule {
     @Singleton
     fun provideProxyVPNEngine(): ProxyVPNEngine {
         return ProxyVPNEngine()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideAIDecisionEngine(): AIDecisionEngine {
+        return AIDecisionEngine()
     }
     
     // VideoExtractorEngine is provided by DatabaseModule

@@ -4,6 +4,10 @@ import com.aggregatorx.app.data.database.ProviderDao
 import com.aggregatorx.app.data.database.ScrapingConfigDao
 import com.aggregatorx.app.data.database.SiteAnalysisDao
 import com.aggregatorx.app.data.model.*
+import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
+import com.aggregatorx.app.engine.analyzer.PageType
+import com.aggregatorx.app.engine.analyzer.ContainerType
+import com.aggregatorx.app.engine.ai.AIDecisionEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -29,13 +33,18 @@ import kotlin.math.max
  * - Pattern-based content extraction
  * - Error resilience with provider isolation
  * - Thumbnail extraction for video previews
+ * - INTELLIGENT RESULT VALIDATION - detects category pages vs real results
+ * - NEVER BREAKS LOOP - continues to all providers even on failures
+ * - AI LEARNING INTEGRATION - learns from every scraping attempt
  */
 @Singleton
 class ScrapingEngine @Inject constructor(
     private val providerDao: ProviderDao,
     private val scrapingConfigDao: ScrapingConfigDao,
     private val siteAnalysisDao: SiteAnalysisDao,
-    private val smartNavigationEngine: SmartNavigationEngine
+    private val smartNavigationEngine: SmartNavigationEngine,
+    private val smartContentClassifier: SmartContentClassifier,
+    private val aiDecisionEngine: AIDecisionEngine
 ) {
     fun clearCache() {
         synchronized(resultCache) {
@@ -65,6 +74,30 @@ class ScrapingEngine @Inject constructor(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        
+        // Patterns to identify category/navigation URLs
+        private val CATEGORY_URL_PATTERNS = listOf(
+            "/genre/", "/category/", "/browse/", "/filter/", "/tags/",
+            "/type/", "/sort/", "/order/", "?genre=", "?category=",
+            "?type=", "/all-", "/list/genre", "/movies/genre"
+        )
+        
+        // Generic category names to filter out
+        private val GENERIC_CATEGORY_NAMES = setOf(
+            "action", "comedy", "drama", "horror", "thriller", "romance",
+            "sci-fi", "documentary", "animation", "anime", "sports", "news",
+            "music", "kids", "family", "adventure", "fantasy", "crime",
+            "mystery", "western", "war", "history", "biography", "all movies",
+            "all videos", "trending", "popular", "latest", "new releases",
+            "top rated", "most viewed", "recommended"
+        )
+        
+        // Patterns that indicate actual content URLs
+        private val CONTENT_URL_PATTERNS = listOf(
+            "/watch", "/video", "/movie/", "/episode/", "/play",
+            "/stream", "/view", "/v/", "/e/", "-watch", "-online",
+            "-full", "-hd", "-720p", "-1080p", "-episode-"
         )
     }
     
@@ -159,8 +192,16 @@ class ScrapingEngine @Inject constructor(
 
     /**
      * Safe provider search that NEVER throws - always returns a result
+     * ENHANCED WITH INTELLIGENT RESULT VALIDATION:
+     * - Detects category pages vs real content results
+     * - Filters out unusable results (just links to genres/categories)
+     * - Continues to ALL providers even if some fail
+     * - LEARNS FROM EVERY ATTEMPT for AI improvement
      */
     private suspend fun safeSearchProvider(provider: Provider, query: String): ProviderSearchResults {
+        val startTime = System.currentTimeMillis()
+        val domain = extractDomain(provider.baseUrl)
+        
         return try {
             // Check if provider is in cooldown due to repeated failures
             if (provider.failedSearches > 5 && 
@@ -173,15 +214,105 @@ class ScrapingEngine @Inject constructor(
                     errorMessage = "Provider in cooldown (${provider.failedSearches} failures)"
                 )
             } else {
+                // Get AI recommended strategy
+                val recommendedStrategy = aiDecisionEngine.getAdaptiveStrategy(domain)
+                
                 // Try smart search first
-                searchProviderSmart(provider, query)
+                val result = searchProviderSmart(provider, query)
+                
+                // Validate the results are actual content, not category pages
+                if (result.success && result.results.isNotEmpty()) {
+                    val validatedResults = validateAndFilterResults(result.results, query)
+                    if (validatedResults.isEmpty() && result.results.isNotEmpty()) {
+                        // Results were all invalid (likely category pages)
+                        // LEARN: category page detection failure
+                        aiDecisionEngine.learnFromFailure(
+                            domain = domain,
+                            errorType = "CATEGORY_PAGE_RESULTS",
+                            errorMessage = "Results were category/navigation pages",
+                            strategy = ScrapingStrategy.HTML_PARSING,
+                            selector = null,
+                            url = provider.baseUrl
+                        )
+                        
+                        result.copy(
+                            results = emptyList(),
+                            success = false,
+                            errorMessage = "Results were category/navigation pages, not actual content"
+                        )
+                    } else {
+                        // LEARN: successful scraping
+                        aiDecisionEngine.learnFromSuccess(
+                            domain = domain,
+                            strategy = ScrapingStrategy.HTML_PARSING,
+                            resultSelector = null,
+                            titleSelector = null,
+                            thumbnailSelector = null,
+                            resultCount = validatedResults.size,
+                            responseTime = System.currentTimeMillis() - startTime
+                        )
+                        
+                        result.copy(results = validatedResults)
+                    }
+                } else {
+                    // LEARN: no results failure
+                    if (!result.success) {
+                        aiDecisionEngine.learnFromFailure(
+                            domain = domain,
+                            errorType = "NO_RESULTS",
+                            errorMessage = result.errorMessage,
+                            strategy = ScrapingStrategy.HTML_PARSING,
+                            selector = null,
+                            url = provider.baseUrl
+                        )
+                    }
+                    result
+                }
             }
         } catch (e: Exception) {
-            // Primary search failed - try fallback
+            // LEARN: exception failure
+            aiDecisionEngine.learnFromFailure(
+                domain = domain,
+                errorType = "EXCEPTION",
+                errorMessage = e.message,
+                strategy = ScrapingStrategy.HTML_PARSING,
+                selector = null,
+                url = provider.baseUrl
+            )
+            
+            // Primary search failed - try fallback (NEVER BREAK THE LOOP)
             try {
-                tryFallbackScraping(provider, query, System.currentTimeMillis(), e)
+                val fallbackResult = tryFallbackScraping(provider, query, startTime, e)
+                
+                // Also validate fallback results
+                if (fallbackResult.success && fallbackResult.results.isNotEmpty()) {
+                    val validatedResults = validateAndFilterResults(fallbackResult.results, query)
+                    if (validatedResults.isEmpty() && fallbackResult.results.isNotEmpty()) {
+                        fallbackResult.copy(
+                            results = emptyList(),
+                            success = false,
+                            errorMessage = "Fallback results were category/navigation pages"
+                        )
+                    } else {
+                        // LEARN: successful fallback recovery
+                        aiDecisionEngine.learnRecovery(domain, "EXCEPTION", "FALLBACK_SUCCESS")
+                        aiDecisionEngine.learnFromSuccess(
+                            domain = domain,
+                            strategy = ScrapingStrategy.HTML_PARSING,
+                            resultSelector = null,
+                            titleSelector = null,
+                            thumbnailSelector = null,
+                            resultCount = validatedResults.size,
+                            responseTime = System.currentTimeMillis() - startTime
+                        )
+                        
+                        fallbackResult.copy(results = validatedResults)
+                    }
+                } else {
+                    fallbackResult
+                }
             } catch (fallbackEx: Exception) {
-                // All methods failed - return graceful failure
+                // All methods failed - return graceful failure (LOOP CONTINUES)
                 ProviderSearchResults(
                     provider = provider,
                     results = emptyList(),
@@ -190,6 +321,47 @@ class ScrapingEngine @Inject constructor(
                     errorMessage = "All search methods failed: ${e.message?.take(100)}"
                 )
             }
+        }
+    }
+    
+    /**
+     * Extract domain from URL for AI learning key
+     */
+    private fun extractDomain(url: String): String {
+        return try {
+            java.net.URL(url).host.removePrefix("www.")
+        } catch (e: Exception) {
+            url
+        }
+    }
+    
+    /**
+     * Validate and filter results to ensure they are actual content, not category pages
+     */
+    private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
+        return results.filter { result ->
+            // Filter out results that look like categories/navigation
+            val titleLower = result.title.lowercase()
+            val urlLower = result.url.lowercase()
+            
+            // Check if it's a category/navigation link
+            val isCategoryLink = CATEGORY_URL_PATTERNS.any { urlLower.contains(it) }
+            
+            // Check if title is too generic (single word genre names)
+            val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES && result.description.isNullOrEmpty()
+            
+            // Check if URL points to actual content
+            val isContentUrl = CONTENT_URL_PATTERNS.any { urlLower.contains(it) } ||
+                              (!urlLower.contains("/genre/") && !urlLower.contains("/category/") &&
+                              !urlLower.contains("/browse/") && !urlLower.contains("/filter/"))
+            
+            // Check if title relates to the query at all
+            val queryWords = query.lowercase().split(" ").filter { it.length > 2 }
+            val matchesQuery = queryWords.isEmpty() || queryWords.any { titleLower.contains(it) || 
+                result.description?.lowercase()?.contains(it) == true }
+            
+            // Valid result: not a category, not too generic, is content URL, and matches query
+            !isCategoryLink && !isTooGeneric && isContentUrl && matchesQuery
         }
     }
     

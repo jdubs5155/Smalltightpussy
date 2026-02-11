@@ -5,6 +5,7 @@ import com.aggregatorx.app.data.model.Provider
 import com.aggregatorx.app.data.model.ScrapingConfig
 import com.aggregatorx.app.data.model.SearchHistoryEntry
 import com.aggregatorx.app.data.model.SiteAnalysis
+import com.aggregatorx.app.data.model.UserPreferences
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -116,4 +117,28 @@ interface SearchHistoryDao {
     
     @Query("DELETE FROM search_history")
     suspend fun clearHistory()
+    
+    @Query("SELECT query FROM search_history GROUP BY query ORDER BY COUNT(*) DESC, MAX(timestamp) DESC LIMIT 10")
+    suspend fun getMostSearchedQueries(): List<String>
+}
+
+/**
+ * User Preferences DAO - Tracks user behavior for intelligent suggestions
+ */
+@Dao
+interface UserPreferencesDao {
+    @Query("SELECT * FROM user_preferences WHERE id = 1")
+    suspend fun getPreferences(): UserPreferences?
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun savePreferences(preferences: UserPreferences)
+    
+    @Query("UPDATE user_preferences SET clickedCategories = :categories WHERE id = 1")
+    suspend fun updateClickedCategories(categories: String)
+    
+    @Query("UPDATE user_preferences SET watchedGenres = :genres WHERE id = 1")
+    suspend fun updateWatchedGenres(genres: String)
+    
+    @Query("UPDATE user_preferences SET preferredQualities = :qualities WHERE id = 1")
+    suspend fun updatePreferredQualities(qualities: String)
 }
