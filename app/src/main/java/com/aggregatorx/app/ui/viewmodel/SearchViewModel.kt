@@ -31,6 +31,9 @@ class SearchViewModel @Inject constructor(
     
     val downloads: StateFlow<Map<String, DownloadState>> = downloadManager.downloads
     
+    // Video URL cache for faster repeated preview loads
+    private val videoUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    
     init {
         // Load recent searches
         viewModelScope.launch {
@@ -96,6 +99,8 @@ class SearchViewModel @Inject constructor(
             ) 
         }
         _providerResults.value = emptyList()
+        // Clear video URL cache when search is cleared
+        videoUrlCache.clear()
     }
     
     fun clearError() {
@@ -116,10 +121,21 @@ class SearchViewModel @Inject constructor(
     /**
      * Extract video URL from a page URL - suspend function for inline preview
      * Returns the extracted video URL or null if extraction fails
+     * Uses caching to speed up repeated requests for the same URL
      */
     suspend fun extractVideoUrlForPreview(pageUrl: String): String? {
+        // Check cache first for instant playback
+        videoUrlCache[pageUrl]?.let { cachedUrl ->
+            return cachedUrl
+        }
+        
         return try {
-            videoExtractor.extractVideoUrlForPreview(pageUrl)
+            val extractedUrl = videoExtractor.extractVideoUrlForPreview(pageUrl)
+            // Cache successful extractions for faster future access
+            if (!extractedUrl.isNullOrEmpty()) {
+                videoUrlCache[pageUrl] = extractedUrl
+            }
+            extractedUrl
         } catch (e: Exception) {
             null
         }

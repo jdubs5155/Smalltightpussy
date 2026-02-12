@@ -23,8 +23,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aggregatorx.app.data.model.ProviderSearchResults
@@ -34,6 +36,7 @@ import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.ui.viewmodel.SearchUiState
 import com.aggregatorx.app.ui.viewmodel.SearchViewModel
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +53,28 @@ fun SearchScreen(
     var showDownloadDialog by remember { mutableStateOf(false) }
     var downloadResult by remember { mutableStateOf<SearchResult?>(null) }
     
+    // Scroll-aware UI collapse for more result viewing space
+    val isScrollingDown = remember { derivedStateOf {
+        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 50
+    }}
+    
+    // Track if we have results to show (determines if header should be collapsible)
+    val hasResults = providerResults.isNotEmpty()
+    
+    // Collapse header when scrolling down through results
+    val collapseHeader = hasResults && isScrollingDown.value
+    
+    // Animated height for collapsible header section
+    val headerHeight by animateDpAsState(
+        targetValue = if (collapseHeader) 0.dp else 76.dp,
+        animationSpec = tween(durationMillis = 200)
+    )
+    
+    val headerAlpha by animateFloatAsState(
+        targetValue = if (collapseHeader) 0f else 1f,
+        animationSpec = tween(durationMillis = 150)
+    )
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -64,26 +89,30 @@ fun SearchScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Header with animated gradient
-            AnimatedHeader()
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Search bar
-            FuturisticSearchBar(
-                query = uiState.query,
-                onQueryChange = viewModel::updateQuery,
-                onSearch = viewModel::search,
-                isLoading = uiState.isSearching
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Search stats
+            // Collapsible header section - only shows when NOT scrolling through results
             AnimatedVisibility(
-                visible = uiState.searchCompleted || uiState.isSearching,
+                visible = !collapseHeader,
+                enter = fadeIn(animationSpec = tween(150)) + expandVertically(animationSpec = tween(200)),
+                exit = fadeOut(animationSpec = tween(100)) + shrinkVertically(animationSpec = tween(150))
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Search bar - always visible at top when not scrolling
+                    FuturisticSearchBar(
+                        query = uiState.query,
+                        onQueryChange = viewModel::updateQuery,
+                        onSearch = viewModel::search,
+                        isLoading = uiState.isSearching
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+            
+            // Search stats - collapses when scrolling
+            AnimatedVisibility(
+                visible = (uiState.searchCompleted || uiState.isSearching) && !collapseHeader,
                 enter = fadeIn() + slideInVertically(),
                 exit = fadeOut() + slideOutVertically()
             ) {
@@ -94,6 +123,9 @@ fun SearchScreen(
                     isSearching = uiState.isSearching
                 )
             }
+            
+            // Small spacer always present
+            Spacer(modifier = Modifier.height(if (collapseHeader) 4.dp else 8.dp))
             
             // Content
             when {
@@ -214,40 +246,6 @@ fun SearchScreen(
                     Text("Cancel", color = TextSecondary)
                 }
             }
-        )
-    }
-}
-
-@Composable
-fun AnimatedHeader() {
-    val infiniteTransition = rememberInfiniteTransition()
-    val offset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        )
-    )
-    
-    Column {
-        Text(
-            text = "AggregatorX",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.drawBehind {
-                val brush = Brush.horizontalGradient(
-                    colors = listOf(CyberCyan, CyberBlue, CyberPurple, CyberCyan),
-                    startX = size.width * offset.toFloat() - size.width,
-                    endX = size.width * offset.toFloat()
-                )
-            },
-            color = CyberCyan
-        )
-        Text(
-            text = "Search across all your providers",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
         )
     }
 }

@@ -32,6 +32,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -123,12 +124,12 @@ fun VideoPlayerDialog(
         }
     }
     
-    // Create HTTP data source with custom headers
+    // Create HTTP data source with optimized settings for faster loading
     val httpDataSourceFactory = remember(videoUrl, headers) {
         DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .setConnectTimeoutMs(30000)
-            .setReadTimeoutMs(60000)
+            .setConnectTimeoutMs(15000)  // Reduced from 30s for faster failure detection
+            .setReadTimeoutMs(30000)     // Reduced from 60s for faster response
             .setAllowCrossProtocolRedirects(true)
             .apply {
                 headers?.let { hdrs ->
@@ -137,10 +138,24 @@ fun VideoPlayerDialog(
             }
     }
     
+    // Optimized load control for faster playback start
+    val loadControl = remember {
+        DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                2500,   // Min buffer before playback starts (reduced from default 15s)
+                30000,  // Max buffer size
+                1000,   // Buffer for playback (reduced from default 2.5s)
+                2000    // Buffer for rebuffering
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)  // Prioritize faster start
+            .build()
+    }
+    
     // Create appropriate media source based on URL - only if likely valid
     val exoPlayer = remember(videoUrl, retryCount, mediaType) {
         if (hasError && mediaType == MediaType.UNKNOWN) null
         else ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)  // Use optimized load control
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
             .build().apply {

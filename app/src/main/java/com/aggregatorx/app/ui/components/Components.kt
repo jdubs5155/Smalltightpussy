@@ -42,9 +42,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.C
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import java.util.concurrent.ConcurrentHashMap
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -448,10 +454,23 @@ fun InlineThumbnailPreview(
     var imageLoadFailed by remember { mutableStateOf(false) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     
-    // Create ExoPlayer when we have a video URL and want to play
+    // Create ExoPlayer when we have a video URL and want to play - optimized for fast preview
     DisposableEffect(isPlaying, extractedVideoUrl) {
         if (isPlaying && !extractedVideoUrl.isNullOrEmpty()) {
-            val player = ExoPlayer.Builder(context).build().apply {
+            // Optimized load control for instant preview playback
+            val fastLoadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    1500,   // Min buffer before playback - very fast start
+                    15000,  // Max buffer - small for preview
+                    500,    // Buffer for playback - minimal
+                    1000    // Buffer for rebuffering
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+            
+            val player = androidx.media3.exoplayer.ExoPlayer.Builder(context)
+                .setLoadControl(fastLoadControl)
+                .build().apply {
                 val mediaItem = MediaItem.fromUri(Uri.parse(extractedVideoUrl))
                 setMediaItem(mediaItem)
                 repeatMode = Player.REPEAT_MODE_ALL
