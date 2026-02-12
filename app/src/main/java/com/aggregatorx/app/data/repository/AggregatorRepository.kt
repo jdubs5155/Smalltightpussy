@@ -105,13 +105,15 @@ class AggregatorRepository @Inject constructor(
         return siteAnalysisDao.getLatestAnalysis(providerId)
     }
     
-    // Search
+    // Search - disable caching by default for fresh results on each query
     var cacheResults: Boolean
         get() = scrapingEngine.cacheResults
         set(value) { scrapingEngine.cacheResults = value }
 
     fun searchAllProviders(query: String): Flow<ProviderSearchResults> {
-        return scrapingEngine.searchAllProviders(query, cacheResults)
+        // Always pass false for cache to ensure fresh results for each unique query
+        // The cache is cleared before each search anyway, so this ensures no stale results
+        return scrapingEngine.searchAllProviders(query, false)
     }
     
     suspend fun aggregateSearchResults(

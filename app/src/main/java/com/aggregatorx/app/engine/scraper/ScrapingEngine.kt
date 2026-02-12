@@ -339,29 +339,23 @@ class ScrapingEngine @Inject constructor(
      * Validate and filter results to ensure they are actual content, not category pages
      */
     private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
+        // Don't filter too aggressively - let the ranking engine handle query matching
+        // Only filter out obvious non-content (category pages, navigation links)
         return results.filter { result ->
-            // Filter out results that look like categories/navigation
             val titleLower = result.title.lowercase()
             val urlLower = result.url.lowercase()
             
-            // Check if it's a category/navigation link
+            // Filter out category/navigation links only
             val isCategoryLink = CATEGORY_URL_PATTERNS.any { urlLower.contains(it) }
             
-            // Check if title is too generic (single word genre names)
-            val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES && result.description.isNullOrEmpty()
+            // Filter out generic category names only if they have no description
+            val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES && 
+                              result.description.isNullOrEmpty() &&
+                              result.thumbnailUrl.isNullOrEmpty()
             
-            // Check if URL points to actual content
-            val isContentUrl = CONTENT_URL_PATTERNS.any { urlLower.contains(it) } ||
-                              (!urlLower.contains("/genre/") && !urlLower.contains("/category/") &&
-                              !urlLower.contains("/browse/") && !urlLower.contains("/filter/"))
-            
-            // Check if title relates to the query at all
-            val queryWords = query.lowercase().split(" ").filter { it.length > 2 }
-            val matchesQuery = queryWords.isEmpty() || queryWords.any { titleLower.contains(it) || 
-                result.description?.lowercase()?.contains(it) == true }
-            
-            // Valid result: not a category, not too generic, is content URL, and matches query
-            !isCategoryLink && !isTooGeneric && isContentUrl && matchesQuery
+            // Only strict filter: Must not be a category link and not too generic
+            // Let ranking engine handle query relevance scoring
+            !isCategoryLink && !isTooGeneric
         }
     }
     

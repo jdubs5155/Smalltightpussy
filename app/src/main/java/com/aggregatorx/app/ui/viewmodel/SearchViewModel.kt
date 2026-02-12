@@ -34,6 +34,9 @@ class SearchViewModel @Inject constructor(
     // Video URL cache for faster repeated preview loads
     private val videoUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     
+    // Current search job - cancel when new search starts
+    private var currentSearchJob: kotlinx.coroutines.Job? = null
+    
     init {
         // Load recent searches
         viewModelScope.launch {
@@ -51,14 +54,30 @@ class SearchViewModel @Inject constructor(
         val query = _uiState.value.query.trim()
         if (query.isEmpty()) return
         
-        viewModelScope.launch {
+        // Cancel any previous search to prevent stale results
+        currentSearchJob?.cancel()
+        
+        currentSearchJob = viewModelScope.launch {
+            // ALWAYS clear cache for each search to ensure fresh results
+            // This prevents stale results from being shown for different queries
+            repository.clearSearchCache()
+            videoUrlCache.clear()
+            
+            // Reset UI state immediately for responsive feedback
             _uiState.update { 
                 it.copy(
                     isSearching = true, 
                     searchCompleted = false,
-                    currentSearchQuery = query
+                    currentSearchQuery = query,
+                    // Reset totals and aggregated results for new search
+                    totalResults = 0,
+                    successfulProviders = 0,
+                    failedProviders = 0,
+                    aggregatedResults = null,
+                    error = null
                 ) 
             }
+            // Clear provider results immediately
             _providerResults.value = emptyList()
             
             val results = mutableListOf<ProviderSearchResults>()
