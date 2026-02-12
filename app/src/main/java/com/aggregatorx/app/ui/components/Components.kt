@@ -648,6 +648,24 @@ fun InlineThumbnailPreview(
 }
 
 /**
+ * Helper function to check if a URL is likely a streamable video URL
+ */
+private fun isStreamableVideoUrl(url: String): Boolean {
+    val videoExtensions = listOf(
+        ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
+        ".flv", ".wmv", ".ts", ".m4v", ".3gp"
+    )
+    val lowerUrl = url.lowercase()
+    return videoExtensions.any { lowerUrl.contains(it) } ||
+           lowerUrl.contains("/video/") ||
+           lowerUrl.contains("/stream/") ||
+           lowerUrl.contains("videoplayback") ||
+           lowerUrl.contains("manifest") ||
+           lowerUrl.contains("/hls/") ||
+           lowerUrl.contains("/dash/")
+}
+
+/**
  * Search Result Card Component - Enhanced with Inline Video Preview & Download
  */
 @Composable
@@ -660,12 +678,14 @@ fun SearchResultCard(
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val scoreColor = getScoreColor(result.relevanceScore)
     val scope = rememberCoroutineScope()
     
     var showFullscreenPlayer by remember { mutableStateOf(false) }
     var fullscreenVideoUrl by remember { mutableStateOf<String?>(null) }
     var isExtractingForFullscreen by remember { mutableStateOf(false) }
+    var showExtractionError by remember { mutableStateOf(false) }
     
     Card(
         modifier = modifier
@@ -692,12 +712,12 @@ fun SearchResultCard(
                     .fillMaxWidth()
                     .padding(12.dp)
             ) {
-                // Inline Thumbnail Preview with video playback
+                // Inline Thumbnail Preview with video playback - Larger thumbnails for better visibility
                 InlineThumbnailPreview(
                     thumbnailUrl = result.thumbnailUrl,
                     videoUrl = null, // Will be extracted on tap
                     duration = result.duration,
-                    modifier = Modifier.size(100.dp),
+                    modifier = Modifier.size(140.dp), // Increased size for better visibility
                     onLongPress = {
                         // Long press opens fullscreen player - extract video URL first
                         if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null && !isExtractingForFullscreen) {
@@ -705,26 +725,53 @@ fun SearchResultCard(
                             scope.launch {
                                 try {
                                     val extractedUrl = onExtractVideoUrl(result.url)
-                                    if (!extractedUrl.isNullOrEmpty()) {
+                                    if (!extractedUrl.isNullOrEmpty() && isStreamableVideoUrl(extractedUrl)) {
+                                        // Valid video URL extracted - open fullscreen player
                                         fullscreenVideoUrl = extractedUrl
                                         showFullscreenPlayer = true
-                                    } else {
-                                        // Fallback to using the page URL directly
-                                        fullscreenVideoUrl = result.url
+                                        showExtractionError = false
+                                    } else if (!extractedUrl.isNullOrEmpty()) {
+                                        // URL returned but might not be a video stream, try anyway
+                                        fullscreenVideoUrl = extractedUrl
                                         showFullscreenPlayer = true
+                                        showExtractionError = false
+                                    } else {
+                                        // Extraction failed - show error instead of trying page URL
+                                        showExtractionError = true
+                                        withContext(Dispatchers.Main) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Could not extract video stream. Try opening in browser.",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
                                 } catch (e: Exception) {
-                                    // Fallback to page URL on error
-                                    fullscreenVideoUrl = result.url
-                                    showFullscreenPlayer = true
+                                    // Extraction error - show toast instead of playing invalid URL
+                                    showExtractionError = true
+                                    withContext(Dispatchers.Main) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Video extraction failed: ${e.message?.take(50) ?: "Unknown error"}",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 } finally {
                                     isExtractingForFullscreen = false
                                 }
                             }
                         } else if (!result.url.isNullOrEmpty()) {
-                            // No extraction function provided, use page URL
-                            fullscreenVideoUrl = result.url
-                            showFullscreenPlayer = true
+                            // No extraction function - show helpful message
+                            scope.launch {
+                                withContext(Dispatchers.Main) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Video preview not available. Opening in browser instead.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                            onOpenExternal()
                         }
                     },
                     onVideoExtractionNeeded = if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null) {

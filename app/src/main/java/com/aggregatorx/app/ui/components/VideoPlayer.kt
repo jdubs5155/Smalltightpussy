@@ -55,6 +55,41 @@ import kotlinx.coroutines.launch
  * - Smart error recovery
  * - Beautiful animated controls
  */
+
+/**
+ * Helper function to detect if URL is likely a playable video stream
+ */
+private fun isLikelyVideoUrl(url: String): Boolean {
+    val videoIndicators = listOf(
+        ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
+        ".flv", ".wmv", ".ts", ".m4v", ".3gp", "/hls/", "/dash/",
+        "/video/", "/stream/", "videoplayback", "manifest"
+    )
+    val lowerUrl = url.lowercase()
+    return videoIndicators.any { lowerUrl.contains(it) }
+}
+
+/**
+ * Detect the media type from URL for appropriate source handling
+ */
+private fun detectMediaType(url: String): MediaType {
+    val lowerUrl = url.lowercase()
+    return when {
+        lowerUrl.contains(".m3u8") -> MediaType.HLS
+        lowerUrl.contains(".mpd") -> MediaType.DASH
+        lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") || 
+        lowerUrl.contains(".mkv") || lowerUrl.contains(".avi") ||
+        lowerUrl.contains(".mov") || lowerUrl.contains(".m4v") -> MediaType.PROGRESSIVE
+        lowerUrl.contains("/hls/") || lowerUrl.contains("manifest") -> MediaType.HLS
+        lowerUrl.contains("/dash/") -> MediaType.DASH
+        else -> MediaType.UNKNOWN
+    }
+}
+
+private enum class MediaType {
+    HLS, DASH, PROGRESSIVE, UNKNOWN
+}
+
 @Composable
 fun VideoPlayerDialog(
     videoUrl: String,
@@ -76,6 +111,18 @@ fun VideoPlayerDialog(
     var currentQuality by remember { mutableStateOf("Auto") }
     var showProxyBadge by remember { mutableStateOf(false) }
     
+    // Check if URL is likely a valid video URL
+    val mediaType = remember(videoUrl) { detectMediaType(videoUrl) }
+    val isLikelyValid = remember(videoUrl) { isLikelyVideoUrl(videoUrl) }
+    
+    // Show early error for obviously invalid URLs
+    LaunchedEffect(mediaType) {
+        if (mediaType == MediaType.UNKNOWN && !isLikelyValid) {
+            hasError = true
+            errorMessage = "URL does not appear to be a video stream. Try opening in browser instead."
+        }
+    }
+    
     // Create HTTP data source with custom headers
     val httpDataSourceFactory = remember(videoUrl, headers) {
         DefaultHttpDataSource.Factory()
@@ -90,26 +137,27 @@ fun VideoPlayerDialog(
             }
     }
     
-    // Create appropriate media source based on URL
-    val exoPlayer = remember(videoUrl, retryCount) {
-        ExoPlayer.Builder(context)
+    // Create appropriate media source based on URL - only if likely valid
+    val exoPlayer = remember(videoUrl, retryCount, mediaType) {
+        if (hasError && mediaType == MediaType.UNKNOWN) null
+        else ExoPlayer.Builder(context)
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
             .build().apply {
-                val mediaSource = when {
-                    videoUrl.contains(".m3u8", ignoreCase = true) -> {
+                val mediaSource = when (mediaType) {
+                    MediaType.HLS -> {
                         // HLS Stream
                         HlsMediaSource.Factory(httpDataSourceFactory)
                             .setAllowChunklessPreparation(true)
                             .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
                     }
-                    videoUrl.contains(".mpd", ignoreCase = true) -> {
+                    MediaType.DASH -> {
                         // DASH Stream
                         DashMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
                     }
-                    else -> {
-                        // Progressive (MP4, WebM, etc.)
+                    MediaType.PROGRESSIVE, MediaType.UNKNOWN -> {
+                        // Progressive (MP4, WebM, etc.) or try as progressive for unknown
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
                     }
@@ -122,77 +170,87 @@ fun VideoPlayerDialog(
     
     // Player listener with enhanced error handling
     DisposableEffect(exoPlayer) {
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                isBuffering = playbackState == Player.STATE_BUFFERING
-                if (playbackState == Player.STATE_READY) {
-                    duration = exoPlayer.duration
-                    hasError = false // Clear error on successful playback
-                }
-            }
-            
-            override fun onIsPlayingChanged(playing: Boolean) {
-                isPlaying = playing
-            }
-            
-            override fun onPlayerError(error: PlaybackException) {
-                val errorCode = error.errorCode
-                val errorMsg = when (errorCode) {
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> 
-                        "Network connection failed - Check your connection"
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> 
-                        "Connection timeout - Server may be slow"
-                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> 
-                        "Source unavailable (${error.message}) - Trying alternate source..."
-                    PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> 
-                        "Invalid content type - May need proxy"
-                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> 
-                        "Stream manifest error - Trying direct playback..."
-                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> 
-                        "Unsupported stream format"
-                    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> 
-                        "Behind live window - Restarting stream..."
-                    else -> error.message ?: "Playback error (code: $errorCode)"
+        if (exoPlayer == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    isBuffering = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_READY) {
+                        duration = exoPlayer.duration
+                        hasError = false // Clear error on successful playback
+                    }
                 }
                 
-                hasError = true
-                errorMessage = errorMsg
-                
-                // Determine recovery strategy
-                val recovery = when (errorCode) {
-                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> RecoveryStrategy.USE_NETHERLANDS_PROXY
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> RecoveryStrategy.TRY_PROXY
-                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> RecoveryStrategy.TRY_ALTERNATE_SOURCE
-                    else -> RecoveryStrategy.TRY_ALL_METHODS
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
                 }
                 
-                // Notify parent for stream recovery
-                onStreamError?.invoke(errorMsg, recovery)
-                
-                // Auto retry for certain errors (up to 3 times)
-                if (retryCount < 3 && errorCode in listOf(
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-                    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
-                )) {
-                    CoroutineScope(Dispatchers.Main).launch {
-                        delay(2000)
-                        retryCount++
+                override fun onPlayerError(error: PlaybackException) {
+                    val errorCode = error.errorCode
+                    val errorMsg = when (errorCode) {
+                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> 
+                            "Network connection failed - Check your connection"
+                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> 
+                            "Connection timeout - Server may be slow"
+                        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> 
+                            "Source unavailable (${error.message}) - Trying alternate source..."
+                        PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> 
+                            "Invalid content type - This URL may not be a video stream"
+                        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> 
+                            "Stream manifest error - Trying direct playback..."
+                        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> 
+                            "Unsupported stream format"
+                        PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> 
+                            "Behind live window - Restarting stream..."
+                        PlaybackException.ERROR_CODE_DECODING_FAILED,
+                        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
+                            "Decoder error - This content format is not supported"
+                        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
+                            "Invalid video format - URL may not be a video stream"
+                        else -> error.message ?: "Playback error (code: $errorCode)"
+                    }
+                    
+                    hasError = true
+                    errorMessage = errorMsg
+                    
+                    // Determine recovery strategy
+                    val recovery = when (errorCode) {
+                        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> RecoveryStrategy.USE_NETHERLANDS_PROXY
+                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> RecoveryStrategy.TRY_PROXY
+                        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> RecoveryStrategy.TRY_ALTERNATE_SOURCE
+                        else -> RecoveryStrategy.TRY_ALL_METHODS
+                    }
+                    
+                    // Notify parent for stream recovery
+                    onStreamError?.invoke(errorMsg, recovery)
+                    
+                    // Auto retry for certain errors (up to 3 times)
+                    if (retryCount < 3 && errorCode in listOf(
+                        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                        PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
+                    )) {
+                        CoroutineScope(Dispatchers.Main).launch {
+                            delay(2000)
+                            retryCount++
+                        }
                     }
                 }
             }
-        }
-        
-        exoPlayer.addListener(listener)
-        
-        onDispose {
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            
+            exoPlayer.addListener(listener)
+            
+            onDispose {
+                exoPlayer.removeListener(listener)
+                exoPlayer.release()
+            }
         }
     }
     
     // Update position
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
+    LaunchedEffect(isPlaying, exoPlayer) {
+        while (isPlaying && exoPlayer != null) {
             currentPosition = exoPlayer.currentPosition
             delay(500)
         }
@@ -348,8 +406,8 @@ fun VideoPlayerDialog(
                         modifier = Modifier.padding(horizontal = 24.dp)
                     )
                 }
-            } else {
-                // Video player
+            } else if (exoPlayer != null) {
+                // Video player - only show if we have a valid player
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -441,10 +499,12 @@ fun VideoPlayerDialog(
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.5f))
                                 .clickable {
-                                    if (isPlaying) {
-                                        exoPlayer.pause()
-                                    } else {
-                                        exoPlayer.play()
+                                    exoPlayer?.let { player ->
+                                        if (isPlaying) {
+                                            player.pause()
+                                        } else {
+                                            player.play()
+                                        }
                                     }
                                 },
                             contentAlignment = Alignment.Center
@@ -468,7 +528,7 @@ fun VideoPlayerDialog(
                             Slider(
                                 value = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
                                 onValueChange = { value ->
-                                    exoPlayer.seekTo((value * duration).toLong())
+                                    exoPlayer?.seekTo((value * duration).toLong())
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = SliderDefaults.colors(
