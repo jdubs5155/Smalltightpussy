@@ -106,11 +106,12 @@ class ScrapingEngine @Inject constructor(
      * Returns a Flow that emits results as they come in from each provider
      * 
      * RESILIENT DESIGN:
+     * - GUARANTEES all enabled providers are scraped (never skips any)
      * - Never breaks the loop even if individual providers fail
      * - Sorts providers by success rate (best performers first)
      * - Emits results progressively as they complete
      * - Includes comprehensive error handling per-provider
-     * - Auto-retries with fallback strategies
+     * - Auto-retries with fallback strategies including headless browser
      */
     // In-memory cache for popular queries (simple LRU)
     private val resultCache = object : LinkedHashMap<String, List<ProviderSearchResults>>(100, 0.75f, true) {
@@ -139,21 +140,26 @@ class ScrapingEngine @Inject constructor(
         }
 
         // Sort providers by success rate and avg response time (most successful first)
+        // But GUARANTEE all providers will be searched
         enabledProviders = enabledProviders.sortedWith(
             compareByDescending<Provider> { it.successRate }
                 .thenBy { it.avgResponseTime }
                 .thenByDescending { it.totalSearches }
         )
+        
+        // Track which providers we've processed to ensure none are missed
+        val processedProviders = mutableSetOf<String>()
 
         // Create a semaphore for rate limiting concurrent requests
         val semaphore = Semaphore(MAX_CONCURRENT_PROVIDERS)
         val results = mutableListOf<ProviderSearchResults>()
 
-        // Search all providers concurrently - NEVER BREAK THE LOOP
+        // Search ALL providers concurrently - NEVER BREAK THE LOOP, NEVER SKIP ANY
         coroutineScope {
             val deferredResults = enabledProviders.map { provider ->
                 async {
                     semaphore.withPermit {
+                        processedProviders.add(provider.id)
                         // Wrap in comprehensive try-catch to ensure no single provider breaks the loop
                         safeSearchProvider(provider, query)
                     }
@@ -161,20 +167,22 @@ class ScrapingEngine @Inject constructor(
             }
 
             // Emit results as they complete - use individual try-catch for each
-            deferredResults.forEach { deferred ->
+            // This ensures we get results from ALL providers
+            deferredResults.forEachIndexed { index, deferred ->
+                val provider = enabledProviders.getOrNull(index)
                 try {
                     val result = deferred.await()
                     results.add(result)
                     emit(result)
                 } catch (e: Exception) {
-                    // Even if await fails somehow, don't break - create failed result
-                    // This should never happen with safeSearchProvider, but extra safety
+                    // Even if await fails somehow, don't break - create failed result for this provider
+                    // This guarantees the UI knows about every provider
                     val failedResult = ProviderSearchResults(
-                        provider = enabledProviders.firstOrNull() ?: return@forEach,
+                        provider = provider ?: enabledProviders.firstOrNull() ?: return@forEachIndexed,
                         results = emptyList(),
                         searchTime = 0L,
                         success = false,
-                        errorMessage = "Unexpected error: ${e.message}"
+                        errorMessage = "Unexpected error processing ${provider?.name}: ${e.message}"
                     )
                     results.add(failedResult)
                     emit(failedResult)
@@ -337,6 +345,7 @@ class ScrapingEngine @Inject constructor(
     
     /**
      * Validate and filter results to ensure they are actual content, not category pages
+     * ENHANCED: Also matches against descriptions and collects related content
      */
     private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
         // Don't filter too aggressively - let the ranking engine handle query matching
@@ -357,6 +366,115 @@ class ScrapingEngine @Inject constructor(
             // Let ranking engine handle query relevance scoring
             !isCategoryLink && !isTooGeneric
         }
+    }
+    
+    /**
+     * Enhanced matching that searches in titles, descriptions, and URLs
+     * Returns true if any part of the content matches the query
+     */
+    private fun matchesQueryEnhanced(result: SearchResult, query: String): Boolean {
+        val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
+        
+        // Check title
+        val titleLower = result.title.lowercase()
+        if (queryWords.any { titleLower.contains(it) }) return true
+        
+        // Check description
+        val descLower = result.description?.lowercase() ?: ""
+        if (descLower.isNotEmpty() && queryWords.any { descLower.contains(it) }) return true
+        
+        // Check URL path (often contains keywords)
+        val urlPath = try {
+            java.net.URL(result.url).path.lowercase()
+        } catch (e: Exception) {
+            result.url.lowercase()
+        }
+        if (queryWords.any { urlPath.contains(it.replace(" ", "-")) || urlPath.contains(it.replace(" ", "_")) }) return true
+        
+        // Fuzzy matching for similar terms
+        val titleWords = titleLower.split(Regex("\\W+")).filter { it.length > 2 }
+        for (queryWord in queryWords) {
+            for (titleWord in titleWords) {
+                if (areSimilarWords(queryWord, titleWord)) return true
+            }
+        }
+        
+        return false
+    }
+    
+    /**
+     * Check if two words are similar (for fuzzy matching)
+     */
+    private fun areSimilarWords(word1: String, word2: String): Boolean {
+        if (word1 == word2) return true
+        if (word1.length < 3 || word2.length < 3) return false
+        
+        // One contains the other
+        if (word1.contains(word2) || word2.contains(word1)) return true
+        
+        // Same start (stem matching)
+        val minLen = minOf(word1.length, word2.length)
+        if (minLen >= 4 && word1.take(minLen - 1) == word2.take(minLen - 1)) return true
+        
+        // Simple similarity check
+        val longer = if (word1.length > word2.length) word1 else word2
+        val shorter = if (word1.length > word2.length) word2 else word1
+        val commonChars = shorter.count { longer.contains(it) }
+        return commonChars.toFloat() / longer.length >= 0.8f
+    }
+    
+    /**
+     * Generate related/similar results even when main query doesn't match exactly
+     * This helps provide content when exact matches are few
+     */
+    private fun findRelatedContent(
+        allResults: List<SearchResult>,
+        query: String,
+        existingMatches: List<SearchResult>
+    ): List<SearchResult> {
+        val existingUrls = existingMatches.map { it.url }.toSet()
+        val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
+        
+        // Find results that partially match or are semantically related
+        return allResults
+            .filter { it.url !in existingUrls }
+            .map { result ->
+                val relevance = calculatePartialRelevance(result, queryWords)
+                Pair(result, relevance)
+            }
+            .filter { it.second > 0.2f }
+            .sortedByDescending { it.second }
+            .take(20)
+            .map { it.first.copy(relevanceScore = it.second * 50f) }
+    }
+    
+    /**
+     * Calculate partial relevance for related content matching
+     */
+    private fun calculatePartialRelevance(result: SearchResult, queryWords: List<String>): Float {
+        var score = 0f
+        val titleLower = result.title.lowercase()
+        val descLower = result.description?.lowercase() ?: ""
+        val combined = "$titleLower $descLower"
+        
+        for (word in queryWords) {
+            // Exact word match
+            if (combined.contains(word)) {
+                score += 0.3f
+            }
+            // Partial/fuzzy match
+            else if (combined.split(Regex("\\W+")).any { areSimilarWords(it, word) }) {
+                score += 0.15f
+            }
+        }
+        
+        // Bonus for having thumbnail (likely real content)
+        if (!result.thumbnailUrl.isNullOrEmpty()) score += 0.1f
+        
+        // Bonus for having description
+        if (!result.description.isNullOrEmpty()) score += 0.05f
+        
+        return score.coerceIn(0f, 1f)
     }
     
     /**
@@ -422,6 +540,8 @@ class ScrapingEngine @Inject constructor(
     
     /**
      * Extract results with thumbnail URLs
+     * ENHANCED: Matches query against title, description, and URL
+     * Also collects related content when exact matches are few
      */
     private fun extractResultsWithThumbnails(
         document: Document,
@@ -429,6 +549,7 @@ class ScrapingEngine @Inject constructor(
         query: String
     ): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
+        val allExtracted = mutableListOf<SearchResult>()
         
         // Use SmartNavigationEngine to extract content links
         val contentLinks = smartNavigationEngine.extractContentLinks(document, provider.baseUrl)
@@ -437,25 +558,71 @@ class ScrapingEngine @Inject constructor(
             // Extract title from URL or find in document
             val title = extractTitleFromUrl(url) ?: findTitleInDocument(document, url) ?: continue
             
-            // Only include results that match the query
-            if (matchesQuery(title, query)) {
-                results.add(SearchResult(
-                    title = title,
-                    url = url,
-                    thumbnailUrl = thumbnailUrl,
-                    providerId = provider.id,
-                    providerName = provider.name,
-                    relevanceScore = calculateRelevance(title, query)
-                ))
+            // Extract description if available
+            val description = findDescriptionInDocument(document, url)
+            
+            val result = SearchResult(
+                title = title,
+                url = url,
+                thumbnailUrl = thumbnailUrl,
+                description = description,
+                providerId = provider.id,
+                providerName = provider.name,
+                relevanceScore = calculateRelevance(title, query)
+            )
+            
+            allExtracted.add(result)
+            
+            // Include results that match query (title, description, or URL)
+            if (matchesQueryEnhanced(result, query)) {
+                results.add(result)
             }
         }
         
         // Also try generic extraction if not enough results
         if (results.size < 5) {
-            results.addAll(extractResultsGeneric(document, provider, query))
+            val genericResults = extractResultsGeneric(document, provider, query)
+            results.addAll(genericResults)
         }
         
-        return results.distinctBy { it.url }
+        // If still few results, add related content
+        val uniqueResults = results.distinctBy { it.url }
+        if (uniqueResults.size < 10) {
+            val related = findRelatedContent(allExtracted, query, uniqueResults)
+            return (uniqueResults + related).distinctBy { it.url }
+        }
+        
+        return uniqueResults
+    }
+    
+    /**
+     * Find description for a content URL in document
+     */
+    private fun findDescriptionInDocument(document: Document, url: String): String? {
+        // Try to find the container that has this link
+        val linkElement = document.select("a[href='$url'], a[href*='${url.substringAfterLast("/")}']").firstOrNull()
+            ?: return null
+        
+        // Look for description in parent or sibling elements
+        val parent = linkElement.parent() ?: return null
+        val grandparent = parent.parent()
+        
+        val descSelectors = listOf(
+            ".description", ".desc", ".synopsis", ".summary", ".text",
+            "p", ".info", "[class*='desc']", "[class*='info']"
+        )
+        
+        // Search in parent and grandparent
+        for (container in listOfNotNull(parent, grandparent)) {
+            for (selector in descSelectors) {
+                val desc = container.select(selector).firstOrNull()?.text()?.trim()
+                if (!desc.isNullOrEmpty() && desc.length > 10 && desc.length < 500) {
+                    return desc
+                }
+            }
+        }
+        
+        return null
     }
     
     private fun extractTitleFromUrl(url: String): String? {
@@ -595,6 +762,7 @@ class ScrapingEngine @Inject constructor(
     
     /**
      * Fallback scraping when primary method fails
+     * ENHANCED: Uses headless browser more aggressively and tries multiple strategies
      */
     private suspend fun tryFallbackScraping(
         provider: Provider,
@@ -605,12 +773,13 @@ class ScrapingEngine @Inject constructor(
         // Mark initial failure
         providerDao.incrementFailedCount(provider.id)
         
-        // Try alternative methods
+        // Try alternative methods in order of resource usage
         val fallbackMethods: List<suspend () -> List<SearchResult>> = listOf(
             { scrapeGeneric(provider, query) },
             { scrapeWithAlternateUserAgent(provider, query) },
             { scrapeWithDelay(provider, query) },
-            { scrapeMobileVersion(provider, query) }
+            { scrapeMobileVersion(provider, query) },
+            { scrapeWithAlternateSearchPatterns(provider, query) }
         )
 
         for (method in fallbackMethods) {
@@ -630,15 +799,41 @@ class ScrapingEngine @Inject constructor(
             }
         }
 
-        // Headless browser fallback (Playwright)
+        // Headless browser fallback (Playwright) - more aggressive usage
         try {
-            val analysis = siteAnalysisDao.getLatestAnalysis(provider.id)
-            val searchUrl = analysis?.searchFormSelector?.let { selector ->
-                // Use selector if available, else fallback to provider.url
-                provider.url
-            } ?: provider.url
-
-            val html = HeadlessBrowserHelper.fetchPageContent(searchUrl)
+            // Build search URLs to try with headless browser
+            val searchUrls = buildSearchUrlsForHeadless(provider, query)
+            
+            for (searchUrl in searchUrls) {
+                try {
+                    val html = HeadlessBrowserHelper.fetchPageContentWithShadowAndAdSkip(
+                        searchUrl,
+                        waitSelector = ".item, .result, .video-item, article, .card",
+                        timeout = 20000
+                    )
+                    
+                    if (!html.isNullOrEmpty()) {
+                        val doc = org.jsoup.Jsoup.parse(html, provider.baseUrl)
+                        val results = extractResultsWithThumbnails(doc, provider, query)
+                        
+                        if (results.isNotEmpty()) {
+                            updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                            return ProviderSearchResults(
+                                provider = provider,
+                                results = results,
+                                searchTime = System.currentTimeMillis() - startTime,
+                                success = true,
+                                errorMessage = null
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    continue // Try next URL
+                }
+            }
+            
+            // Also try headless on the base URL if search URLs didn't work
+            val html = HeadlessBrowserHelper.fetchPageContent(provider.url)
             if (!html.isNullOrEmpty()) {
                 val doc = org.jsoup.Jsoup.parse(html, provider.url)
                 val results = extractResultsWithThumbnails(doc, provider, query)
@@ -666,6 +861,75 @@ class ScrapingEngine @Inject constructor(
             success = false,
             errorMessage = "All scraping methods failed (including headless browser): ${originalException.message}"
         )
+    }
+    
+    /**
+     * Build multiple search URLs to try with headless browser
+     */
+    private fun buildSearchUrlsForHeadless(provider: Provider, query: String): List<String> {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val baseUrl = provider.baseUrl.trimEnd('/')
+        
+        return listOf(
+            "$baseUrl/search?q=$encodedQuery",
+            "$baseUrl/search?query=$encodedQuery",
+            "$baseUrl/search/$encodedQuery",
+            "$baseUrl/?s=$encodedQuery",
+            "$baseUrl/videos?search=$encodedQuery",
+            "$baseUrl/movies?search=$encodedQuery",
+            "$baseUrl/search.php?q=$encodedQuery",
+            "$baseUrl/find?q=$encodedQuery",
+            "$baseUrl/?q=$encodedQuery",
+            "$baseUrl/results?search_query=$encodedQuery"
+        )
+    }
+    
+    /**
+     * Try alternate search URL patterns
+     */
+    private suspend fun scrapeWithAlternateSearchPatterns(
+        provider: Provider,
+        query: String
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val baseUrl = provider.baseUrl.trimEnd('/')
+        
+        // Extended list of search patterns
+        val searchPatterns = listOf(
+            "$baseUrl/search?q=$encodedQuery",
+            "$baseUrl/search?query=$encodedQuery",
+            "$baseUrl/search?s=$encodedQuery",
+            "$baseUrl/search?keyword=$encodedQuery",
+            "$baseUrl/search?term=$encodedQuery",
+            "$baseUrl/search/$encodedQuery",
+            "$baseUrl/search/${query.replace(" ", "-")}",
+            "$baseUrl/search/${query.replace(" ", "+")}",
+            "$baseUrl/?s=$encodedQuery",
+            "$baseUrl/?q=$encodedQuery",
+            "$baseUrl/videos?search=$encodedQuery",
+            "$baseUrl/videos?q=$encodedQuery",
+            "$baseUrl/movies?search=$encodedQuery",
+            "$baseUrl/movies?q=$encodedQuery",
+            "$baseUrl/find?q=$encodedQuery",
+            "$baseUrl/results?search_query=$encodedQuery",
+            "$baseUrl/search.php?q=$encodedQuery",
+            "$baseUrl/search.html?q=$encodedQuery",
+            "$baseUrl/index.php?s=$encodedQuery"
+        )
+        
+        for (pattern in searchPatterns) {
+            try {
+                val document = fetchDocument(pattern)
+                val results = extractResultsWithThumbnails(document, provider, query)
+                if (results.isNotEmpty()) {
+                    return@withContext results
+                }
+            } catch (e: Exception) {
+                continue
+            }
+        }
+        
+        emptyList()
     }
     
     /**
@@ -803,6 +1067,7 @@ class ScrapingEngine @Inject constructor(
     
     /**
      * Generic result extraction without configuration
+     * ENHANCED: Searches in descriptions, extracts more metadata, finds related content
      */
     private fun extractResultsGeneric(
         document: Document,
@@ -810,35 +1075,71 @@ class ScrapingEngine @Inject constructor(
         query: String
     ): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
+        val allResults = mutableListOf<SearchResult>()
         
-        // Try to detect result structure
-        val itemSelector = detectResultItemSelector(document) ?: return emptyList()
+        // Try to detect result structure - expanded selectors
+        val itemSelectors = listOf(
+            ".result", ".item", ".card", ".entry", ".post",
+            ".video-item", ".movie-item", ".torrent-item",
+            "article", ".row", "[data-item]", "[data-id]",
+            ".search-result", ".listing", ".media",
+            ".thumb", ".preview", ".content-item",
+            "[class*='video']", "[class*='movie']", "[class*='result']",
+            ".grid-item", ".list-item", "li.item"
+        )
+        
+        // Find selector with most matches (but at least 2)
+        val itemSelector = itemSelectors
+            .map { it to document.select(it).size }
+            .filter { it.second >= 2 }
+            .maxByOrNull { it.second }
+            ?.first ?: return emptyList()
+            
         val items = document.select(itemSelector)
         
         items.forEach { item ->
             try {
                 val title = extractBestTitle(item)
                 val url = extractUrlFromItem(item, provider.baseUrl)
+                val description = extractBestDescription(item)
+                val thumbnail = extractBestThumbnail(item, provider.baseUrl)
                 
                 if (title.isNotEmpty() && url.isNotEmpty() && 
                     !url.contains("javascript:") && !url.startsWith("#")) {
-                    results.add(SearchResult(
+                    
+                    val result = SearchResult(
                         providerId = provider.id,
                         providerName = provider.name,
                         title = title,
                         url = url,
-                        description = extractBestDescription(item),
-                        thumbnailUrl = extractBestThumbnail(item, provider.baseUrl),
+                        description = description,
+                        thumbnailUrl = thumbnail,
                         relevanceScore = calculateRelevanceScore(title, query)
-                    ))
+                    )
+                    
+                    allResults.add(result)
+                    
+                    // Check if matches query (title, description, or URL)
+                    if (matchesQueryEnhanced(result, query)) {
+                        results.add(result)
+                    }
                 }
             } catch (e: Exception) {
                 // Skip malformed items
             }
         }
         
-        return results
-            .distinctBy { it.url }
+        // If few direct matches, add related content
+        val uniqueResults = results.distinctBy { it.url }
+        if (uniqueResults.size < 10) {
+            val related = findRelatedContent(allResults, query, uniqueResults)
+            return (uniqueResults + related)
+                .distinctBy { it.url }
+                .sortedByDescending { it.relevanceScore }
+                .take(50)
+        }
+        
+        return uniqueResults
             .sortedByDescending { it.relevanceScore }
             .take(50)
     }
