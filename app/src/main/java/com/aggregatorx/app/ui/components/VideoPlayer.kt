@@ -112,13 +112,18 @@ fun VideoPlayerDialog(
     var currentQuality by remember { mutableStateOf("Auto") }
     var showProxyBadge by remember { mutableStateOf(false) }
     
+    // Track which media types have been tried (for auto-format switching)
+    var triedFormats by remember { mutableStateOf(setOf<MediaType>()) }
+    var currentFormatOverride by remember { mutableStateOf<MediaType?>(null) }
+    
     // Check if URL is likely a valid video URL
-    val mediaType = remember(videoUrl) { detectMediaType(videoUrl) }
+    val detectedMediaType = remember(videoUrl) { detectMediaType(videoUrl) }
+    val activeMediaType = currentFormatOverride ?: detectedMediaType
     val isLikelyValid = remember(videoUrl) { isLikelyVideoUrl(videoUrl) }
     
     // Show early error for obviously invalid URLs
-    LaunchedEffect(mediaType) {
-        if (mediaType == MediaType.UNKNOWN && !isLikelyValid) {
+    LaunchedEffect(activeMediaType) {
+        if (activeMediaType == MediaType.UNKNOWN && !isLikelyValid && triedFormats.isEmpty()) {
             hasError = true
             errorMessage = "URL does not appear to be a video stream. Try opening in browser instead."
         }
@@ -152,14 +157,14 @@ fun VideoPlayerDialog(
     }
     
     // Create appropriate media source based on URL - only if likely valid
-    val exoPlayer = remember(videoUrl, retryCount, mediaType) {
-        if (hasError && mediaType == MediaType.UNKNOWN) null
+    val exoPlayer = remember(videoUrl, retryCount, activeMediaType) {
+        if (hasError && activeMediaType == MediaType.UNKNOWN && triedFormats.size >= 3) null
         else ExoPlayer.Builder(context)
             .setLoadControl(loadControl)  // Use optimized load control
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
             .build().apply {
-                val mediaSource = when (mediaType) {
+                val mediaSource = when (activeMediaType) {
                     MediaType.HLS -> {
                         // HLS Stream
                         HlsMediaSource.Factory(httpDataSourceFactory)
@@ -211,11 +216,11 @@ fun VideoPlayerDialog(
                         PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> 
                             "Source unavailable (${error.message}) - Trying alternate source..."
                         PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> 
-                            "Invalid content type - This URL may not be a video stream"
+                            "Invalid content type - Trying different format..."
                         PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> 
                             "Stream manifest error - Trying direct playback..."
                         PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> 
-                            "Unsupported stream format"
+                            "Unsupported stream format - Trying alternate format..."
                         PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> 
                             "Behind live window - Restarting stream..."
                         PlaybackException.ERROR_CODE_DECODING_FAILED,
@@ -223,12 +228,9 @@ fun VideoPlayerDialog(
                             "Decoder error - This content format is not supported"
                         PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
                         PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
-                            "Invalid video format - URL may not be a video stream"
+                            "Invalid video format - Trying alternate format..."
                         else -> error.message ?: "Playback error (code: $errorCode)"
                     }
-                    
-                    hasError = true
-                    errorMessage = errorMsg
                     
                     // Determine recovery strategy
                     val recovery = when (errorCode) {
@@ -241,15 +243,38 @@ fun VideoPlayerDialog(
                     // Notify parent for stream recovery
                     onStreamError?.invoke(errorMsg, recovery)
                     
-                    // Auto retry for certain errors (up to 3 times)
-                    if (retryCount < 3 && errorCode in listOf(
+                    // AUTO FORMAT SWITCHING: Try different media types before showing error
+                    // Track this format as tried
+                    triedFormats = triedFormats + activeMediaType
+                    
+                    // Determine which format to try next
+                    val formatOrder = listOf(MediaType.PROGRESSIVE, MediaType.HLS, MediaType.DASH)
+                    val nextFormat = formatOrder.firstOrNull { it !in triedFormats }
+                    
+                    if (nextFormat != null) {
+                        // Auto-switch to next format
+                        CoroutineScope(Dispatchers.Main).launch {
+                            delay(500)
+                            currentFormatOverride = nextFormat
+                            hasError = false
+                            retryCount++ // Trigger recomposition
+                        }
+                    } else if (retryCount < 3 && errorCode in listOf(
                         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
                         PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW
                     )) {
+                        // All formats tried, but network errors can be retried
                         CoroutineScope(Dispatchers.Main).launch {
                             delay(2000)
+                            // Reset format attempts for network retries
+                            triedFormats = emptySet()
+                            currentFormatOverride = null
                             retryCount++
                         }
+                    } else {
+                        // All formats tried and all retries exhausted
+                        hasError = true
+                        errorMessage = errorMsg
                     }
                 }
             }
@@ -371,7 +396,13 @@ fun VideoPlayerDialog(
                     ) {
                         // Retry button
                         Button(
-                            onClick = { retryCount++ },
+                            onClick = { 
+                                // Reset format tracking on manual retry
+                                triedFormats = emptySet()
+                                currentFormatOverride = null
+                                hasError = false
+                                retryCount++ 
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = CyberCyan,
                                 contentColor = DarkBackground

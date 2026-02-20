@@ -43,6 +43,13 @@ class VideoExtractorEngine @Inject constructor() {
         private const val USER_AGENT = 
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         
+        // Alternate user agents for fallback
+        private val ALTERNATE_USER_AGENTS = listOf(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        )
+        
         // Video file extensions
         private val VIDEO_EXTENSIONS = listOf(
             ".mp4", ".webm", ".mkv", ".avi", ".mov", ".m4v",
@@ -130,6 +137,7 @@ class VideoExtractorEngine @Inject constructor() {
      * Extract video URL from a content page - tries multiple methods
      * Auto-selects the highest quality available
      * Uses headless browser with auto-click ad bypass for JS-heavy sites
+     * ENHANCED: Retries with alternate user agents, more extraction patterns
      */
     suspend fun extractVideoUrl(pageUrl: String): VideoExtractionResult = withContext(Dispatchers.IO) {
         try {
@@ -149,6 +157,7 @@ class VideoExtractorEngine @Inject constructor() {
             extractFromScripts(document, pageUrl)?.let { allVideos.add(it) }
             extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
             extractFromJsonLd(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromMetaTags(document, pageUrl)?.let { allVideos.add(it) }
             
             // If standard parsing found videos, select best quality
             if (allVideos.isNotEmpty()) {
@@ -160,6 +169,37 @@ class VideoExtractorEngine @Inject constructor() {
                     format = bestVideo.format,
                     isStream = bestVideo.isStream
                 )
+            }
+            
+            // Try with alternate user agents (some providers block certain UAs)
+            for (ua in ALTERNATE_USER_AGENTS) {
+                try {
+                    val altDoc = Jsoup.connect(pageUrl)
+                        .userAgent(ua)
+                        .timeout(12000)
+                        .followRedirects(true)
+                        .ignoreHttpErrors(true)
+                        .get()
+                    
+                    val altVideos = mutableListOf<VideoUrlInfo>()
+                    extractFromVideoTag(altDoc, pageUrl)?.let { altVideos.add(it) }
+                    extractFromSourceTag(altDoc, pageUrl)?.let { altVideos.add(it) }
+                    extractFromScripts(altDoc, pageUrl)?.let { altVideos.add(it) }
+                    extractFromDataAttributes(altDoc, pageUrl)?.let { altVideos.add(it) }
+                    
+                    if (altVideos.isNotEmpty()) {
+                        val bestVideo = selectHighestQuality(altVideos)
+                        return@withContext VideoExtractionResult(
+                            success = true,
+                            videoUrl = bestVideo.url,
+                            quality = bestVideo.quality,
+                            format = bestVideo.format,
+                            isStream = bestVideo.isStream
+                        )
+                    }
+                } catch (e: Exception) {
+                    continue
+                }
             }
             
             // Fallback to headless browser with auto-click ad bypass
@@ -373,14 +413,20 @@ class VideoExtractorEngine @Inject constructor() {
     private fun extractFromScripts(document: Document, baseUrl: String): VideoUrlInfo? {
         val scripts = document.select("script").html()
         
-        // Common patterns for video URLs in JS
+        // Common patterns for video URLs in JS - EXPANDED for more providers
         val patterns = listOf(
-            Regex("""(?:src|file|source|url|video_url|videoUrl|stream)['":\s]+['"]?(https?://[^'">\s]+\.(?:mp4|m3u8|webm|mpd)[^'">\s]*)['"]?""", RegexOption.IGNORE_CASE),
+            Regex("""(?:src|file|source|url|video_url|videoUrl|stream|streamUrl|playUrl|mediaUrl|hlsUrl|dashUrl)['":\s]+['"]?(https?://[^'">\s]+\.(?:mp4|m3u8|webm|mpd)[^'">\s]*)['"]?""", RegexOption.IGNORE_CASE),
             Regex("""['"]?(https?://[^'">\s]+\.(?:mp4|m3u8|webm|mpd)[^'">\s]*)['"]?""", RegexOption.IGNORE_CASE),
             Regex("""file:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
             Regex("""sources:\s*\[\s*\{\s*(?:file|src):\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
             Regex("""player\.src\(\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
-            Regex("""video:\s*['"]([^'"]+\.(?:mp4|m3u8|webm))['"]""", RegexOption.IGNORE_CASE)
+            Regex("""video:\s*['"]([^'"]+\.(?:mp4|m3u8|webm))['"]""", RegexOption.IGNORE_CASE),
+            Regex("""\.setup\(\s*\{[^}]*(?:file|src)\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            Regex("""atob\(['"]([A-Za-z0-9+/=]+)['"]"""),
+            Regex("""(?:hls|dash)(?:Url|Source|Stream)\s*[=:]\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            Regex("""\.load\(['"]([^'"]+\.(?:mp4|m3u8|webm|mpd))['"]""", RegexOption.IGNORE_CASE),
+            Regex("""(?:videojs|jwplayer|plyr|clappr)\s*[.(][^)]*['"]([^'"]+\.(?:mp4|m3u8|webm|mpd))['"]""", RegexOption.IGNORE_CASE),
+            Regex("""new\s+Hls\([^)]*\)\.loadSource\(['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
         )
         
         // Find all matches and pick best quality
@@ -457,16 +503,54 @@ class VideoExtractorEngine @Inject constructor() {
             val urlPatterns = listOf(
                 Regex(""""contentUrl"\s*:\s*"([^"]+)""""),
                 Regex(""""embedUrl"\s*:\s*"([^"]+)""""),
-                Regex(""""url"\s*:\s*"([^"]+\.(?:mp4|m3u8|webm))"""")
+                Regex(""""url"\s*:\s*"([^"]+\.(?:mp4|m3u8|webm))""""),
+                Regex(""""videoUrl"\s*:\s*"([^"]+)""""),
+                Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
             )
             
             for (pattern in urlPatterns) {
                 pattern.find(json)?.groupValues?.getOrNull(1)?.let { url ->
+                    if (VIDEO_EXTENSIONS.any { ext -> url.contains(ext, ignoreCase = true) } || url.contains("video")) {
+                        return VideoUrlInfo(
+                            url = normalizeUrl(url, baseUrl),
+                            quality = detectQuality(url),
+                            format = detectFormat(url),
+                            isStream = url.contains(".m3u8") || url.contains(".mpd")
+                        )
+                    }
+                }
+            }
+        }
+        
+        return null
+    }
+    
+    /**
+     * Extract from OpenGraph and other meta tags
+     */
+    private fun extractFromMetaTags(document: Document, baseUrl: String): VideoUrlInfo? {
+        // OpenGraph video tags
+        val ogVideoSelectors = listOf(
+            "meta[property='og:video']",
+            "meta[property='og:video:url']",
+            "meta[property='og:video:secure_url']",
+            "meta[name='twitter:player:stream']",
+            "meta[name='twitter:player']",
+            "meta[itemprop='contentUrl']",
+            "meta[itemprop='embedURL']"
+        )
+        
+        for (selector in ogVideoSelectors) {
+            val content = document.select(selector).firstOrNull()?.attr("content")
+            if (!content.isNullOrEmpty()) {
+                // Only return if it looks like a video URL
+                if (VIDEO_EXTENSIONS.any { content.contains(it, ignoreCase = true) } || 
+                    content.contains("video") || content.contains("player") || content.contains("stream")) {
                     return VideoUrlInfo(
-                        url = normalizeUrl(url, baseUrl),
-                        quality = detectQuality(url),
-                        format = detectFormat(url),
-                        isStream = url.contains(".m3u8") || url.contains(".mpd")
+                        url = normalizeUrl(content, baseUrl),
+                        quality = detectQuality(content),
+                        format = detectFormat(content),
+                        isStream = content.contains(".m3u8") || content.contains(".mpd")
                     )
                 }
             }

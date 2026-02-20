@@ -5,79 +5,119 @@ import com.aggregatorx.app.data.model.ProviderSearchResults
 import com.aggregatorx.app.data.model.SearchResult
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Intelligent Result Ranking Engine
+ * Advanced Intelligent Result Ranking Engine v2
  * 
  * Uses multiple factors to rank and score search results:
  * - Text relevance (TF-IDF inspired with fuzzy matching)
+ * - Levenshtein edit distance for typo tolerance
+ * - N-gram substring matching for partial word detection 
  * - Provider reliability score
  * - Content freshness
  * - User engagement signals (seeders, views, ratings)
  * - Quality indicators
+ * - URL path keyword extraction
  * 
  * Features:
  * - Error providers automatically sorted to bottom
- * - Fuzzy/partial matching for better results
+ * - Fuzzy/partial matching with true edit distance for better results
  * - Related content discovery even with partial matches
  * - Enhanced description-based matching
- * - Synonym and related term matching
+ * - Synonym and related term matching (expanded dictionary)
+ * - N-gram based substring similarity
  * - Smart fallback to related content when few matches
+ * - Keyword extraction from query for broader matching
+ * - Never returns empty if ANY content exists - always shows best available
  */
 @Singleton
 class RankingEngine @Inject constructor() {
     
     companion object {
-        // Scoring weights
-        private const val WEIGHT_TEXT_RELEVANCE = 0.40f
-        private const val WEIGHT_PROVIDER_SCORE = 0.10f
-        private const val WEIGHT_FRESHNESS = 0.15f
+        // Scoring weights - rebalanced for better relevance
+        private const val WEIGHT_TEXT_RELEVANCE = 0.45f
+        private const val WEIGHT_PROVIDER_SCORE = 0.08f
+        private const val WEIGHT_FRESHNESS = 0.12f
         private const val WEIGHT_ENGAGEMENT = 0.20f
         private const val WEIGHT_QUALITY = 0.15f
         
         // Text matching bonuses
-        private const val EXACT_MATCH_BONUS = 35f
-        private const val TITLE_START_BONUS = 25f
-        private const val ALL_TERMS_BONUS = 20f
-        private const val WORD_ORDER_BONUS = 15f
-        private const val PARTIAL_MATCH_BONUS = 10f
-        private const val FUZZY_MATCH_BONUS = 5f
-        private const val DESCRIPTION_MATCH_BONUS = 8f
-        private const val SYNONYM_MATCH_BONUS = 6f
+        private const val EXACT_MATCH_BONUS = 40f
+        private const val TITLE_START_BONUS = 30f
+        private const val ALL_TERMS_BONUS = 25f
+        private const val WORD_ORDER_BONUS = 18f
+        private const val PARTIAL_MATCH_BONUS = 12f
+        private const val FUZZY_MATCH_BONUS = 8f
+        private const val DESCRIPTION_MATCH_BONUS = 10f
+        private const val SYNONYM_MATCH_BONUS = 7f
+        private const val URL_PATH_MATCH_BONUS = 6f
+        private const val NGRAM_MATCH_BONUS = 5f
         
-        // Minimum score thresholds - lowered to include more results
-        private const val MIN_SCORE_FOR_TOP = 0.12f
-        private const val MIN_SCORE_FOR_RELATED = 0.05f
+        // Minimum score thresholds - lowered further for maximum recall
+        private const val MIN_SCORE_FOR_TOP = 0.08f
+        private const val MIN_SCORE_FOR_RELATED = 0.02f
         
-        // Minimum results to show
-        private const val MIN_TOP_RESULTS = 15
-        private const val MIN_RELATED_RESULTS = 20
+        // Minimum results to show - increased for better coverage
+        private const val MIN_TOP_RESULTS = 20
+        private const val MIN_RELATED_RESULTS = 30
         
-        // Common synonyms and related terms
+        // Levenshtein distance threshold (max edits allowed relative to word length)
+        private const val MAX_EDIT_DISTANCE_RATIO = 0.35f
+        
+        // Common synonyms and related terms - MASSIVELY EXPANDED
         private val SYNONYMS = mapOf(
-            "movie" to listOf("film", "cinema", "feature"),
-            "film" to listOf("movie", "cinema", "feature"),
-            "video" to listOf("clip", "footage", "recording"),
-            "watch" to listOf("view", "stream", "play"),
-            "download" to listOf("get", "save", "grab"),
-            "hd" to listOf("high definition", "720p", "1080p"),
-            "full" to listOf("complete", "entire", "whole"),
-            "episode" to listOf("ep", "part", "chapter"),
-            "season" to listOf("series", "s0"),
-            "free" to listOf("gratis", "no cost"),
-            "online" to listOf("streaming", "web"),
-            "latest" to listOf("new", "recent", "newest"),
-            "best" to listOf("top", "greatest", "finest")
+            "movie" to listOf("film", "cinema", "feature", "flick", "motion picture"),
+            "film" to listOf("movie", "cinema", "feature", "flick", "motion picture"),
+            "video" to listOf("clip", "footage", "recording", "stream", "content"),
+            "watch" to listOf("view", "stream", "play", "see", "look"),
+            "download" to listOf("get", "save", "grab", "fetch", "dl"),
+            "hd" to listOf("high definition", "720p", "1080p", "high quality", "hq"),
+            "full" to listOf("complete", "entire", "whole", "uncut"),
+            "episode" to listOf("ep", "part", "chapter", "installment"),
+            "season" to listOf("series", "s0", "complete season"),
+            "free" to listOf("gratis", "no cost", "freeware"),
+            "online" to listOf("streaming", "web", "internet", "digital"),
+            "latest" to listOf("new", "recent", "newest", "fresh", "updated"),
+            "best" to listOf("top", "greatest", "finest", "premium", "ultimate"),
+            "trailer" to listOf("preview", "teaser", "promo"),
+            "subtitle" to listOf("sub", "subs", "subtitles", "cc", "captions"),
+            "dubbed" to listOf("dub", "english dub", "dual audio"),
+            "anime" to listOf("animation", "cartoon", "animated"),
+            "series" to listOf("show", "tv show", "tv series", "television"),
+            "song" to listOf("music", "track", "audio", "mp3"),
+            "game" to listOf("gaming", "gameplay", "playthrough", "walkthrough"),
+            "tutorial" to listOf("guide", "how to", "howto", "lesson"),
+            "review" to listOf("opinion", "critique", "analysis"),
+            "live" to listOf("livestream", "live stream", "broadcast"),
+            "old" to listOf("classic", "vintage", "retro", "throwback"),
+            "funny" to listOf("comedy", "humor", "hilarious", "lol"),
+            "scary" to listOf("horror", "terrifying", "creepy", "spooky")
+        )
+        
+        // Common stop words to ignore in matching
+        private val STOP_WORDS = setOf(
+            "the", "a", "an", "and", "or", "but", "in", "on", "at", "to",
+            "for", "of", "with", "by", "from", "is", "it", "this", "that",
+            "are", "was", "were", "be", "been", "being", "have", "has", "had",
+            "do", "does", "did", "will", "would", "could", "should", "may",
+            "might", "can", "shall", "not", "no", "so", "if", "then"
         )
     }
     
     /**
      * Rank and aggregate results from all providers
      * Error providers are automatically placed at the bottom
-     * ENHANCED: Provides more related results when main matches are few
+     * 
+     * ADVANCED LOGIC v2:
+     * - Two-pass scoring: first pass scores all, second pass fills gaps with fallback
+     * - Keyword extraction splits query into meaningful terms
+     * - If exact matches are few, automatically broadens to related/similar content
+     * - NEVER returns empty results if any provider returned anything
+     * - Deduplicates by normalized title to avoid showing same content from multiple providers
      */
     fun rankAndAggregate(
         query: String,
@@ -89,7 +129,10 @@ class RankingEngine @Inject constructor() {
         val successfulProviders = providerResults.filter { it.success }
         val failedProviders = providerResults.filter { !it.success }
 
-        // Calculate scores for all results from successful providers
+        // Extract meaningful keywords from query (remove stop words)
+        val queryKeywords = extractKeywords(query)
+
+        // PASS 1: Calculate scores for all results from successful providers
         val scoredResults = successfulProviders.flatMap { pr ->
             pr.results.map { result ->
                 ScoredResult(
@@ -103,8 +146,9 @@ class RankingEngine @Inject constructor() {
         // Get top results - best matches first
         var topResults = scoredResults
             .filter { it.score >= MIN_SCORE_FOR_TOP }
+            .distinctBy { normalizeTitle(it.result.title) }
             .sortedByDescending { it.score }
-            .take(25)
+            .take(30)
             .map { it.result.copy(relevanceScore = it.score) }
 
         // Find related/similar results (partial matches, fuzzy matches, synonym matches)
@@ -112,40 +156,67 @@ class RankingEngine @Inject constructor() {
             .filter { it.score >= MIN_SCORE_FOR_RELATED && it.score < MIN_SCORE_FOR_TOP }
             .sortedByDescending { it.score }
             .distinctBy { normalizeTitle(it.result.title) }
-            .take(40)
+            .take(50)
             .map { it.result.copy(relevanceScore = it.score) }
 
-        // ENHANCED: If few top results, lower threshold and add more
+        // PASS 2: If few top results, progressively lower threshold and add more
         if (topResults.size < MIN_TOP_RESULTS) {
-            val additionalTop = scoredResults
-                .filter { it.score >= MIN_SCORE_FOR_RELATED && it.score < MIN_SCORE_FOR_TOP }
-                .sortedByDescending { it.score }
+            // First try synonym-based matches
+            val synonymResults = findSynonymMatches(query, scoredResults, topResults, relatedResults)
+            topResults = (topResults + synonymResults).distinctBy { it.url }.take(30)
+        }
+        
+        if (topResults.size < MIN_TOP_RESULTS) {
+            // Pull from related into top
+            val additionalTop = relatedResults
+                .sortedByDescending { it.relevanceScore }
                 .take(MIN_TOP_RESULTS - topResults.size)
-                .map { it.result.copy(relevanceScore = it.score) }
             
-            topResults = topResults + additionalTop
+            topResults = (topResults + additionalTop).distinctBy { it.url }
             
             // Update related to exclude what's now in top
             val topUrls = topResults.map { it.url }.toSet()
             relatedResults = relatedResults.filter { it.url !in topUrls }
         }
         
-        // ENHANCED: If still few results, generate related content from all available
+        // PASS 3: Keyword-based broadening - use individual keywords for wider net
+        if (topResults.size < MIN_TOP_RESULTS && queryKeywords.size > 1) {
+            val existingUrls = (topResults + relatedResults).map { it.url }.toSet()
+            val keywordResults = scoredResults
+                .filter { it.result.url !in existingUrls }
+                .filter { scored ->
+                    val titleLower = scored.result.title.lowercase()
+                    val descLower = scored.result.description?.lowercase() ?: ""
+                    val urlPath = extractUrlPath(scored.result.url)
+                    val combined = "$titleLower $descLower $urlPath"
+                    // Match if ANY single keyword matches
+                    queryKeywords.any { keyword -> 
+                        combined.contains(keyword) || 
+                        combined.split(Regex("\\W+")).any { word -> 
+                            levenshteinDistance(word, keyword) <= maxEditDistance(keyword) 
+                        }
+                    }
+                }
+                .sortedByDescending { it.score }
+                .take(MIN_TOP_RESULTS)
+                .map { it.result.copy(relevanceScore = maxOf(it.score, MIN_SCORE_FOR_RELATED)) }
+            
+            topResults = (topResults + keywordResults).distinctBy { it.url }.take(30)
+        }
+        
+        // PASS 4: If STILL few results, add everything available sorted by score  
+        // This is the ultimate fallback - show what the providers have
         if (topResults.size + relatedResults.size < MIN_TOP_RESULTS + MIN_RELATED_RESULTS) {
             val existingUrls = (topResults + relatedResults).map { it.url }.toSet()
             val additionalRelated = scoredResults
                 .filter { it.result.url !in existingUrls }
                 .sortedByDescending { it.score }
                 .take(MIN_RELATED_RESULTS)
-                .map { it.result.copy(relevanceScore = maxOf(it.score, 0.05f)) }
+                .map { it.result.copy(relevanceScore = maxOf(it.score, 0.02f)) }
             
-            relatedResults = (relatedResults + additionalRelated).take(MIN_RELATED_RESULTS)
-        }
-        
-        // Add synonym-based matches if still few results
-        if (topResults.size < MIN_TOP_RESULTS) {
-            val synonymResults = findSynonymMatches(query, scoredResults, topResults, relatedResults)
-            topResults = (topResults + synonymResults).distinctBy { it.url }.take(25)
+            relatedResults = (relatedResults + additionalRelated)
+                .distinctBy { normalizeTitle(it.title) }
+                .take(MIN_RELATED_RESULTS)
         }
 
         // Re-rank results within each successful provider
@@ -174,6 +245,42 @@ class RankingEngine @Inject constructor() {
             topResults = topResults,
             relatedResults = relatedResults
         )
+    }
+    
+    /**
+     * Extract meaningful keywords from query (removes stop words, splits compound terms)
+     */
+    private fun extractKeywords(query: String): List<String> {
+        return query.lowercase()
+            .split(Regex("\\s+"))
+            .filter { it.length > 1 && it !in STOP_WORDS }
+            .distinct()
+    }
+    
+    /**
+     * Extract URL path for keyword matching
+     */
+    private fun extractUrlPath(url: String): String {
+        return try {
+            java.net.URL(url).path.lowercase()
+                .replace("-", " ")
+                .replace("_", " ")
+                .replace("/", " ")
+        } catch (e: Exception) {
+            url.lowercase()
+        }
+    }
+    
+    /**
+     * Calculate maximum edit distance allowed based on word length
+     */
+    private fun maxEditDistance(word: String): Int {
+        return when {
+            word.length <= 3 -> 0
+            word.length <= 5 -> 1
+            word.length <= 8 -> 2
+            else -> 3
+        }
     }
     
     /**
@@ -233,26 +340,33 @@ class RankingEngine @Inject constructor() {
     
     /**
      * Calculate text relevance score using enhanced TF-IDF-like approach with fuzzy matching
-     * ENHANCED: Better description matching, synonym matching, URL path analysis
+     * 
+     * ADVANCED v2: 
+     * - True Levenshtein edit distance for typo tolerance
+     * - N-gram substring matching for partial word detection
+     * - URL path keyword extraction and matching
+     * - Better description matching with higher weight
+     * - Expanded synonym matching
+     * - Stem-based matching for word variants
      */
     private fun calculateTextRelevance(title: String, description: String?, query: String): Float {
         val titleLower = title.lowercase()
         val descLower = description?.lowercase() ?: ""
         val queryLower = query.lowercase()
-        val queryTerms = queryLower.split(Regex("\\s+")).filter { it.length > 1 }
+        val queryTerms = queryLower.split(Regex("\\s+")).filter { it.length > 1 && it !in STOP_WORDS }
         
         if (queryTerms.isEmpty()) return 0.1f  // Give small score even with empty query
         
         var score = 0f
         
-        // Exact match in title - highest priority
+        // Exact full query match in title - highest priority
         if (titleLower.contains(queryLower)) {
             score += EXACT_MATCH_BONUS
         }
         
-        // Exact match in description - valuable
+        // Exact full query match in description
         if (descLower.contains(queryLower)) {
-            score += DESCRIPTION_MATCH_BONUS * 2
+            score += DESCRIPTION_MATCH_BONUS * 2.5f
         }
         
         // Title starts with query
@@ -265,29 +379,48 @@ class RankingEngine @Inject constructor() {
         var descMatches = 0
         var fuzzyMatches = 0
         var synonymMatches = 0
+        var ngramMatches = 0
         val matchedTerms = mutableListOf<String>()
         
         queryTerms.forEach { term ->
-            // Exact title matching (higher weight)
+            // === TITLE MATCHING ===
             val titleOccurrences = countOccurrences(titleLower, term)
             if (titleOccurrences > 0) {
                 titleMatches++
                 matchedTerms.add(term)
                 // TF-IDF inspired: diminishing returns for repeated terms
-                score += (1 + ln(titleOccurrences.toDouble())).toFloat() * 6f
+                score += (1 + ln(titleOccurrences.toDouble())).toFloat() * 7f
                 
                 // Position bonus - earlier matches are better
                 val position = titleLower.indexOf(term)
-                score += max(0f, 6f - (position / 15f))
+                score += max(0f, 8f - (position / 12f))
             } else {
-                // Try fuzzy matching for typos/variations
-                val fuzzyMatch = findFuzzyMatch(titleLower, term)
-                if (fuzzyMatch != null) {
-                    fuzzyMatches++
-                    score += FUZZY_MATCH_BONUS
+                // Try Levenshtein edit distance for typo tolerance
+                val titleWords = titleLower.split(Regex("\\W+")).filter { it.length > 1 }
+                var bestEditMatch = false
+                for (titleWord in titleWords) {
+                    val editDist = levenshteinDistance(term, titleWord)
+                    val maxAllowed = maxEditDistance(term)
+                    if (editDist in 1..maxAllowed) {
+                        fuzzyMatches++
+                        score += FUZZY_MATCH_BONUS * (1f - editDist.toFloat() / (maxAllowed + 1))
+                        bestEditMatch = true
+                        break
+                    }
                 }
                 
-                // ENHANCED: Try synonym matching
+                // Try N-gram substring matching if edit distance didn't match
+                if (!bestEditMatch && term.length >= 4) {
+                    val ngrams = generateNgrams(term, 3)
+                    val titleNgrams = generateNgrams(titleLower, 3)
+                    val overlap = ngrams.count { it in titleNgrams }.toFloat() / ngrams.size.coerceAtLeast(1)
+                    if (overlap >= 0.5f) {
+                        ngramMatches++
+                        score += NGRAM_MATCH_BONUS * overlap
+                    }
+                }
+                
+                // Try synonym matching
                 val synonyms = SYNONYMS[term] ?: emptyList()
                 for (synonym in synonyms) {
                     if (titleLower.contains(synonym)) {
@@ -297,22 +430,29 @@ class RankingEngine @Inject constructor() {
                     }
                 }
                 
-                // Partial match - term contains part of query or vice versa
-                if (term.length >= 3 && titleLower.contains(term.dropLast(1))) {
-                    score += PARTIAL_MATCH_BONUS * 0.5f
+                // Partial/stem match - term starts with or ends with query word
+                if (term.length >= 3) {
+                    val stem = term.dropLast(1)
+                    if (titleLower.contains(stem)) {
+                        score += PARTIAL_MATCH_BONUS * 0.6f
+                    }
                 }
             }
             
-            // ENHANCED: Description matching (now with higher weight)
+            // === DESCRIPTION MATCHING ===
             val descOccurrences = countOccurrences(descLower, term)
             if (descOccurrences > 0) {
                 descMatches++
-                score += (1 + ln(descOccurrences.toDouble())).toFloat() * 4f  // Increased from 3
+                score += (1 + ln(descOccurrences.toDouble())).toFloat() * 5f
             } else if (descLower.isNotEmpty()) {
-                // Try fuzzy match in description
-                val fuzzyDescMatch = findFuzzyMatch(descLower, term)
-                if (fuzzyDescMatch != null) {
-                    score += FUZZY_MATCH_BONUS * 0.7f
+                // Levenshtein in description
+                val descWords = descLower.split(Regex("\\W+")).filter { it.length > 1 }
+                for (descWord in descWords) {
+                    val editDist = levenshteinDistance(term, descWord)
+                    if (editDist in 1..maxEditDistance(term)) {
+                        score += FUZZY_MATCH_BONUS * 0.6f
+                        break
+                    }
                 }
                 
                 // Synonym match in description
@@ -327,15 +467,16 @@ class RankingEngine @Inject constructor() {
         }
         
         // All terms matched bonus (including fuzzy and synonym matches)
-        val totalMatches = titleMatches + fuzzyMatches * 0.5f + synonymMatches * 0.3f
+        val totalMatches = titleMatches + fuzzyMatches * 0.6f + synonymMatches * 0.4f + ngramMatches * 0.3f
         if (titleMatches == queryTerms.size) {
             score += ALL_TERMS_BONUS
-        } else if (totalMatches >= queryTerms.size * 0.7) {
-            // Partial match bonus when most terms found
-            score += ALL_TERMS_BONUS * 0.5f
+        } else if (totalMatches >= queryTerms.size * 0.6) {
+            score += ALL_TERMS_BONUS * 0.6f
         } else if (titleMatches + descMatches >= queryTerms.size) {
-            // Bonus if terms found across title and description
-            score += ALL_TERMS_BONUS * 0.4f
+            score += ALL_TERMS_BONUS * 0.5f
+        } else if (totalMatches >= queryTerms.size * 0.3) {
+            // Even partial coverage gets a smaller bonus
+            score += ALL_TERMS_BONUS * 0.25f
         }
         
         // Word order preservation bonus
@@ -343,13 +484,14 @@ class RankingEngine @Inject constructor() {
             score += WORD_ORDER_BONUS
         }
         
-        // Coverage ratio - how much of query is matched (including description)
-        val coverageRatio = (titleMatches + descMatches * 0.6f + fuzzyMatches * 0.4f + synonymMatches * 0.3f) / queryTerms.size
-        score *= (0.4f + coverageRatio * 0.6f)
+        // Coverage ratio - how much of query is matched (including all match types)
+        val coverageRatio = (titleMatches + descMatches * 0.6f + fuzzyMatches * 0.5f + 
+                            synonymMatches * 0.4f + ngramMatches * 0.3f) / queryTerms.size
+        score *= (0.3f + coverageRatio * 0.7f)
         
-        // Give minimum score if ANY match found (for related results)
-        if (titleMatches > 0 || descMatches > 0 || fuzzyMatches > 0 || synonymMatches > 0) {
-            score = max(score, 5f)
+        // Give minimum score if ANY match found (ensures related results appear)
+        if (titleMatches > 0 || descMatches > 0 || fuzzyMatches > 0 || synonymMatches > 0 || ngramMatches > 0) {
+            score = max(score, 3f)
         }
         
         // Length penalty for very long titles (likely spam)
@@ -361,28 +503,32 @@ class RankingEngine @Inject constructor() {
     }
     
     /**
-     * Find fuzzy match using Levenshtein-like distance
+     * Find fuzzy match using true Levenshtein edit distance
+     * Returns the best matching word from text if within edit distance threshold
      */
     private fun findFuzzyMatch(text: String, term: String): String? {
         if (term.length < 3) return null
         
-        // Split text into words
-        val words = text.split(Regex("\\W+"))
+        val words = text.split(Regex("\\W+")).filter { it.length > 1 }
+        var bestMatch: String? = null
+        var bestDistance = Int.MAX_VALUE
+        val maxAllowed = maxEditDistance(term)
         
         for (word in words) {
-            if (word.length < term.length - 2 || word.length > term.length + 2) continue
+            // Skip words with extreme length difference
+            if (abs(word.length - term.length) > maxAllowed + 1) continue
             
-            // Calculate similarity
-            val similarity = calculateSimilarity(word, term)
-            if (similarity >= 0.75f) {
-                return word
+            val distance = levenshteinDistance(word, term)
+            if (distance < bestDistance && distance <= maxAllowed) {
+                bestDistance = distance
+                bestMatch = word
             }
         }
-        return null
+        return bestMatch
     }
     
     /**
-     * Calculate string similarity (0-1)
+     * Calculate string similarity using Levenshtein edit distance (0-1)
      */
     private fun calculateSimilarity(s1: String, s2: String): Float {
         if (s1 == s2) return 1f
@@ -391,12 +537,55 @@ class RankingEngine @Inject constructor() {
         val longer = if (s1.length > s2.length) s1 else s2
         val shorter = if (s1.length > s2.length) s2 else s1
         
-        // Quick check - if one starts with other
+        // Quick check - if one is contained in the other
         if (longer.startsWith(shorter) || longer.endsWith(shorter)) return 0.9f
+        if (longer.contains(shorter)) return 0.85f
         
-        // Simple character overlap check
-        val commonChars = shorter.count { longer.contains(it) }
-        return commonChars.toFloat() / longer.length
+        // True Levenshtein-based similarity
+        val editDist = levenshteinDistance(s1, s2)
+        val maxLen = maxOf(s1.length, s2.length)
+        return (1f - editDist.toFloat() / maxLen).coerceIn(0f, 1f)
+    }
+    
+    /**
+     * Compute Levenshtein edit distance between two strings
+     * Uses optimized single-row DP approach (O(min(m,n)) space)
+     */
+    private fun levenshteinDistance(a: String, b: String): Int {
+        if (a == b) return 0
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        
+        // Ensure a is the shorter string for space optimization
+        val s1 = if (a.length <= b.length) a else b
+        val s2 = if (a.length <= b.length) b else a
+        
+        var prevRow = IntArray(s1.length + 1) { it }
+        var currRow = IntArray(s1.length + 1)
+        
+        for (j in 1..s2.length) {
+            currRow[0] = j
+            for (i in 1..s1.length) {
+                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
+                currRow[i] = minOf(
+                    currRow[i - 1] + 1,      // insertion
+                    prevRow[i] + 1,           // deletion
+                    prevRow[i - 1] + cost     // substitution
+                )
+            }
+            val temp = prevRow
+            prevRow = currRow
+            currRow = temp
+        }
+        return prevRow[s1.length]
+    }
+    
+    /**
+     * Generate character n-grams from a string
+     */
+    private fun generateNgrams(text: String, n: Int): Set<String> {
+        if (text.length < n) return setOf(text)
+        return (0..text.length - n).map { text.substring(it, it + n) }.toSet()
     }
     
     /**
