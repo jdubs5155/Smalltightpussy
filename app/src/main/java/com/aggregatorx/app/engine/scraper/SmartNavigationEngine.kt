@@ -203,7 +203,7 @@ class SmartNavigationEngine @Inject constructor() {
             // Score each tab against the query
             val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 1 }
             val scoredTabs = tabLinks.map { link ->
-                val score = scoreTabRelevance(link.text, link.url, queryWords)
+                val score = scoreTabRelevance(link.title, link.url, queryWords)
                 Pair(link, score)
             }
 
@@ -215,7 +215,7 @@ class SmartNavigationEngine @Inject constructor() {
                 .ifEmpty {
                     // No matches – try generic content tabs (latest/all/movies/videos)
                     scoredTabs
-                        .filter { isGenericContentTab(it.first.url, it.first.text) }
+                        .filter { isGenericContentTab(it.first.url, it.first.title) }
                         .take(maxTabs)
                 }
 

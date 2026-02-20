@@ -88,7 +88,7 @@ dependencies {
     implementation("org.jsoup:jsoup:1.18.1")
     
     // JSON
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.google.code.gson:gson:2.11.0")
     
     // Room Database
