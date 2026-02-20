@@ -16,18 +16,23 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * Advanced Site Analyzer Engine
- * 
+ * Advanced Site Analyzer Engine v2
+ *
  * Performs deep analysis of websites including:
  * - Security analysis (SSL, headers, CSP, etc.)
  * - DOM structure analysis
  * - Pattern detection (search forms, result lists, video players, etc.)
- * - API endpoint detection
+ * - API endpoint detection (static + runtime network intercept)
+ * - Tab/category navigation discovery for no-search sites
  * - Content mapping for streaming and media sites
  * - Performance metrics
+ * - Results cached per URL to avoid redundant network calls
  */
 @Singleton
 class SiteAnalyzerEngine @Inject constructor() {
+
+    /** Cache: url → (SiteAnalysis, timestamp) */
+    private val analysisCache = mutableMapOf<String, Pair<SiteAnalysis, Long>>()
     
     private val json = Json { 
         prettyPrint = true 
@@ -36,8 +41,9 @@ class SiteAnalyzerEngine @Inject constructor() {
     
     companion object {
         private const val DEFAULT_TIMEOUT = 30000
-        private const val DEFAULT_USER_AGENT = 
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        private const val ANALYSIS_CACHE_TTL_MS = 3_600_000L // 1 hour
+        private const val DEFAULT_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         
         // Common selectors for pattern detection
         private val SEARCH_FORM_SELECTORS = listOf(
@@ -70,11 +76,17 @@ class SiteAnalyzerEngine @Inject constructor() {
     }
     
     /**
-     * Perform comprehensive site analysis
+     * Perform comprehensive site analysis, returning a cached result if fresh.
      */
     suspend fun analyzeSite(url: String, providerId: String): SiteAnalysis = withContext(Dispatchers.IO) {
+        val normalizedKey = normalizeUrl(url)
+        // Return cached analysis if still fresh
+        analysisCache[normalizedKey]?.let { (cached, ts) ->
+            if (System.currentTimeMillis() - ts < ANALYSIS_CACHE_TTL_MS) return@withContext cached
+        }
+
         val startTime = System.currentTimeMillis()
-        
+
         try {
             // Normalize URL
             val normalizedUrl = normalizeUrl(url)
@@ -101,7 +113,7 @@ class SiteAnalyzerEngine @Inject constructor() {
             val navigationStructure = analyzeNavigation(document)
             val scrapingStrategy = determineScrapingStrategy(document, patterns)
             
-            SiteAnalysis(
+            val result = SiteAnalysis(
                 providerId = providerId,
                 url = normalizedUrl,
                 analyzedAt = System.currentTimeMillis(),
@@ -165,6 +177,8 @@ class SiteAnalyzerEngine @Inject constructor() {
                 headers = json.encodeToString(response.headers()),
                 cookies = json.encodeToString(response.cookies())
             )
+            analysisCache[normalizedKey] = result to System.currentTimeMillis()
+            result
         } catch (e: Exception) {
             // Return minimal analysis on failure
             SiteAnalysis(
@@ -678,20 +692,24 @@ class SiteAnalyzerEngine @Inject constructor() {
     }
     
     /**
-     * Determine optimal scraping strategy
+     * Determine optimal scraping strategy — now includes TAB_CRAWL for no-search sites.
      */
     private fun determineScrapingStrategy(document: Document, patterns: List<DetectedPattern>): ScrapingStrategy {
-        // Check for JavaScript dependency
         val requiresJS = detectJavaScriptRequirement(document)
         val hasAPI = patterns.any { it.type == PatternType.API_ENDPOINT }
         val hasInfiniteScroll = patterns.any { it.type == PatternType.INFINITE_SCROLL }
-        
+        val hasSearchForm = patterns.any { it.type == PatternType.SEARCH_FORM }
+        val hasNavTabs = document.select(
+            "nav a, .nav a, ul.tabs a, [role='tablist'] a, .categories a, .menu a"
+        ).size >= 3
+
         return when {
-            hasAPI -> ScrapingStrategy.API_BASED
-            hasInfiniteScroll -> ScrapingStrategy.DYNAMIC_CONTENT
-            requiresJS && hasAPI -> ScrapingStrategy.HYBRID
-            requiresJS -> ScrapingStrategy.HEADLESS_BROWSER
-            else -> ScrapingStrategy.HTML_PARSING
+            hasAPI                         -> ScrapingStrategy.API_BASED
+            hasInfiniteScroll              -> ScrapingStrategy.DYNAMIC_CONTENT
+            requiresJS && hasAPI           -> ScrapingStrategy.HYBRID
+            requiresJS                     -> ScrapingStrategy.HEADLESS_BROWSER
+            !hasSearchForm && hasNavTabs   -> ScrapingStrategy.TAB_CRAWL   // no search → crawl tabs
+            else                           -> ScrapingStrategy.HTML_PARSING
         }
     }
     

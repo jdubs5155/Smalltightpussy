@@ -121,7 +121,8 @@ enum class ScrapingStrategy {
     DYNAMIC_CONTENT,   // Requires JavaScript execution
     API_BASED,         // Direct API calls
     HYBRID,            // Combination of methods
-    HEADLESS_BROWSER   // Full browser simulation
+    HEADLESS_BROWSER,  // Full browser simulation
+    TAB_CRAWL          // Navigate/click category tabs when no search is available
 }
 
 /**

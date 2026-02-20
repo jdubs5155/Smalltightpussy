@@ -516,19 +516,15 @@ class ScrapingEngine @Inject constructor(
      */
     suspend fun searchProviderSmart(provider: Provider, query: String): ProviderSearchResults {
         val startTime = System.currentTimeMillis()
-        
+
         return try {
-            // Rate limiting
             enforceRateLimit(provider.id)
-            
-            // Update search count
             providerDao.incrementSearchCount(provider.id)
-            
-            // First, try to find the search URL using SmartNavigationEngine
+
+            // Step 1: Try to find a search URL (works for most providers)
             val smartSearchUrl = smartNavigationEngine.findSearchUrl(provider.baseUrl, query)
-            
+
             if (smartSearchUrl != null) {
-                // Use smart navigation to search
                 val results = scrapeWithSmartNavigation(provider, query, smartSearchUrl)
                 if (results.isNotEmpty()) {
                     updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
@@ -540,16 +536,30 @@ class ScrapingEngine @Inject constructor(
                     )
                 }
             }
-            
-            // Fall back to normal search
+
+            // Step 2: No search found – try crawling tabs/categories as a smart alternative
+            // This handles sites that organise content by genre/category tabs without search
+            val tabResults = scrapeWithTabCrawl(provider, query)
+            if (tabResults.isNotEmpty()) {
+                updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                return ProviderSearchResults(
+                    provider = provider,
+                    results = tabResults,
+                    searchTime = System.currentTimeMillis() - startTime,
+                    success = true
+                )
+            }
+
+            // Step 3: Fall back to normal search with all its own fallbacks
             searchProvider(provider, query)
         } catch (e: Exception) {
-            searchProvider(provider, query) // Use normal fallback
+            searchProvider(provider, query)
         }
     }
     
     /**
-     * Scrape using smart navigation
+     * Scrape using smart navigation with pagination support
+     * Also attempts to collect page 2 and 3 if initial results are thin
      */
     private suspend fun scrapeWithSmartNavigation(
         provider: Provider,
@@ -557,26 +567,47 @@ class ScrapingEngine @Inject constructor(
         searchUrl: String
     ): List<SearchResult> = withContext(Dispatchers.IO) {
         val document = fetchDocument(searchUrl)
-        
-        // Check if we landed on a category page
-        if (smartNavigationEngine.isCategoryPage(searchUrl, document)) {
-            // Try to navigate past it
-            val result = smartNavigationEngine.navigatePastCategory(provider.baseUrl, document, query)
-            if (result != null) {
-                val (newUrl, contentDoc) = result
-                return@withContext extractResultsWithThumbnails(contentDoc, provider, query)
-            }
+
+        // If we landed on a category page, navigate past it first
+        val (activeUrl, activeDoc) = if (smartNavigationEngine.isCategoryPage(searchUrl, document)) {
+            val nav = smartNavigationEngine.navigatePastCategory(provider.baseUrl, document, query)
+            nav ?: (searchUrl to document)
+        } else {
+            searchUrl to document
         }
-        
-        // Extract results with thumbnail support
-        extractResultsWithThumbnails(document, provider, query)
+
+        val pageOneResults = extractResultsWithThumbnails(activeDoc, provider, query)
+
+        // If results are thin, collect additional pages
+        if (pageOneResults.size < 15) {
+            val paginationUrls = smartNavigationEngine.getPaginationLinks(activeDoc, provider.baseUrl, maxPages = 3)
+            val allResults = pageOneResults.toMutableList()
+            val seenUrls = pageOneResults.map { it.url }.toMutableSet()
+
+            for (pageUrl in paginationUrls) {
+                try {
+                    val pageDoc = fetchDocument(pageUrl)
+                    val pageResults = extractResultsWithThumbnails(pageDoc, provider, query)
+                    pageResults.forEach { r ->
+                        if (r.url !in seenUrls) {
+                            seenUrls.add(r.url)
+                            allResults.add(r)
+                        }
+                    }
+                    if (allResults.size >= 50) break
+                } catch (_: Exception) {}
+            }
+
+            return@withContext allResults.sortedByDescending { it.relevanceScore }
+        }
+
+        pageOneResults
     }
     
     /**
      * Extract results with thumbnail URLs
-     * ENHANCED v2: More permissive - always returns content when available
-     * Rather than strict query filtering, returns ALL extracted content with relevance scores
-     * The RankingEngine handles the fine-grained relevance sorting
+     * v3: Fixes ContentLink destructuring bug (was using title as thumbnailUrl),
+     * uses all ContentLink fields directly, falls back gracefully to full content dump.
      */
     private fun extractResultsWithThumbnails(
         document: Document,
@@ -585,21 +616,25 @@ class ScrapingEngine @Inject constructor(
     ): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
         val allExtracted = mutableListOf<SearchResult>()
-        
+
         // Use SmartNavigationEngine to extract content links
         val contentLinks = smartNavigationEngine.extractContentLinks(document, provider.baseUrl)
-        
-        for ((url, thumbnailUrl) in contentLinks) {
-            // Extract title from URL or find in document
-            val title = extractTitleFromUrl(url) ?: findTitleInDocument(document, url) ?: continue
-            
-            // Extract description if available
+
+        for (contentLink in contentLinks) {
+            val url = contentLink.url
+            // Prefer title from ContentLink (correct field), fall back to URL/doc extraction
+            val title = contentLink.title.takeIf { it.length > 2 }
+                ?: extractTitleFromUrl(url)
+                ?: findTitleInDocument(document, url)
+                ?: continue
+
             val description = findDescriptionInDocument(document, url)
-            
+            val thumbnailUrl = contentLink.thumbnail  // correct field (was taking .title before)
+
             val relevance = calculateRelevanceScore(title, query)
             val descRelevance = if (description != null) calculateRelevanceScore(description, query) * 0.5f else 0f
             val combinedRelevance = relevance + descRelevance
-            
+
             val result = SearchResult(
                 title = title,
                 url = url,
@@ -609,29 +644,25 @@ class ScrapingEngine @Inject constructor(
                 providerName = provider.name,
                 relevanceScore = combinedRelevance
             )
-            
+
             allExtracted.add(result)
-            
-            // Include results that match query (title, description, or URL)
+
             if (matchesQueryEnhanced(result, query)) {
                 results.add(result)
             }
         }
-        
+
         // Also try generic extraction if not enough results
         if (results.size < 5) {
             val genericResults = extractResultsGeneric(document, provider, query)
             results.addAll(genericResults)
         }
-        
-        // ENHANCED: If still few exact matches, include ALL extracted content
-        // The RankingEngine will sort by relevance - better to return more than nothing
+
         val uniqueResults = results.distinctBy { it.url }
         if (uniqueResults.size < 10) {
             val related = findRelatedContent(allExtracted, query, uniqueResults)
             val combined = (uniqueResults + related).distinctBy { it.url }
-            
-            // If STILL very few results, just return everything we extracted
+
             if (combined.size < 5 && allExtracted.size > combined.size) {
                 val existingUrls = combined.map { it.url }.toSet()
                 val remaining = allExtracted
@@ -640,10 +671,10 @@ class ScrapingEngine @Inject constructor(
                     .take(30)
                 return (combined + remaining).distinctBy { it.url }
             }
-            
+
             return combined
         }
-        
+
         return uniqueResults
     }
     
@@ -824,8 +855,9 @@ class ScrapingEngine @Inject constructor(
     ): ProviderSearchResults {
         // Mark initial failure
         providerDao.incrementFailedCount(provider.id)
-        
+
         // Try alternative methods in order of resource usage
+        // Tab-crawl is included for sites that have no search functionality
         val fallbackMethods: List<suspend () -> List<SearchResult>> = listOf(
             { scrapeGeneric(provider, query) },
             { scrapeWithAlternateUserAgent(provider, query) },
@@ -833,6 +865,7 @@ class ScrapingEngine @Inject constructor(
             { scrapeWithDelay(provider, query) },
             { scrapeMobileVersion(provider, query) },
             { scrapeWithAlternateSearchPatterns(provider, query) },
+            { scrapeWithTabCrawl(provider, query) },       // NEW: crawls tabs/categories
             { scrapeProviderHomepage(provider, query) }
         )
 
@@ -853,11 +886,10 @@ class ScrapingEngine @Inject constructor(
             }
         }
 
-        // Headless browser fallback (Playwright) - more aggressive usage
+        // Headless browser fallback (Playwright) - tries multiple strategies
         try {
-            // Build search URLs to try with headless browser
+            // Strategy A: Try common search URL patterns via headless
             val searchUrls = buildSearchUrlsForHeadless(provider, query)
-            
             for (searchUrl in searchUrls) {
                 try {
                     val html = HeadlessBrowserHelper.fetchPageContentWithShadowAndAdSkip(
@@ -865,46 +897,60 @@ class ScrapingEngine @Inject constructor(
                         waitSelector = ".item, .result, .video-item, article, .card",
                         timeout = 20000
                     )
-                    
                     if (!html.isNullOrEmpty()) {
                         val doc = org.jsoup.Jsoup.parse(html, provider.baseUrl)
                         val results = extractResultsWithThumbnails(doc, provider, query)
-                        
                         if (results.isNotEmpty()) {
                             updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
-                            return ProviderSearchResults(
-                                provider = provider,
-                                results = results,
-                                searchTime = System.currentTimeMillis() - startTime,
-                                success = true,
-                                errorMessage = null
-                            )
+                            return ProviderSearchResults(provider = provider, results = results,
+                                searchTime = System.currentTimeMillis() - startTime, success = true)
                         }
                     }
-                } catch (e: Exception) {
-                    continue // Try next URL
-                }
+                } catch (_: Exception) { continue }
             }
-            
-            // Also try headless on the base URL if search URLs didn't work
-            val html = HeadlessBrowserHelper.fetchPageContent(provider.url)
-            if (!html.isNullOrEmpty()) {
-                val doc = org.jsoup.Jsoup.parse(html, provider.url)
-                val results = extractResultsWithThumbnails(doc, provider, query)
-                if (results.isNotEmpty()) {
-                    updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
-                    return ProviderSearchResults(
-                        provider = provider,
-                        results = results,
-                        searchTime = System.currentTimeMillis() - startTime,
-                        success = true,
-                        errorMessage = null
-                    )
+
+            // Strategy B: Headless search form submission (JS-rendered search)
+            try {
+                val formHtml = HeadlessBrowserHelper.searchViaHeadlessForm(provider.baseUrl, query, timeout = 25000)
+                if (!formHtml.isNullOrEmpty()) {
+                    val doc = org.jsoup.Jsoup.parse(formHtml, provider.baseUrl)
+                    val results = extractResultsWithThumbnails(doc, provider, query)
+                    if (results.isNotEmpty()) {
+                        updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                        return ProviderSearchResults(provider = provider, results = results,
+                            searchTime = System.currentTimeMillis() - startTime, success = true)
+                    }
                 }
-            }
-        } catch (e: Exception) {
-            // Ignore and continue to fail
-        }
+            } catch (_: Exception) {}
+
+            // Strategy C: Headless tab/category clicking for no-search sites
+            try {
+                val tabHtml = HeadlessBrowserHelper.fetchContentByClickingTabs(provider.baseUrl, query, timeout = 25000)
+                if (!tabHtml.isNullOrEmpty()) {
+                    val doc = org.jsoup.Jsoup.parse(tabHtml, provider.baseUrl)
+                    val results = extractResultsWithThumbnails(doc, provider, query)
+                    if (results.isNotEmpty()) {
+                        updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                        return ProviderSearchResults(provider = provider, results = results,
+                            searchTime = System.currentTimeMillis() - startTime, success = true)
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Strategy D: Headless base URL scrape
+            try {
+                val html = HeadlessBrowserHelper.fetchPageContent(provider.url)
+                if (!html.isNullOrEmpty()) {
+                    val doc = org.jsoup.Jsoup.parse(html, provider.url)
+                    val results = extractResultsWithThumbnails(doc, provider, query)
+                    if (results.isNotEmpty()) {
+                        updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                        return ProviderSearchResults(provider = provider, results = results,
+                            searchTime = System.currentTimeMillis() - startTime, success = true)
+                    }
+                }
+            } catch (_: Exception) {}
+        } catch (_: Exception) {}
 
         // All fallbacks failed
         updateProviderHealth(provider.id, false, System.currentTimeMillis() - startTime)
@@ -913,7 +959,7 @@ class ScrapingEngine @Inject constructor(
             results = emptyList(),
             searchTime = System.currentTimeMillis() - startTime,
             success = false,
-            errorMessage = "All scraping methods failed (including headless browser): ${originalException.message}"
+            errorMessage = "All scraping methods failed (including headless): ${originalException.message}"
         )
     }
     
@@ -970,7 +1016,7 @@ class ScrapingEngine @Inject constructor(
             "$baseUrl/search.html?q=$encodedQuery",
             "$baseUrl/index.php?s=$encodedQuery"
         )
-        
+
         for (pattern in searchPatterns) {
             try {
                 val document = fetchDocument(pattern)
@@ -982,10 +1028,53 @@ class ScrapingEngine @Inject constructor(
                 continue
             }
         }
-        
+
         emptyList()
     }
-    
+
+    /**
+     * Scrape a provider by crawling its tabs/categories when search is unavailable.
+     * Intelligently scores each tab against the query and visits the most relevant ones.
+     * Falls back to visiting all generic content tabs if nothing matches.
+     */
+    private suspend fun scrapeWithTabCrawl(
+        provider: Provider,
+        query: String
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
+        val contentLinks = smartNavigationEngine.crawlCategoryTabsForQuery(
+            baseUrl = provider.baseUrl,
+            query = query,
+            maxTabs = 8
+        )
+        if (contentLinks.isEmpty()) return@withContext emptyList()
+
+        val seenUrls = mutableSetOf<String>()
+        val results = mutableListOf<SearchResult>()
+
+        for (link in contentLinks) {
+            if (link.url in seenUrls) continue
+            seenUrls.add(link.url)
+
+            val title = link.title.takeIf { it.length > 2 }
+                ?: extractTitleFromUrl(link.url)
+                ?: continue
+
+            val relevanceScore = calculateRelevanceScore(title, query)
+            results.add(
+                SearchResult(
+                    title = title,
+                    url = link.url,
+                    thumbnailUrl = link.thumbnail,
+                    providerId = provider.id,
+                    providerName = provider.name,
+                    relevanceScore = relevanceScore
+                )
+            )
+        }
+
+        results.sortedByDescending { it.relevanceScore }.take(60)
+    }
+
     /**
      * Fetch document with retries
      */
@@ -1421,22 +1510,26 @@ class ScrapingEngine @Inject constructor(
     private fun extractAllContentFromPage(document: Document, provider: Provider): List<SearchResult> {
         val results = mutableListOf<SearchResult>()
         val seenUrls = mutableSetOf<String>()
-        
-        // Use SmartNavigationEngine to find content links
+
+        // Use SmartNavigationEngine to find content links (fixed destructuring)
         val contentLinks = smartNavigationEngine.extractContentLinks(document, provider.baseUrl)
-        for ((url, thumbnailUrl) in contentLinks) {
+        for (contentLink in contentLinks) {
+            val url = contentLink.url
             if (url in seenUrls) continue
             seenUrls.add(url)
-            
-            val title = extractTitleFromUrl(url) ?: findTitleInDocument(document, url) ?: continue
+
+            val title = contentLink.title.takeIf { it.length > 2 }
+                ?: extractTitleFromUrl(url)
+                ?: findTitleInDocument(document, url)
+                ?: continue
             if (title.length < 3) continue
-            
+
             val description = findDescriptionInDocument(document, url)
-            
+
             results.add(SearchResult(
                 title = title,
                 url = url,
-                thumbnailUrl = thumbnailUrl,
+                thumbnailUrl = contentLink.thumbnail,  // correct field
                 description = description,
                 providerId = provider.id,
                 providerName = provider.name,

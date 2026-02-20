@@ -102,6 +102,63 @@ class AIDecisionEngine @Inject constructor() {
         private val RISK_KEYWORDS = setOf(
             "cam", "ts", "telesync", "hdcam", "workprint", "screener"
         )
+        
+        // Stop words to ignore during scoring (very common, low signal)
+        private val STOP_WORDS = setOf(
+            "the", "a", "an", "of", "in", "on", "at", "to", "for", "and",
+            "or", "but", "is", "are", "was", "were", "be", "been", "has",
+            "have", "had", "do", "does", "did", "with", "this", "that",
+            "it", "its", "by", "from", "up", "out", "as", "into", "than"
+        )
+        
+        // Synonym/expansion map for common search terms
+        private val QUERY_SYNONYMS = mapOf(
+            "movie" to listOf("film", "cinema", "flick", "feature"),
+            "film" to listOf("movie", "cinema"),
+            "series" to listOf("show", "tv show", "season", "episodes"),
+            "show" to listOf("series", "tv series", "season"),
+            "episode" to listOf("ep", "episodes", "part"),
+            "download" to listOf("torrent", "magnet", "direct"),
+            "watch" to listOf("stream", "view", "play"),
+            "stream" to listOf("watch", "online", "live"),
+            "music" to listOf("song", "audio", "track", "album"),
+            "song" to listOf("music", "track", "audio"),
+            "video" to listOf("clip", "footage", "recording"),
+            "anime" to listOf("animation", "cartoon", "manga"),
+            "documentary" to listOf("doc", "documentary film"),
+            "hd" to listOf("720p", "1080p", "high definition"),
+            "4k" to listOf("2160p", "uhd", "ultra hd"),
+            "new" to listOf("latest", "recent", "2024", "2025"),
+            "latest" to listOf("new", "recent", "newest"),
+            "free" to listOf("gratis", "no cost"),
+            "game" to listOf("gaming", "gameplay"),
+            "live" to listOf("stream", "online", "broadcast"),
+            "full" to listOf("complete", "entire"),
+            "english" to listOf("eng", "en"),
+            "subtitle" to listOf("sub", "subtitled", "subs"),
+            "dubbed" to listOf("dub", "audio track")
+        )
+        
+        // Category keyword expansions for better provider matching
+        private val CATEGORY_KEYWORDS = mapOf(
+            "streaming" to setOf(
+                "watch", "stream", "movie", "movies", "series", "tv", "episode",
+                "episodes", "film", "cinema", "show", "shows", "anime", "documentary",
+                "season", "netflix", "online", "hulu", "play"
+            ),
+            "torrent" to setOf(
+                "download", "torrent", "magnet", "seed", "seeder", "leecher",
+                "peers", "tracker", "dht", "pirate", "bit", "torrent"
+            ),
+            "news" to setOf(
+                "news", "article", "latest", "breaking", "report", "journalist",
+                "headline", "story", "blog", "post", "update"
+            ),
+            "media" to setOf(
+                "video", "music", "audio", "photo", "image", "gallery",
+                "mp3", "mp4", "flac", "wav", "jpeg", "png"
+            )
+        )
     }
     
     /**
@@ -165,13 +222,13 @@ class AIDecisionEngine @Inject constructor() {
     }
     
     /**
-     * Score search results using AI relevance analysis
+     * Score search results using AI relevance analysis with phrase and synonym awareness
      */
     suspend fun scoreResults(
         results: List<SearchResult>,
         query: String
     ): List<SearchResult> = withContext(Dispatchers.Default) {
-        val queryTerms = tokenizeQuery(query)
+        val queryTerms = tokenizeQuerySmart(query)
         
         results.map { result ->
             val aiScore = calculateResultRelevance(result, queryTerms)
@@ -180,7 +237,8 @@ class AIDecisionEngine @Inject constructor() {
     }
     
     /**
-     * Calculate relevance score for a single result
+     * Calculate relevance score for a single result.
+     * Uses term matching, phrase bonuses, position weighting, and fuzzy prefix matching.
      */
     private fun calculateResultRelevance(result: SearchResult, queryTerms: List<String>): Float {
         var score = 0f
@@ -188,32 +246,70 @@ class AIDecisionEngine @Inject constructor() {
         val titleLower = result.title.lowercase()
         val descLower = result.description?.lowercase() ?: ""
         
-        // Term matching with position weighting
-        queryTerms.forEachIndexed { index, term ->
-            val positionWeight = 1f - (index * 0.1f).coerceAtMost(0.5f)
+        // ---- Whole-phrase exact match ----
+        // If title contains the full query as a substring, big bonus
+        val fullPhrase = queryTerms.filter { !it.contains(" ") }.joinToString(" ")
+        if (fullPhrase.isNotEmpty() && titleLower.contains(fullPhrase)) {
+            score += 50f
+        }
+        
+        // ---- Term-level scoring ----
+        val singleTerms = queryTerms.filter { !it.contains(" ") }
+        val bigramTerms = queryTerms.filter { it.contains(" ") }
+        
+        singleTerms.forEachIndexed { index, term ->
+            // Position weight: first terms are more important
+            val positionWeight = 1f - (index * 0.08f).coerceAtMost(0.5f)
             
-            // Title match is more important
+            // --- Title match ---
             if (titleLower.contains(term)) {
                 score += 30f * positionWeight
                 
-                // Exact word match bonus
-                if (titleLower.split(Regex("\\W+")).contains(term)) {
+                // Exact word boundary match bonus
+                val titleWords = titleLower.split(Regex("\\W+"))
+                if (titleWords.contains(term)) {
                     score += 15f * positionWeight
                 }
                 
-                // Title starts with term - big bonus
+                // Title starts with term — very strong signal
                 if (titleLower.startsWith(term)) {
                     score += 20f
                 }
+            } else {
+                // Fuzzy: check if any title word starts with this term (prefix match)
+                val titleWords = titleLower.split(Regex("\\W+"))
+                if (titleWords.any { it.startsWith(term) && it.length <= term.length + 3 }) {
+                    score += 8f * positionWeight
+                }
             }
             
-            // Description match
+            // --- Description match (lower weight) ---
             if (descLower.contains(term)) {
-                score += 10f * positionWeight
+                score += 8f * positionWeight
             }
         }
         
-        // Quality indicators
+        // ---- Bigram (phrase) scoring ----
+        bigramTerms.forEach { bigram ->
+            if (titleLower.contains(bigram)) {
+                score += 25f // Multi-word phrase found in title = strong match
+            } else if (descLower.contains(bigram)) {
+                score += 8f
+            }
+        }
+        
+        // ---- Synonym expansion bonus ----
+        // If title matches a synonym of any query term, give partial credit
+        singleTerms.forEach { term ->
+            val synonyms = QUERY_SYNONYMS[term] ?: emptyList()
+            synonyms.forEach { syn ->
+                if (titleLower.contains(syn) && !titleLower.contains(term)) {
+                    score += 10f // Synonym match in title
+                }
+            }
+        }
+        
+        // ---- Quality indicators ----
         val qualityScore = calculateQualityScore(result)
         score += qualityScore * 20
         
@@ -493,21 +589,136 @@ class AIDecisionEngine @Inject constructor() {
         return query.lowercase()
             .split(Regex("\\s+"))
             .filter { it.length > 1 }
+            .map { it.trim(',', '.', '!', '?', '"', '\'', '(', ')') }
+            .filter { it.isNotEmpty() && it !in STOP_WORDS }
+    }
+    
+    /**
+     * Tokenize query into MEANINGFUL terms (no stop words) + significant bigrams
+     */
+    private fun tokenizeQuerySmart(query: String): List<String> {
+        val words = query.lowercase()
+            .split(Regex("\\s+"))
+            .map { it.trim(',', '.', '!', '?', '"', '\'', '(', ')') }
+            .filter { it.length > 1 && it.isNotEmpty() }
+        
+        val meaningful = words.filter { it !in STOP_WORDS }
+        
+        // Add bigrams (two-word phrases) for better phrase matching
+        val bigrams = words.zipWithNext { a, b -> "$a $b" }
+            .filter { bigramWords -> bigramWords.split(" ").none { it in STOP_WORDS } }
+        
+        return meaningful + bigrams
+    }
+    
+    /**
+     * Expand a query with synonyms and related terms for broader matching.
+     * Returns the original query plus variant queries to try.
+     */
+    fun expandQuery(query: String): List<String> {
+        val queryLower = query.lowercase().trim()
+        val words = queryLower.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val variants = mutableListOf(queryLower)
+        
+        // Add synonym expansions for each significant word
+        words.filter { it !in STOP_WORDS }.forEach { word ->
+            QUERY_SYNONYMS[word]?.forEach { synonym ->
+                val expanded = queryLower.replace(word, synonym)
+                if (expanded != queryLower && !variants.contains(expanded)) {
+                    variants.add(expanded)
+                }
+            }
+        }
+        
+        return variants.take(5) // Cap at 5 to avoid over-fetching
+    }
+    
+    /**
+     * Decompose a multi-word query into fallback single-term or reduced-term variants.
+     * Used when full-query searches return no results.
+     * Terms are sorted by rarity/importance (longer words first, stop words excluded).
+     */
+    fun decomposeQueryFallback(query: String): List<String> {
+        val words = query.lowercase()
+            .split(Regex("\\s+"))
             .map { it.trim(',', '.', '!', '?', '"', '\'') }
-            .filter { it.isNotEmpty() }
+            .filter { it.length > 2 && it !in STOP_WORDS }
+            .distinctBy { it }
+        
+        if (words.isEmpty()) return listOf(query)
+        
+        val result = mutableListOf<String>()
+        
+        // 1. Progressively shorter queries (drop last word each time)
+        for (i in words.indices.reversed()) {
+            val sub = words.subList(0, i + 1).joinToString(" ")
+            if (sub.isNotBlank() && sub != query.lowercase()) {
+                result.add(sub)
+            }
+        }
+        
+        // 2. Add individual key words sorted by length desc (rarer = longer)
+        words.sortedByDescending { it.length }
+             .forEach { if (!result.contains(it)) result.add(it) }
+        
+        return result.take(8)
+    }
+    
+    /**
+     * Generate alternative query variants for sites that may use
+     * different naming conventions or abbreviations.
+     */
+    fun generateQueryVariants(query: String): List<String> {
+        val base = query.lowercase().trim()
+        val variants = mutableSetOf(base)
+        
+        // Replace spaces with different separators (common in torrent names)
+        variants.add(base.replace(" ", "."))
+        variants.add(base.replace(" ", "-"))
+        variants.add(base.replace(" ", "+"))
+        
+        // Add year range variants if query looks like it could include a year
+        val yearPattern = Regex("\\b(19|20)\\d{2}\\b")
+        if (!yearPattern.containsMatchIn(base)) {
+            // No year - add current/recent year hint variants
+            val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+            variants.add("$base $currentYear")
+            variants.add("$base ${currentYear - 1}")
+        }
+        
+        // Expand single-letter season/episode shorthand: s01e01 -> season 1 episode 1
+        val sePattern = Regex("s(\\d{1,2})e(\\d{1,2})", RegexOption.IGNORE_CASE)
+        val seMatch = sePattern.find(base)
+        if (seMatch != null) {
+            val season = seMatch.groupValues[1].toIntOrNull() ?: 1
+            val episode = seMatch.groupValues[2].toIntOrNull() ?: 1
+            val longForm = base.replace(seMatch.value, "season $season episode $episode")
+            variants.add(longForm)
+        }
+        
+        return variants.toList().take(6)
     }
     
     private fun matchesCategoryForQuery(category: ProviderCategory, query: String): Boolean {
         val queryLower = query.lowercase()
+        val queryWords = queryLower.split(Regex("\\s+")).toSet()
         return when (category) {
             ProviderCategory.STREAMING -> 
-                listOf("watch", "stream", "movie", "series", "tv", "episode").any { queryLower.contains(it) }
+                (CATEGORY_KEYWORDS["streaming"] ?: emptySet()).any { kw ->
+                    queryLower.contains(kw) || queryWords.contains(kw)
+                }
             ProviderCategory.TORRENT -> 
-                listOf("download", "torrent", "magnet").any { queryLower.contains(it) }
+                (CATEGORY_KEYWORDS["torrent"] ?: emptySet()).any { kw ->
+                    queryLower.contains(kw) || queryWords.contains(kw)
+                }
             ProviderCategory.NEWS -> 
-                listOf("news", "article", "latest").any { queryLower.contains(it) }
+                (CATEGORY_KEYWORDS["news"] ?: emptySet()).any { kw ->
+                    queryLower.contains(kw) || queryWords.contains(kw)
+                }
             ProviderCategory.MEDIA -> 
-                listOf("video", "music", "audio", "photo").any { queryLower.contains(it) }
+                (CATEGORY_KEYWORDS["media"] ?: emptySet()).any { kw ->
+                    queryLower.contains(kw) || queryWords.contains(kw)
+                }
             else -> false
         }
     }

@@ -2,6 +2,9 @@ package com.aggregatorx.app.engine.scraper
 
 import com.aggregatorx.app.data.model.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -11,25 +14,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Smart Navigation Engine
- * 
- * Intelligently navigates websites to:
- * - Bypass category screens
- * - Handle popups and overlays
- * - Find and use search functionality
- * - Navigate pagination
- * - Handle dynamic content loading
+ * Smart Navigation Engine v2
+ *
+ * Intelligently navigates ANY website structure:
+ * - Detects and uses search when available
+ * - Crawls tabs/categories/genres when search is absent
+ * - Handles popups, overlays, cookie consents
+ * - Navigates pagination for more results
+ * - Handles dynamic content detection
+ * - Keyword-based tab matching for non-search sites
+ * - Falls back to homepage scraping as last resort
  */
 @Singleton
 class SmartNavigationEngine @Inject constructor() {
-    
+
     companion object {
-        private const val DEFAULT_TIMEOUT = 10000
-        private const val QUICK_TIMEOUT = 5000
-        private const val DEFAULT_USER_AGENT = 
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        
-        // Common search URL patterns to try (ordered by likelihood)
+        private const val DEFAULT_TIMEOUT = 12000
+        private const val QUICK_TIMEOUT  = 6000
+        private const val DEFAULT_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+        // Extended search URL patterns (most-to-least common)
         private val SEARCH_URL_PATTERNS = listOf(
             "{base}/search?q={query}",
             "{base}/?s={query}",
@@ -37,14 +42,25 @@ class SmartNavigationEngine @Inject constructor() {
             "{base}/search?query={query}",
             "{base}/?q={query}",
             "{base}/search?s={query}",
+            "{base}/search?keyword={query}",
+            "{base}/search?term={query}",
+            "{base}/search?text={query}",
             "{base}/videos?search={query}",
+            "{base}/movies?search={query}",
             "{base}/results?search_query={query}",
             "{base}/search.php?q={query}",
+            "{base}/search.php?keyword={query}",
             "{base}/find?q={query}",
-            "{base}/movies?search={query}",
-            "{base}/search/videos/{query}"
+            "{base}/find?query={query}",
+            "{base}/search/videos/{query}",
+            "{base}/index.php?s={query}",
+            "{base}/index.php?q={query}",
+            "{base}/?search={query}",
+            "{base}/buscar?q={query}",
+            "{base}/recherche?q={query}",
+            "{base}/suche?q={query}"
         )
-        
+
         // Category page indicators to detect and bypass
         private val CATEGORY_INDICATORS = listOf(
             "/category/", "/categories/", "/cat/",
@@ -53,7 +69,20 @@ class SmartNavigationEngine @Inject constructor() {
             "/popular", "/trending", "/latest", "/new",
             "/top-rated", "/featured", "/recommended"
         )
-        
+
+        // Selectors that indicate tab/category navigation bars
+        private val TAB_NAVIGATION_SELECTORS = listOf(
+            ".tabs a", ".tab a", "nav.tabs a", "[role='tablist'] [role='tab']",
+            ".nav-tabs a", ".menu-tabs a", ".category-tabs a",
+            ".genre-tabs a", ".filter-tabs a", ".section-tabs a",
+            "[class*='tab'] a[href]", "ul.tabs > li > a",
+            ".categories a", ".category-list a", ".genres a",
+            ".genre-list a", ".nav-categories a",
+            "nav a[href]", ".sidebar a[href]", ".filters a[href]",
+            ".breadcrumb a", ".menu a[href]",
+            "ul.menu > li > a", ".navigation a[href]"
+        )
+
         // Popup/overlay selectors to dismiss
         private val POPUP_SELECTORS = listOf(
             ".popup-close", ".modal-close", ".close-button",
@@ -62,17 +91,20 @@ class SmartNavigationEngine @Inject constructor() {
             "[data-dismiss='modal']", ".cookie-close",
             ".ad-close", ".notification-close", ".banner-close",
             "button[aria-label='Close']", "button[aria-label='Dismiss']",
-            ".adblock-close", ".adblocker-close", ".skip-ad", ".skipAds", ".ad-skip", ".ad_skip_btn", ".ad-overlay-close", ".ad-popup-close",
-            ".interstitial-close", ".promo-close", ".splash-close", ".fullscreen-ad-close", ".ad-modal-close", ".ad-dismiss", ".ad-exit",
-            "button.skip", "button[title*='Skip']", "button[title*='Dismiss']", "button[title*='Close']"
+            ".adblock-close", ".adblocker-close", ".skip-ad", ".skipAds",
+            ".ad-skip", ".ad_skip_btn", ".ad-overlay-close", ".ad-popup-close",
+            ".interstitial-close", ".promo-close", ".splash-close",
+            ".fullscreen-ad-close", ".ad-modal-close", ".ad-dismiss", ".ad-exit",
+            "button.skip", "button[title*='Skip']", "button[title*='Dismiss']",
+            "button[title*='Close']"
         )
 
     /**
      * Attempt to close popups/ads with retries and escalation
      */
-    suspend fun closePopupsWithRetries(page: org.jsoup.nodes.Document, maxRetries: Int = 3): Boolean {
+    suspend fun closePopupsWithRetries(page: Document, maxRetries: Int = 3): Boolean {
         var closedAny = false
-        repeat(maxRetries) { attempt ->
+        repeat(maxRetries) {
             var closedThisRound = false
             for (selector in POPUP_SELECTORS) {
                 val elements = page.select(selector)
@@ -93,13 +125,34 @@ class SmartNavigationEngine @Inject constructor() {
      */
     suspend fun findSearchUrl(baseUrl: String, query: String): String? = withContext(Dispatchers.IO) {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
-        
-        // Try each pattern with quick timeout
+
+        // First try to detect a search form on the homepage (avoids extra requests)
+        try {
+            val homepage = Jsoup.connect(baseUrl)
+                .userAgent(DEFAULT_USER_AGENT)
+                .timeout(QUICK_TIMEOUT)
+                .get()
+            val searchForm = findSearchForm(homepage)
+            if (searchForm != null) {
+                val builtUrl = buildSearchUrlFromForm(baseUrl, searchForm, query)
+                // Validate it returns results
+                try {
+                    val doc = Jsoup.connect(builtUrl)
+                        .userAgent(DEFAULT_USER_AGENT)
+                        .timeout(QUICK_TIMEOUT)
+                        .ignoreHttpErrors(true)
+                        .get()
+                    if (isSearchResultsPage(doc)) return@withContext builtUrl
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+
+        // Try pattern-based search URLs
         for (pattern in SEARCH_URL_PATTERNS) {
             val searchUrl = pattern
                 .replace("{base}", baseUrl.trimEnd('/'))
                 .replace("{query}", encodedQuery)
-            
+
             try {
                 val response = Jsoup.connect(searchUrl)
                     .userAgent(DEFAULT_USER_AGENT)
@@ -107,35 +160,166 @@ class SmartNavigationEngine @Inject constructor() {
                     .followRedirects(true)
                     .ignoreHttpErrors(true)
                     .execute()
-                
-                // Check if we got a valid search results page
+
                 if (response.statusCode() == 200) {
                     val doc = response.parse()
                     if (isSearchResultsPage(doc)) {
                         return@withContext searchUrl
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 continue
             }
         }
-        
-        // Fallback: try to find search form on homepage (quick)
+
+        null
+    }
+
+    /**
+     * Crawl category tabs/navigation to find content matching the query.
+     * Used when a site has NO search but organises by tabs/categories.
+     * Returns all matching content links found across relevant tabs.
+     */
+    suspend fun crawlCategoryTabsForQuery(
+        baseUrl: String,
+        query: String,
+        maxTabs: Int = 6
+    ): List<ContentLink> = withContext(Dispatchers.IO) {
+        val allLinks = mutableListOf<ContentLink>()
+        val seen = mutableSetOf<String>()
+
         try {
             val homepage = Jsoup.connect(baseUrl)
                 .userAgent(DEFAULT_USER_AGENT)
-                .timeout(QUICK_TIMEOUT)
+                .timeout(DEFAULT_TIMEOUT)
+                .followRedirects(true)
+                .ignoreHttpErrors(true)
                 .get()
-            
-            val searchForm = findSearchForm(homepage)
-            searchForm?.let { form ->
-                return@withContext buildSearchUrlFromForm(baseUrl, form, query)
+
+            // Collect all tab/nav links
+            val tabLinks = extractAllNavigationLinks(homepage, baseUrl)
+            if (tabLinks.isEmpty()) return@withContext allLinks
+
+            // Score each tab against the query
+            val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 1 }
+            val scoredTabs = tabLinks.map { link ->
+                val score = scoreTabRelevance(link.text, link.url, queryWords)
+                Pair(link, score)
             }
-        } catch (e: Exception) {
-            // Ignore
+
+            // Sort: best matching first, then all others as fallback
+            val sortedTabs = scoredTabs
+                .filter { it.second > 0f }
+                .sortedByDescending { it.second }
+                .take(maxTabs)
+                .ifEmpty {
+                    // No matches – try generic content tabs (latest/all/movies/videos)
+                    scoredTabs
+                        .filter { isGenericContentTab(it.first.url, it.first.text) }
+                        .take(maxTabs)
+                }
+
+            // Crawl each relevant tab concurrently
+            coroutineScope {
+                sortedTabs.map { (link, _) ->
+                    async(Dispatchers.IO) {
+                        try {
+                            val tabDoc = Jsoup.connect(link.url)
+                                .userAgent(DEFAULT_USER_AGENT)
+                                .timeout(DEFAULT_TIMEOUT)
+                                .followRedirects(true)
+                                .ignoreHttpErrors(true)
+                                .get()
+                            extractContentLinks(tabDoc, baseUrl)
+                        } catch (_: Exception) { emptyList() }
+                    }
+                }.awaitAll().forEach { links ->
+                    links.forEach { link ->
+                        if (link.url !in seen) {
+                            seen.add(link.url)
+                            allLinks.add(link)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        allLinks
+    }
+
+    /**
+     * Extract ALL navigation/tab/category links from a document
+     */
+    fun extractAllNavigationLinks(document: Document, baseUrl: String): List<ContentLink> {
+        val links = mutableListOf<ContentLink>()
+        val seen = mutableSetOf<String>()
+
+        for (selector in TAB_NAVIGATION_SELECTORS) {
+            try {
+                document.select(selector).forEach { el ->
+                    val href = el.attr("href").takeIf { it.isNotEmpty() } ?: return@forEach
+                    val url = normalizeUrl(href, baseUrl)
+                    if (url in seen || url.startsWith("#") || url.contains("javascript:")) return@forEach
+                    if (isNavigationExcluded(url)) return@forEach
+                    seen.add(url)
+                    links.add(ContentLink(url = url, title = el.text().trim(), thumbnail = null, duration = null))
+                }
+            } catch (_: Exception) {}
         }
-        
-        null
+
+        return links.distinctBy { it.url }
+    }
+
+    /**
+     * Score how relevant a tab/category is to the query keywords
+     */
+    private fun scoreTabRelevance(tabText: String, tabUrl: String, queryWords: List<String>): Float {
+        val text = tabText.lowercase()
+        val url = tabUrl.lowercase()
+        var score = 0f
+
+        for (word in queryWords) {
+            when {
+                text == word -> score += 1f          // exact match
+                text.contains(word) -> score += 0.7f // partial text match
+                url.contains(word) -> score += 0.5f  // URL match
+                areSimilarTokens(text, word) -> score += 0.3f // fuzzy
+            }
+        }
+
+        return score
+    }
+
+    /**
+     * Simple token similarity check for tab matching
+     */
+    private fun areSimilarTokens(a: String, b: String): Boolean {
+        if (a == b) return true
+        if (a.contains(b) || b.contains(a)) return true
+        // Stem check: same first 4 chars
+        if (a.length >= 4 && b.length >= 4 && a.take(4) == b.take(4)) return true
+        return false
+    }
+
+    /**
+     * Check if a tab/nav link is a "generic content" tab (all, latest, movies, videos etc)
+     * These are useful fallbacks when no query-specific tab exists
+     */
+    private fun isGenericContentTab(url: String, text: String): Boolean {
+        val combined = (url + " " + text).lowercase()
+        return listOf("all", "latest", "new", "movies", "videos", "episodes",
+            "shows", "series", "popular", "top", "recent", "full").any { combined.contains(it) }
+    }
+
+    /**
+     * Check if a navigation URL should be excluded
+     */
+    private fun isNavigationExcluded(url: String): Boolean {
+        val excluded = listOf("/login", "/register", "/signup", "/contact",
+            "/about", "/privacy", "/terms", "/faq", "mailto:", "tel:",
+            "/advertise", "/dmca", "/tos", "/sitemap")
+        val lower = url.lowercase()
+        return excluded.any { lower.contains(it) }
     }
     
     /**
@@ -297,42 +481,66 @@ class SmartNavigationEngine @Inject constructor() {
     /**
      * Extract all possible result links from a page
      * (handles both search results and category listings)
+     * v2: handles lazy-load images, data attributes, broader selectors
      */
     fun extractContentLinks(document: Document, baseUrl: String): List<ContentLink> {
         val links = mutableListOf<ContentLink>()
-        
-        // Common content item selectors
+        val seen = mutableSetOf<String>()
+
+        // Common content item containers – ordered from specific to generic
         val itemSelectors = listOf(
             ".video-item", ".movie-item", ".item", ".card",
             ".result", ".entry", "article", ".post",
             ".torrent", "[class*='video']", "[class*='movie']",
-            "[data-id]", "[data-video-id]", ".thumb"
+            ".grid-item", ".list-item", ".thumb", ".media-item",
+            "[data-id]", "[data-video-id]", "[data-url]",
+            "li[class]", "div[class*='item']", "div[class*='card']"
         )
-        
+
         for (selector in itemSelectors) {
             document.select(selector).forEach { item ->
-                val link = item.select("a[href]").firstOrNull()
+                val link = item.select("a[href]").firstOrNull() ?: return@forEach
+                val href = link.attr("href")
+                val fullUrl = normalizeUrl(href, baseUrl)
+
+                if (fullUrl in seen || !isContentUrl(fullUrl)) return@forEach
+                seen.add(fullUrl)
+
                 val title = extractItemTitle(item)
                 val thumbnail = extractItemThumbnail(item, baseUrl)
                 val duration = extractItemDuration(item)
-                
-                if (link != null && title.isNotEmpty()) {
-                    val href = link.attr("href")
-                    val fullUrl = normalizeUrl(href, baseUrl)
-                    
-                    if (isContentUrl(fullUrl)) {
-                        links.add(ContentLink(
-                            url = fullUrl,
-                            title = title,
-                            thumbnail = thumbnail,
-                            duration = duration
-                        ))
-                    }
+
+                if (title.isNotEmpty() || fullUrl.isNotEmpty()) {
+                    links.add(ContentLink(
+                        url = fullUrl,
+                        title = title,
+                        thumbnail = thumbnail,
+                        duration = duration
+                    ))
                 }
             }
         }
-        
-        return links.distinctBy { it.url }
+
+        // Fallback: grab all anchor tags that look like content
+        if (links.size < 5) {
+            document.select("a[href]").forEach { a ->
+                val href = a.attr("href")
+                val fullUrl = normalizeUrl(href, baseUrl)
+                if (fullUrl in seen || !isContentUrl(fullUrl)) return@forEach
+                val text = a.text().trim()
+                if (text.length < 3) return@forEach
+                seen.add(fullUrl)
+                val thumbnail = a.select("img").firstOrNull()?.let { img ->
+                    val src = img.attr("src").takeIf { it.isNotEmpty() }
+                        ?: img.attr("data-src").takeIf { it.isNotEmpty() }
+                        ?: img.attr("data-lazy-src").takeIf { it.isNotEmpty() }
+                    src?.let { normalizeUrl(it, baseUrl) }
+                }
+                links.add(ContentLink(url = fullUrl, title = text, thumbnail = thumbnail, duration = null))
+            }
+        }
+
+        return links.distinctBy { it.url }.take(150)
     }
     
     /**
@@ -357,17 +565,26 @@ class SmartNavigationEngine @Inject constructor() {
     
     /**
      * Extract thumbnail from item
+     * v2: handles all major lazy-load patterns and data attributes
      */
     private fun extractItemThumbnail(item: Element, baseUrl: String): String? {
         val img = item.select("img").firstOrNull()
-        
-        val src = img?.attr("src")?.takeIf { it.isNotEmpty() }
+
+        val src = img?.attr("src")?.takeIf { it.isNotEmpty() && !it.contains("data:image") }
             ?: img?.attr("data-src")?.takeIf { it.isNotEmpty() }
             ?: img?.attr("data-lazy-src")?.takeIf { it.isNotEmpty() }
             ?: img?.attr("data-original")?.takeIf { it.isNotEmpty() }
-            ?: item.attr("data-thumb")?.takeIf { it.isNotEmpty() }
-            ?: item.attr("data-poster")?.takeIf { it.isNotEmpty() }
-        
+            ?: img?.attr("data-lazy")?.takeIf { it.isNotEmpty() }
+            ?: img?.attr("data-thumb")?.takeIf { it.isNotEmpty() }
+            ?: img?.attr("srcset")?.split(",")?.lastOrNull()?.trim()?.split(" ")?.firstOrNull()?.takeIf { it.isNotEmpty() }
+            ?: item.attr("data-thumb").takeIf { it.isNotEmpty() }
+            ?: item.attr("data-poster").takeIf { it.isNotEmpty() }
+            ?: item.attr("data-image").takeIf { it.isNotEmpty() }
+            ?: item.attr("data-bg").takeIf { it.isNotEmpty() }
+            ?: item.select("[style*='background-image']").firstOrNull()
+                ?.attr("style")
+                ?.let { Regex("url\\(['\"]?(https?://[^'\"()]+)['\"]?\\)").find(it)?.groupValues?.getOrNull(1) }
+
         return src?.let { normalizeUrl(it, baseUrl) }
     }
     
@@ -419,27 +636,56 @@ class SmartNavigationEngine @Inject constructor() {
     
     /**
      * Get pagination links for more results
+     * v2: supports "next" buttons, numbered pages, and infinite-scroll triggers
      */
-    fun getPaginationLinks(document: Document, baseUrl: String, maxPages: Int = 3): List<String> {
+    fun getPaginationLinks(document: Document, baseUrl: String, maxPages: Int = 5): List<String> {
         val links = mutableListOf<String>()
-        
+
         val paginationSelectors = listOf(
             ".pagination a", ".pager a", ".pages a",
             "nav.pagination a", "[class*='pagination'] a",
-            ".page-numbers a", ".page-link"
+            ".page-numbers a", ".page-link",
+            "a[rel='next']", "a:contains(Next)", "a:contains(next)",
+            "a:contains(>)", "a.next", ".next-page a",
+            "a[aria-label='Next']", "button[aria-label='Next']",
+            "[class*='next'] a"
         )
-        
+
+        val seen = mutableSetOf<String>()
         for (selector in paginationSelectors) {
             document.select(selector).forEach { link ->
                 val href = link.attr("href")
                 if (href.isNotEmpty() && !href.startsWith("#")) {
-                    links.add(normalizeUrl(href, baseUrl))
+                    val url = normalizeUrl(href, baseUrl)
+                    if (url !in seen) {
+                        seen.add(url)
+                        links.add(url)
+                    }
                 }
             }
-            
-            if (links.isNotEmpty()) break
         }
-        
+
+        // Also try numeric page pattern: detect page=1 or /page/1/ and build page 2,3...
+        if (links.isEmpty()) {
+            val currentUrl = baseUrl
+            val pagePatterns = listOf(
+                Regex("(.*[?&]page=)(\\d+)(.*)"),
+                Regex("(.*[?&]p=)(\\d+)(.*)"),
+                Regex("(.*/page/)(\\d+)(/.*)"),
+                Regex("(.*/p/)(\\d+)(/.*)"),
+                Regex("(.*/)(\\d+)(/?)$")
+            )
+            for (pattern in pagePatterns) {
+                val match = pattern.find(currentUrl) ?: continue
+                val (prefix, num, suffix) = match.destructured
+                val currentPage = num.toIntOrNull() ?: continue
+                for (p in (currentPage + 1)..(currentPage + maxPages)) {
+                    links.add("$prefix$p$suffix")
+                }
+                break
+            }
+        }
+
         return links.distinct().take(maxPages)
     }
 }

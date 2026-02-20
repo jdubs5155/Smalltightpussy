@@ -2,67 +2,92 @@ package com.aggregatorx.app.engine.scraper
 
 import com.aggregatorx.app.data.model.*
 import kotlinx.coroutines.delay
+import org.jsoup.Jsoup
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Advanced Fallback System for Resilient Scraping
- * 
- * Provides multiple fallback strategies when primary scraping fails:
- * - User agent rotation
- * - Proxy rotation
- * - Request timing variations  
- * - Mobile/Desktop switching
- * - API endpoint discovery
- * - Cache utilization
+ * Advanced Fallback System for Resilient Scraping v2
+ *
+ * Improvements:
+ * - Updated Chrome 122 / Firefox 123 user agents
+ * - Accept-Encoding gzip header for better compatibility
+ * - Exponential backoff retry with jitter
+ * - Headless tab-click fallback wired in
+ * - API endpoint discovery via FallbackEngine itself
  */
 @Singleton
 class FallbackEngine @Inject constructor() {
-        /**
-         * Try all fallback strategies, then use headless browser as last resort (with shadow DOM and ad-skipper)
-         */
-        suspend fun fetchWithFallbackAndHeadless(
-            url: String,
-            waitSelector: String? = null,
-            timeout: Int = 10000,
-            onHeadless: ((String) -> Unit)? = null
-        ): String? {
-            // Try normal fallback strategies first
-            val strategies = generateStrategies()
+
+    /**
+     * Try all fallback strategies, then use headless browser as last resort
+     * (with shadow DOM, ad-skipper, and tab-click for no-search sites)
+     */
+    suspend fun fetchWithFallbackAndHeadless(
+        url: String,
+        waitSelector: String? = null,
+        timeout: Int = 12000,
+        query: String? = null,
+        onHeadless: ((String) -> Unit)? = null
+    ): String? {
+        val strategies = generateStrategies()
+        try {
+            return executeWithFallback(strategies) { ctx ->
+                Jsoup.connect(url)
+                    .userAgent(ctx.userAgent)
+                    .header("Referer", ctx.referer)
+                    .header("Accept-Encoding", "gzip, deflate, br")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .timeout(timeout)
+                    .followRedirects(true)
+                    .ignoreHttpErrors(true)
+                    .get()
+                    .html()
+            }
+        } catch (_: Exception) {}
+
+        // Headless with shadow DOM & ad skip
+        val content = HeadlessBrowserHelper.fetchPageContentWithShadowAndAdSkip(url, waitSelector, timeout)
+        onHeadless?.invoke(content ?: "")
+        if (!content.isNullOrEmpty()) return content
+
+        // Headless tab-click for no-search sites
+        if (query != null) {
             try {
-                return executeWithFallback(strategies) { ctx ->
-                    // Use Jsoup with fallback context (user agent, referer, etc)
-                    org.jsoup.Jsoup.connect(url)
-                        .userAgent(ctx.userAgent)
-                        .header("Referer", ctx.referer)
-                        .timeout(timeout)
-                        .get()
-                        .html()
+                val baseUrl = url.substringBefore("?").let {
+                    val parts = it.split("/")
+                    parts.take(3).joinToString("/")
+                }
+                val tabContent = HeadlessBrowserHelper.fetchContentByClickingTabs(baseUrl, query, timeout)
+                if (!tabContent.isNullOrEmpty()) {
+                    onHeadless?.invoke(tabContent)
+                    return tabContent
                 }
             } catch (_: Exception) {}
-            // If all else fails, use headless browser (with shadow DOM and ad-skipper)
-            val content = HeadlessBrowserHelper.fetchPageContentWithShadowAndAdSkip(url, waitSelector, timeout)
-            onHeadless?.invoke(content ?: "")
-            return content
         }
+
+        return null
+    }
     
     companion object {
-        // User Agent Pool
+        // Updated User Agent Pool – Chrome 122, Firefox 123, Safari 17, Edge 122
         val USER_AGENTS = listOf(
-            // Desktop Browsers
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36",
+            // Desktop Browsers (updated to 2025 versions)
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
+            "Mozilla/5.0 (X11; Linux x86_64; rv:123.0) Gecko/20100101 Firefox/123.0",
             
-            // Mobile Browsers
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.144 Mobile Safari/537.36",
-            "Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1",
-            
-            // Bots (sometimes work when others don't)
+            // Mobile Browsers (updated)
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.90 Mobile Safari/537.36",
+            "Mozilla/5.0 (iPad; CPU OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+
+            // Search engine bots (sometimes bypass blocks)
             "Googlebot/2.1 (+http://www.google.com/bot.html)",
             "Mozilla/5.0 (compatible; Bingbot/2.0; +http://www.bing.com/bingbot.htm)"
         )
@@ -87,15 +112,15 @@ class FallbackEngine @Inject constructor() {
     }
     
     /**
-     * Execute with fallback strategies
+     * Execute with fallback strategies using exponential backoff
      */
     suspend fun <T> executeWithFallback(
         strategies: List<FallbackStrategy>,
         block: suspend (FallbackContext) -> T
     ): T {
         var lastException: Exception? = null
-        
-        for (strategy in strategies) {
+
+        strategies.forEachIndexed { index, strategy ->
             try {
                 val context = FallbackContext(
                     userAgent = strategy.userAgent,
@@ -104,19 +129,18 @@ class FallbackEngine @Inject constructor() {
                     useMobile = strategy.useMobile,
                     headers = strategy.additionalHeaders
                 )
-                
-                // Apply delay if specified
-                if (strategy.delay > 0) {
-                    delay(strategy.delay)
-                }
-                
+
+                // Exponential backoff: base delay * 2^attempt (capped at 8s)
+                val backoffDelay = if (strategy.delay > 0) strategy.delay
+                    else minOf(strategy.delay + (100L * (1L shl minOf(index, 6))), 8000L)
+                if (backoffDelay > 0) delay(backoffDelay)
+
                 return block(context)
             } catch (e: Exception) {
                 lastException = e
-                // Continue to next strategy
             }
         }
-        
+
         throw lastException ?: Exception("All fallback strategies failed")
     }
     

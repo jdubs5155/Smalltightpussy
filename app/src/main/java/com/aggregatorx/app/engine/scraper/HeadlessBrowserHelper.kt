@@ -756,6 +756,225 @@ object HeadlessBrowserHelper {
             playwright = null
         } catch (_: Exception) {}
     }
+
+    /**
+     * Fetch page content by clicking through tabs/categories using headless browser.
+     * Used for sites that load content via JS on tab-click and have no accessible search.
+     *
+     * Algorithm:
+     * 1. Navigate to base URL
+     * 2. Find all tab/nav links matching query keywords
+     * 3. Click each relevant tab and collect rendered HTML
+     * 4. Return merged HTML of all matching tab pages
+     */
+    fun fetchContentByClickingTabs(
+        baseUrl: String,
+        query: String,
+        maxTabs: Int = 5,
+        timeout: Int = 20000
+    ): String? {
+        val page = createPage()
+        val allHtml = StringBuilder()
+
+        try {
+            page.navigate(baseUrl, Page.NavigateOptions().setTimeout(timeout.toDouble()))
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED, Page.WaitForLoadStateOptions().setTimeout(timeout.toDouble()))
+
+            // Dismiss ads/popups first
+            repeat(3) { autoClickCloseButtons(page); Thread.sleep(300) }
+            handleCookieConsent(page)
+
+            // Collect current page HTML
+            allHtml.append(page.content())
+
+            // Find tab/nav links
+            val tabSelectors = listOf(
+                ".tabs a", ".tab a", "nav a", ".menu a", ".navbar a",
+                ".categories a", ".genres a", ".nav-tabs a", ".category-list a",
+                "[role='tab']", "[class*='tab'] a", "ul.menu > li > a",
+                ".navigation a", ".sidebar a"
+            )
+
+            val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 1 }
+            val tabsVisited = mutableSetOf<String>()
+
+            for (selector in tabSelectors) {
+                try {
+                    val tabLinks = page.querySelectorAll(selector)
+                    val relevantTabs = tabLinks.filter { tab ->
+                        try {
+                            val text = tab.textContent()?.lowercase() ?: ""
+                            val href = tab.getAttribute("href")?.lowercase() ?: ""
+                            queryWords.any { w -> text.contains(w) || href.contains(w) }
+                        } catch (_: Exception) { false }
+                    }.take(maxTabs)
+
+                    for (tab in relevantTabs) {
+                        try {
+                            val href = tab.getAttribute("href") ?: continue
+                            if (href in tabsVisited || href.startsWith("#") || href.contains("javascript:")) continue
+                            tabsVisited.add(href)
+
+                            if (tabsVisited.size > maxTabs) break
+
+                            // Click tab and wait for content to update
+                            tab.click(com.microsoft.playwright.ElementHandle.ClickOptions().setTimeout(3000.0))
+                            Thread.sleep(1000)
+                            page.waitForLoadState(LoadState.NETWORKIDLE, Page.WaitForLoadStateOptions().setTimeout(5000.0))
+                            repeat(2) { autoClickCloseButtons(page); Thread.sleep(200) }
+                            allHtml.append("\n<!-- TAB: $href -->\n")
+                            allHtml.append(page.content())
+                        } catch (_: Exception) {}
+                    }
+
+                    if (tabsVisited.size >= maxTabs) break
+                } catch (_: Exception) {}
+            }
+
+            return allHtml.toString().takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            return allHtml.toString().takeIf { it.isNotBlank() }
+        } finally {
+            try { page.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Find and submit the search form on a page via headless browser.
+     * Works on sites where the search form requires JS to function.
+     * Returns the rendered HTML of the search results page.
+     */
+    fun searchViaHeadlessForm(
+        baseUrl: String,
+        query: String,
+        timeout: Int = 20000
+    ): String? {
+        val page = createPage()
+
+        try {
+            page.navigate(baseUrl, Page.NavigateOptions().setTimeout(timeout.toDouble()))
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED, Page.WaitForLoadStateOptions().setTimeout(timeout.toDouble()))
+
+            repeat(3) { autoClickCloseButtons(page); Thread.sleep(200) }
+            handleCookieConsent(page)
+
+            // Try to find and fill search input
+            val searchInputSelectors = listOf(
+                "input[type='search']",
+                "input[name*='search']", "input[name='q']", "input[name='query']",
+                "input[name='s']", "input[name='keyword']", "input[autocomplete='off']",
+                "input[placeholder*='search' i]", "input[placeholder*='Search' i]",
+                "#search-input", ".search-input input", ".search-bar input",
+                "form input[type='text']"
+            )
+
+            for (selector in searchInputSelectors) {
+                try {
+                    val input = page.querySelector(selector) ?: continue
+                    if (!input.isVisible) continue
+
+                    input.click()
+                    input.fill(query)
+                    Thread.sleep(300)
+
+                    // Submit: try Enter key, then look for submit button
+                    try {
+                        input.press("Enter")
+                    } catch (_: Exception) {
+                        val submitSelectors = listOf(
+                            "button[type='submit']", "input[type='submit']",
+                            ".search-button", ".search-btn", ".btn-search",
+                            "[class*='search'][class*='btn']", "[class*='search'][class*='button']"
+                        )
+                        for (btnSel in submitSelectors) {
+                            try {
+                                val btn = page.querySelector(btnSel)
+                                if (btn != null && btn.isVisible) {
+                                    btn.click()
+                                    break
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+
+                    page.waitForLoadState(LoadState.NETWORKIDLE, Page.WaitForLoadStateOptions().setTimeout((timeout / 2).toDouble()))
+                    Thread.sleep(1000)
+                    repeat(3) { autoClickCloseButtons(page); Thread.sleep(200) }
+
+                    val html = page.content()
+                    if (html.isNotBlank()) return html
+                    break
+                } catch (_: Exception) { continue }
+            }
+
+            return null
+        } catch (e: Exception) {
+            return null
+        } finally {
+            try { page.close() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Intercept network requests to discover hidden search/data API endpoints.
+     * Navigates to the page, performs a search if possible, and captures all
+     * JSON/XHR requests made. Returns discovered API endpoint URLs.
+     */
+    fun discoverSearchAPIEndpoints(
+        baseUrl: String,
+        sampleQuery: String = "test",
+        timeout: Int = 25000
+    ): List<String> {
+        val page = createPage()
+        val discoveredUrls = mutableListOf<String>()
+
+        try {
+            // Intercept all network requests
+            page.onRequest { request ->
+                val url = request.url()
+                val resourceType = request.resourceType()
+                // Capture XHR/fetch calls that look like data/search APIs
+                if (resourceType in listOf("xhr", "fetch") || url.contains("/api/") ||
+                    url.contains("/ajax/") || url.contains("/json") ||
+                    url.contains("search") || url.contains(".json")
+                ) {
+                    if (!isAdUrl(url)) discoveredUrls.add(url)
+                }
+            }
+
+            page.navigate(baseUrl, Page.NavigateOptions().setTimeout(timeout.toDouble()))
+            page.waitForLoadState(LoadState.NETWORKIDLE, Page.WaitForLoadStateOptions().setTimeout(timeout.toDouble()))
+
+            repeat(2) { autoClickCloseButtons(page); Thread.sleep(300) }
+            handleCookieConsent(page)
+
+            // Try to trigger a search to capture search API calls
+            val searchInputSelectors = listOf(
+                "input[type='search']", "input[name='q']", "input[name='query']",
+                "input[name='s']", "input[placeholder*='search' i]"
+            )
+            for (selector in searchInputSelectors) {
+                try {
+                    val input = page.querySelector(selector) ?: continue
+                    if (!input.isVisible) continue
+                    input.fill(sampleQuery)
+                    input.press("Enter")
+                    page.waitForLoadState(LoadState.NETWORKIDLE, Page.WaitForLoadStateOptions().setTimeout(5000.0))
+                    break
+                } catch (_: Exception) {}
+            }
+
+            Thread.sleep(2000)
+        } catch (_: Exception) {
+        } finally {
+            try { page.close() } catch (_: Exception) {}
+        }
+
+        return discoveredUrls
+            .distinct()
+            .filter { it.contains(sampleQuery) || it.contains("search") || it.contains("/api/") }
+            .take(10)
+    }
 }
 
 /**
