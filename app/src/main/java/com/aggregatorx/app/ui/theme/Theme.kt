@@ -11,20 +11,19 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 /**
- * AggregatorX - DARK RED NIGHT THEME
- * Pure black backgrounds with vibrant red accents
- * Perfect for night/dark viewing
+ * AggregatorX - DARK NEON GREEN THEME
+ * Deep dark green-black backgrounds with darker neon green accents
  */
-private val DarkRedNightColorScheme = darkColorScheme(
-    primary = CyberCyan, // Now crimson red
+private val DarkNeonGreenColorScheme = darkColorScheme(
+    primary = CyberCyan, // Darker neon green
     onPrimary = DarkBackground,
     primaryContainer = CyberCyanDark,
     onPrimaryContainer = TextPrimary,
-    secondary = CyberBlue, // Bright red
+    secondary = CyberBlue, // Bright mint green
     onSecondary = DarkBackground,
     secondaryContainer = CyberBlueDark,
     onSecondaryContainer = TextPrimary,
-    tertiary = CyberPurple, // Pink-red
+    tertiary = CyberPurple, // Lime highlight
     onTertiary = DarkBackground,
     tertiaryContainer = CyberPurple.copy(alpha = 0.3f),
     onTertiaryContainer = TextPrimary,
@@ -32,9 +31,9 @@ private val DarkRedNightColorScheme = darkColorScheme(
     onError = TextPrimary,
     errorContainer = AccentRed.copy(alpha = 0.2f),
     onErrorContainer = AccentRed,
-    background = DarkBackground, // Pure black
+    background = DarkBackground, // Near-black with green tint
     onBackground = TextPrimary,
-    surface = DarkSurface, // Almost black
+    surface = DarkSurface, // Very dark green-black
     onSurface = TextPrimary,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = TextSecondary,
@@ -43,15 +42,15 @@ private val DarkRedNightColorScheme = darkColorScheme(
     inverseSurface = TextPrimary,
     inverseOnSurface = DarkBackground,
     inversePrimary = CyberCyanDark,
-    surfaceTint = CyberCyan.copy(alpha = 0.15f) // Red tint
+    surfaceTint = CyberCyan.copy(alpha = 0.12f) // Neon green tint
 )
 
 @Composable
 fun AggregatorXTheme(
-    darkTheme: Boolean = true, // Always dark - night red theme
+    darkTheme: Boolean = true, // Always dark - neon green theme
     content: @Composable () -> Unit
 ) {
-    val colorScheme = DarkRedNightColorScheme
+    val colorScheme = DarkNeonGreenColorScheme
     
     val view = LocalView.current
     if (!view.isInEditMode) {
