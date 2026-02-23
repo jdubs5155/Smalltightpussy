@@ -49,10 +49,6 @@ fun SearchScreen(
     
     val listState = rememberLazyListState()
     
-    // Download state
-    var showDownloadDialog by remember { mutableStateOf(false) }
-    var downloadResult by remember { mutableStateOf<SearchResult?>(null) }
-    
     // Scroll-aware UI collapse for more result viewing space
     val isScrollingDown = remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 50
@@ -161,8 +157,8 @@ fun SearchScreen(
                             context.startActivity(intent)
                         },
                         onDownload = { result ->
-                            downloadResult = result
-                            showDownloadDialog = true
+                            viewModel.downloadResult(result)
+                            Toast.makeText(context, "Downloading: ${result.title}", Toast.LENGTH_SHORT).show()
                         },
                         onOpenExternal = { result ->
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
@@ -213,41 +209,6 @@ fun SearchScreen(
         }
     }
     
-    // Download Confirmation Dialog
-    if (showDownloadDialog && downloadResult != null) {
-        AlertDialog(
-            onDismissRequest = { showDownloadDialog = false },
-            containerColor = DarkCard,
-            title = {
-                Text("Download", color = TextPrimary)
-            },
-            text = {
-                Text(
-                    "Download \"${downloadResult?.title}\"?",
-                    color = TextSecondary
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        downloadResult?.let { result ->
-                            viewModel.downloadResult(result)
-                            Toast.makeText(context, "Download started: ${result.title}", Toast.LENGTH_SHORT).show()
-                        }
-                        showDownloadDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
-                ) {
-                    Text("Download", color = DarkBackground)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDownloadDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
-                }
-            }
-        )
-    }
 }
 
 @Composable

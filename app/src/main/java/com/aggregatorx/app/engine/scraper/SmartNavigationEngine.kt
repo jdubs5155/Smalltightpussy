@@ -36,29 +36,46 @@ class SmartNavigationEngine @Inject constructor() {
 
         // Extended search URL patterns (most-to-least common)
         private val SEARCH_URL_PATTERNS = listOf(
+            // Standard query-param patterns
             "{base}/search?q={query}",
             "{base}/?s={query}",
-            "{base}/search/{query}",
             "{base}/search?query={query}",
             "{base}/?q={query}",
             "{base}/search?s={query}",
             "{base}/search?keyword={query}",
+            "{base}/search?keywords={query}",
             "{base}/search?term={query}",
             "{base}/search?text={query}",
-            "{base}/videos?search={query}",
-            "{base}/movies?search={query}",
+            "{base}/?search_query={query}",
+            "{base}/results?q={query}",
             "{base}/results?search_query={query}",
+            "{base}/videos?search={query}",
+            "{base}/videos?q={query}",
+            "{base}/movies?search={query}",
+            "{base}/movies?q={query}",
             "{base}/search.php?q={query}",
             "{base}/search.php?keyword={query}",
+            "{base}/search.html?q={query}",
             "{base}/find?q={query}",
             "{base}/find?query={query}",
-            "{base}/search/videos/{query}",
             "{base}/index.php?s={query}",
             "{base}/index.php?q={query}",
             "{base}/?search={query}",
+            // API / WordPress REST
+            "{base}/api/search?q={query}",
+            "{base}/wp-json/wp/v2/search?search={query}",
+            "{base}/api/v1/search?q={query}",
+            "{base}/api/v2/search?q={query}",
+            // Slug / path-segment patterns
+            "{base}/search/{query}",
+            "{base}/search/{query_slug}",
+            "{base}/search/videos/{query}",
+            "{base}/search/movies/{query}",
+            // Localised patterns
             "{base}/buscar?q={query}",
             "{base}/recherche?q={query}",
-            "{base}/suche?q={query}"
+            "{base}/suche?q={query}",
+            "{base}/zoeken?q={query}"
         )
 
         // Category page indicators to detect and bypass
@@ -125,6 +142,8 @@ class SmartNavigationEngine @Inject constructor() {
      */
     suspend fun findSearchUrl(baseUrl: String, query: String): String? = withContext(Dispatchers.IO) {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val slugQuery = query.trim().lowercase().replace(Regex("\\s+"), "-")
+        val plusQuery = query.trim().replace(Regex("\\s+"), "+")
 
         // First try to detect a search form on the homepage (avoids extra requests)
         try {
@@ -151,6 +170,8 @@ class SmartNavigationEngine @Inject constructor() {
         for (pattern in SEARCH_URL_PATTERNS) {
             val searchUrl = pattern
                 .replace("{base}", baseUrl.trimEnd('/'))
+                .replace("{query_slug}", slugQuery)
+                .replace("{query_plus}", plusQuery)
                 .replace("{query}", encodedQuery)
 
             try {
@@ -356,24 +377,36 @@ class SmartNavigationEngine @Inject constructor() {
             ".results", ".search-results", "#search-results",
             "[class*='result-item']", "[class*='search-item']",
             ".video-item", ".movie-item", ".torrent-item",
-            "article.item", ".card", ".entry"
+            "article.item", ".card", ".entry",
+            "[class*='search-result']", "[class*='search_result']",
+            ".listing-item", ".search-item"
         )
-        
+
         for (selector in resultIndicators) {
             val elements = document.select(selector)
             if (elements.size >= 3) {
                 return true
             }
         }
-        
-        // Check for "no results" indicators (still a search page)
-        val noResultsText = document.text().lowercase()
-        if (noResultsText.contains("no results") || 
-            noResultsText.contains("nothing found") ||
-            noResultsText.contains("0 results")) {
+
+        // Check for result count text ("12 results found", "showing 1–20 of 50", etc.)
+        val bodyText = document.text().lowercase()
+        val countPattern = Regex("\\d+\\s*(results?|items?|matches?|found|titles?|videos?|movies?)")
+        if (countPattern.containsMatchIn(bodyText)) {
+            // Make sure there's actual content alongside the count text
+            val anyItem = document.select(".item, .card, article, li[class], tr[class]").size
+            if (anyItem >= 2) return true
+        }
+
+        // Check for "no results" indicators (still a valid search page)
+        if (bodyText.contains("no results") ||
+            bodyText.contains("nothing found") ||
+            bodyText.contains("0 results") ||
+            bodyText.contains("no matches") ||
+            bodyText.contains("could not find")) {
             return true
         }
-        
+
         return false
     }
     
@@ -411,7 +444,10 @@ class SmartNavigationEngine @Inject constructor() {
         val method = form.attr("method").lowercase()
         
         // Find input name
-        val inputNames = listOf("q", "query", "search", "s", "keyword", "term")
+        val inputNames = listOf(
+            "q", "query", "search", "s", "keyword", "keywords",
+            "term", "text", "search_query", "kw", "wd", "k"
+        )
         var inputName = "q"
         
         for (name in inputNames) {
@@ -494,7 +530,17 @@ class SmartNavigationEngine @Inject constructor() {
             ".torrent", "[class*='video']", "[class*='movie']",
             ".grid-item", ".list-item", ".thumb", ".media-item",
             "[data-id]", "[data-video-id]", "[data-url]",
-            "li[class]", "div[class*='item']", "div[class*='card']"
+            "li[class]", "div[class*='item']", "div[class*='card']",
+            // Carousel / slider items
+            ".swiper-slide", ".owl-item", ".slick-slide",
+            // Table-based layouts
+            "tr.row", "table tbody tr",
+            // More generic patterns
+            "[class*='result']", "[class*='search-result']",
+            ".listing-item", ".search-result-item",
+            ".media", ".media-body",
+            "[class*='episode']", "[class*='show']",
+            "[class*='series']", "[class*='stream']"
         )
 
         for (selector in itemSelectors) {
@@ -613,12 +659,15 @@ class SmartNavigationEngine @Inject constructor() {
     private fun isContentUrl(url: String): Boolean {
         val excludePatterns = listOf(
             "/category/", "/categories/", "/tag/", "/tags/",
-            "/page/", "/user/", "/login", "/register",
+            "/user/", "/login", "/register", "/signup",
             "/about", "/contact", "/privacy", "/terms",
-            "javascript:", "#", "mailto:", "tel:"
+            "javascript:", "mailto:", "tel:",
+            "/sitemap", "/feed", "/rss", "/atom"
         )
-        
+        // Note: /page/ intentionally excluded from filters – pagination URLs
+        // contain real content and must not be treated as category pages.
         val urlLower = url.lowercase()
+        if (urlLower == "#" || urlLower.startsWith("#")) return false
         return excludePatterns.none { urlLower.contains(it) }
     }
     
@@ -667,7 +716,8 @@ class SmartNavigationEngine @Inject constructor() {
 
         // Also try numeric page pattern: detect page=1 or /page/1/ and build page 2,3...
         if (links.isEmpty()) {
-            val currentUrl = baseUrl
+            // Use the document's own URL when available, fall back to baseUrl
+            val currentUrl = document.location().takeIf { it.startsWith("http") } ?: baseUrl
             val pagePatterns = listOf(
                 Regex("(.*[?&]page=)(\\d+)(.*)"),
                 Regex("(.*[?&]p=)(\\d+)(.*)"),

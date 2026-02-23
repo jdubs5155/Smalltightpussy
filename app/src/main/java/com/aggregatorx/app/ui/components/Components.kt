@@ -46,6 +46,8 @@ import androidx.media3.common.C
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
@@ -457,8 +459,9 @@ fun InlineThumbnailPreview(
     // Create ExoPlayer when we have a video URL and want to play - optimized for fast preview
     DisposableEffect(isPlaying, extractedVideoUrl) {
         if (isPlaying && !extractedVideoUrl.isNullOrEmpty()) {
+            val urlStr = extractedVideoUrl!!
             // Optimized load control for instant preview playback
-            val fastLoadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            val fastLoadControl = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(
                     1500,   // Min buffer before playback - very fast start
                     15000,  // Max buffer - small for preview
@@ -467,20 +470,39 @@ fun InlineThumbnailPreview(
                 )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
-            
-            val player = androidx.media3.exoplayer.ExoPlayer.Builder(context)
+
+            // HTTP data source factory with browser-like headers (works for any provider)
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(20_000)
+                .setAllowCrossProtocolRedirects(true)
+
+            // Auto-detect stream format from URL
+            val mediaItem = MediaItem.fromUri(Uri.parse(urlStr))
+            val mediaSource = when {
+                urlStr.contains(".m3u8", ignoreCase = true) ||
+                urlStr.contains("hls", ignoreCase = true) && urlStr.contains("manifest", ignoreCase = true) ->
+                    HlsMediaSource.Factory(httpDataSourceFactory).createMediaSource(mediaItem)
+                urlStr.contains(".mpd", ignoreCase = true) ||
+                urlStr.contains("dash", ignoreCase = true) && urlStr.contains("manifest", ignoreCase = true) ->
+                    DashMediaSource.Factory(httpDataSourceFactory).createMediaSource(mediaItem)
+                else ->
+                    ProgressiveMediaSource.Factory(httpDataSourceFactory).createMediaSource(mediaItem)
+            }
+
+            val player = ExoPlayer.Builder(context)
                 .setLoadControl(fastLoadControl)
                 .build().apply {
-                val mediaItem = MediaItem.fromUri(Uri.parse(extractedVideoUrl))
-                setMediaItem(mediaItem)
-                repeatMode = Player.REPEAT_MODE_ALL
-                volume = 0f // Muted preview
-                prepare()
-                playWhenReady = true
-            }
+                    setMediaSource(mediaSource)
+                    repeatMode = Player.REPEAT_MODE_ALL
+                    volume = 0f // Muted preview
+                    prepare()
+                    playWhenReady = true
+                }
             exoPlayer = player
         }
-        
+
         onDispose {
             exoPlayer?.release()
             exoPlayer = null

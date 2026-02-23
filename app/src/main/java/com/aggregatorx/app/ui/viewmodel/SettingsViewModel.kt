@@ -17,18 +17,7 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(downloadSettings = it.downloadSettings.copy(downloadDirectory = uri)) }
         // TODO: Persist to repository or DataStore if needed
     }
-    var cacheResults: Boolean
-        get() = _uiState.value.cacheResults
-        set(value) {
-            _uiState.update { it.copy(cacheResults = value) }
-            repository.cacheResults = value
-        }
 
-    fun clearSearchCache() {
-        repository.clearSearchCache()
-        _uiState.update { it.copy(message = "Search cache cleared") }
-    }
-    
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
     

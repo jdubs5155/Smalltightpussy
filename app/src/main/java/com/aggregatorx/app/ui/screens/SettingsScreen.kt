@@ -63,56 +63,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Cache Toggle Section
-            item {
-                SettingsCard(
-                    title = "Cache Search Results",
-                    subtitle = "When enabled, repeated queries are instant. Disable for always-fresh results.",
-                    icon = Icons.Default.Storage
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Enable Caching", color = TextPrimary, modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = uiState.cacheResults,
-                            onCheckedChange = { viewModel.cacheResults = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = CyberCyan,
-                                uncheckedThumbColor = DarkSurfaceVariant
-                            )
-                        )
-                    }
-                }
-            }
-            // Cache Management Section
-            item {
-                SettingsCard(
-                    title = "Clear Search Cache",
-                    subtitle = "Remove cached results for repeated queries",
-                    icon = Icons.Default.Delete
-                ) {
-                    Button(
-                        onClick = viewModel::clearSearchCache,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentOrange,
-                            contentColor = DarkBackground
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Clear Search Cache", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            
             // Add Custom URL Section
             item {
                 SettingsCard(

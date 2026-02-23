@@ -95,7 +95,25 @@ class RankingEngine @Inject constructor() {
             "live" to listOf("livestream", "live stream", "broadcast"),
             "old" to listOf("classic", "vintage", "retro", "throwback"),
             "funny" to listOf("comedy", "humor", "hilarious", "lol"),
-            "scary" to listOf("horror", "terrifying", "creepy", "spooky")
+            "scary" to listOf("horror", "terrifying", "creepy", "spooky"),
+            // Torrent / file terms
+            "torrent" to listOf("magnet", "download", "p2p", "seedbox"),
+            "stream" to listOf("streaming", "watch online", "live stream", "play"),
+            "4k" to listOf("uhd", "ultra hd", "2160p", "ultra-hd"),
+            "bluray" to listOf("blu-ray", "blu ray", "bd", "bdrip"),
+            "remux" to listOf("bdremux", "bdmv", "full bluray"),
+            // Time / era
+            "new" to listOf("latest", "recent", "fresh", "updated", "newest"),
+            "popular" to listOf("trending", "viral", "top", "best", "hot"),
+            // Content type extras
+            "clip" to listOf("short", "snippet", "cut", "highlight"),
+            "show" to listOf("tv show", "television", "programme", "program"),
+            "documentary" to listOf("doc", "docuseries", "documentary film"),
+            "cartoon" to listOf("animated", "animation", "anime"),
+            "indian" to listOf("bollywood", "hindi", "desi", "tollywood"),
+            "kids" to listOf("children", "family", "cartoon", "toddler"),
+            "sport" to listOf("sports", "match", "game", "league", "cup"),
+            "music" to listOf("song", "audio", "album", "track", "mp3")
         )
         
         // Common stop words to ignore in matching
@@ -143,17 +161,41 @@ class RankingEngine @Inject constructor() {
             }
         }
 
+        // Cross-provider boost: results corroborated by 2+ providers score higher.
+        // Group by normalised URL; each additional provider mention adds a 10% boost.
+        val urlProviderCount = scoredResults
+            .groupBy { normalizeUrl(it.result.url) }
+            .mapValues { (_, v) -> v.map { it.result.providerId }.toSet().size }
+
+        val boostedResults = scoredResults.map { sr ->
+            val providerCount = urlProviderCount[normalizeUrl(sr.result.url)] ?: 1
+            if (providerCount > 1) {
+                val boost = 1f + (providerCount - 1) * 0.10f
+                sr.copy(score = (sr.score * boost).coerceAtMost(100f))
+            } else sr
+        }
+
+        // Adaptive score threshold: lower floor when total results are scarce
+        val totalAvailable = boostedResults.size
+        val adaptiveTopThreshold = when {
+            totalAvailable < 10  -> MIN_SCORE_FOR_TOP * 0.25f
+            totalAvailable < 30  -> MIN_SCORE_FOR_TOP * 0.50f
+            totalAvailable < 60  -> MIN_SCORE_FOR_TOP * 0.75f
+            else                 -> MIN_SCORE_FOR_TOP
+        }
+        val adaptiveRelatedThreshold = adaptiveTopThreshold * 0.25f
+
         // Get top results - best matches first
-        var topResults = scoredResults
-            .filter { it.score >= MIN_SCORE_FOR_TOP }
+        var topResults = boostedResults
+            .filter { it.score >= adaptiveTopThreshold }
             .distinctBy { normalizeTitle(it.result.title) }
             .sortedByDescending { it.score }
             .take(30)
             .map { it.result.copy(relevanceScore = it.score) }
 
         // Find related/similar results (partial matches, fuzzy matches, synonym matches)
-        var relatedResults = scoredResults
-            .filter { it.score >= MIN_SCORE_FOR_RELATED && it.score < MIN_SCORE_FOR_TOP }
+        var relatedResults = boostedResults
+            .filter { it.score >= adaptiveRelatedThreshold && it.score < adaptiveTopThreshold }
             .sortedByDescending { it.score }
             .distinctBy { normalizeTitle(it.result.title) }
             .take(50)
@@ -162,7 +204,7 @@ class RankingEngine @Inject constructor() {
         // PASS 2: If few top results, progressively lower threshold and add more
         if (topResults.size < MIN_TOP_RESULTS) {
             // First try synonym-based matches
-            val synonymResults = findSynonymMatches(query, scoredResults, topResults, relatedResults)
+            val synonymResults = findSynonymMatches(query, boostedResults, topResults, relatedResults)
             topResults = (topResults + synonymResults).distinctBy { it.url }.take(30)
         }
         
@@ -182,7 +224,7 @@ class RankingEngine @Inject constructor() {
         // PASS 3: Keyword-based broadening - use individual keywords for wider net
         if (topResults.size < MIN_TOP_RESULTS && queryKeywords.size > 1) {
             val existingUrls = (topResults + relatedResults).map { it.url }.toSet()
-            val keywordResults = scoredResults
+            val keywordResults = boostedResults
                 .filter { it.result.url !in existingUrls }
                 .filter { scored ->
                     val titleLower = scored.result.title.lowercase()
@@ -208,7 +250,7 @@ class RankingEngine @Inject constructor() {
         // This is the ultimate fallback - show what the providers have
         if (topResults.size + relatedResults.size < MIN_TOP_RESULTS + MIN_RELATED_RESULTS) {
             val existingUrls = (topResults + relatedResults).map { it.url }.toSet()
-            val additionalRelated = scoredResults
+            val additionalRelated = boostedResults
                 .filter { it.result.url !in existingUrls }
                 .sortedByDescending { it.score }
                 .take(MIN_RELATED_RESULTS)
@@ -595,6 +637,21 @@ class RankingEngine @Inject constructor() {
         return title.lowercase()
             .replace(Regex("[^a-z0-9]"), "")
             .take(50)
+    }
+
+    /**
+     * Normalize URL for cross-provider deduplication.
+     * Strips scheme, www prefix, trailing slash, and common tracking params.
+     */
+    private fun normalizeUrl(url: String): String {
+        return try {
+            val u = java.net.URL(url)
+            val host = u.host.removePrefix("www.").lowercase()
+            val path = u.path.trimEnd('/').lowercase()
+            "$host$path"
+        } catch (_: Exception) {
+            url.lowercase().trimEnd('/')
+        }
     }
     
     /**

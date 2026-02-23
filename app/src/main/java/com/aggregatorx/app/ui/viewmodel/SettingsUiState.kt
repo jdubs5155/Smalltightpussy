@@ -5,7 +5,6 @@ import com.aggregatorx.app.data.model.Provider
 import com.aggregatorx.app.data.model.SiteAnalysis
 
 data class SettingsUiState(
-    val cacheResults: Boolean = true,
     val customUrl: String = "",
     val isAnalyzing: Boolean = false,
     val lastAnalysis: SiteAnalysis? = null,

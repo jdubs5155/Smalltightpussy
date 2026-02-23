@@ -99,12 +99,15 @@ class ScrapingEngine @Inject constructor(
             "/stream", "/view", "/v/", "/e/", "-watch", "-online",
             "-full", "-hd", "-720p", "-1080p", "-episode-"
         )
+
+        // Cache TTL: 10 minutes
+        private const val CACHE_TTL_MS = 10 * 60 * 1000L
     }
-    
+
     /**
      * Search across all enabled providers
      * Returns a Flow that emits results as they come in from each provider
-     * 
+     *
      * RESILIENT DESIGN:
      * - GUARANTEES all enabled providers are scraped (never skips any)
      * - Never breaks the loop even if individual providers fail
@@ -113,9 +116,14 @@ class ScrapingEngine @Inject constructor(
      * - Includes comprehensive error handling per-provider
      * - Auto-retries with fallback strategies including headless browser
      */
-    // In-memory cache for popular queries (simple LRU)
-    private val resultCache = object : LinkedHashMap<String, List<ProviderSearchResults>>(100, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<ProviderSearchResults>>?): Boolean {
+    // Cache entry wraps results with a timestamp for TTL-based eviction
+    private data class CacheEntry(
+        val results: List<ProviderSearchResults>,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val resultCache = object : LinkedHashMap<String, CacheEntry>(100, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CacheEntry>?): Boolean {
             return size > 100
         }
     }
@@ -123,13 +131,13 @@ class ScrapingEngine @Inject constructor(
     var cacheResults: Boolean = true
 
     fun searchAllProviders(query: String, cache: Boolean = cacheResults): Flow<ProviderSearchResults> = flow {
-        // Check cache first
+        // Check cache first (respects TTL)
         if (cache) {
-            val cachedResults = synchronized(resultCache) {
+            val cachedEntry = synchronized(resultCache) {
                 resultCache[query]
             }
-            if (cachedResults != null) {
-                cachedResults.forEach { emit(it) }
+            if (cachedEntry != null && System.currentTimeMillis() - cachedEntry.timestamp < CACHE_TTL_MS) {
+                cachedEntry.results.forEach { emit(it) }
                 return@flow
             }
         }
@@ -193,7 +201,7 @@ class ScrapingEngine @Inject constructor(
         // Cache successful results
         if (cache && results.any { it.success }) {
             synchronized(resultCache) {
-                resultCache[query] = results
+                resultCache[query] = CacheEntry(results)
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -353,18 +361,28 @@ class ScrapingEngine @Inject constructor(
         return results.filter { result ->
             val titleLower = result.title.lowercase()
             val urlLower = result.url.lowercase()
-            
+
+            // Must have a meaningful title
+            if (result.title.trim().length < 3) return@filter false
+
+            // Must have a meaningful URL (not just the base URL itself)
+            val path = try { java.net.URL(result.url).path } catch (_: Exception) { result.url }
+            if (path.length <= 1) return@filter false  // root / or empty
+
             // Filter out category/navigation links only
             val isCategoryLink = CATEGORY_URL_PATTERNS.any { urlLower.contains(it) }
-            
-            // Filter out generic category names only if they have no description
-            val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES && 
+
+            // Filter out generic category names only if they have no description AND no thumbnail
+            val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES &&
                               result.description.isNullOrEmpty() &&
                               result.thumbnailUrl.isNullOrEmpty()
-            
+
+            // Exclude common non-content file types
+            val isExcludedExtension = urlLower.matches(Regex(".*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)(\\?.*)?$"))
+
             // Only strict filter: Must not be a category link and not too generic
             // Let ranking engine handle query relevance scoring
-            !isCategoryLink && !isTooGeneric
+            !isCategoryLink && !isTooGeneric && !isExcludedExtension
         }
     }
     
@@ -631,9 +649,7 @@ class ScrapingEngine @Inject constructor(
             val description = findDescriptionInDocument(document, url)
             val thumbnailUrl = contentLink.thumbnail  // correct field (was taking .title before)
 
-            val relevance = calculateRelevanceScore(title, query)
-            val descRelevance = if (description != null) calculateRelevanceScore(description, query) * 0.5f else 0f
-            val combinedRelevance = relevance + descRelevance
+            val combinedRelevance = calculateRelevanceScore(title, query, description, url)
 
             val result = SearchResult(
                 title = title,
@@ -813,21 +829,44 @@ class ScrapingEngine @Inject constructor(
     }
     
     /**
-     * Generic scraping for sites without configuration
+     * Generic scraping for sites without configuration.
+     * Uses the full expanded URL-pattern list (mirrors SmartNavigationEngine patterns)
+     * so that even the initial generic scrape has high coverage.
      */
     private suspend fun scrapeGeneric(
-        provider: Provider, 
+        provider: Provider,
         query: String
     ): List<SearchResult> = withContext(Dispatchers.IO) {
-        // Try common search URL patterns
+        val enc = URLEncoder.encode(query, "UTF-8")
+        val slug = query.trim().lowercase().replace(Regex("\\s+"), "-")
+        val plus = query.trim().replace(Regex("\\s+"), "+")
+        val base = provider.baseUrl.trimEnd('/')
+
         val searchPatterns = listOf(
-            "${provider.baseUrl}/search?q=${URLEncoder.encode(query, "UTF-8")}",
-            "${provider.baseUrl}/search?query=${URLEncoder.encode(query, "UTF-8")}",
-            "${provider.baseUrl}/search/${URLEncoder.encode(query, "UTF-8")}",
-            "${provider.baseUrl}/?s=${URLEncoder.encode(query, "UTF-8")}",
-            "${provider.baseUrl}/search.php?q=${URLEncoder.encode(query, "UTF-8")}"
+            "$base/search?q=$enc",
+            "$base/?s=$enc",
+            "$base/search?query=$enc",
+            "$base/?q=$enc",
+            "$base/search?s=$enc",
+            "$base/search?keyword=$enc",
+            "$base/search?keywords=$enc",
+            "$base/search?term=$enc",
+            "$base/search?text=$enc",
+            "$base/?search_query=$enc",
+            "$base/results?q=$enc",
+            "$base/videos?search=$enc",
+            "$base/movies?search=$enc",
+            "$base/search.php?q=$enc",
+            "$base/search.html?q=$enc",
+            "$base/find?q=$enc",
+            "$base/index.php?s=$enc",
+            "$base/index.php?q=$enc",
+            "$base/?search=$enc",
+            "$base/search/$enc",
+            "$base/search/$slug",
+            "$base/api/search?q=$enc"
         )
-        
+
         for (pattern in searchPatterns) {
             try {
                 val document = fetchDocument(pattern)
@@ -839,7 +878,7 @@ class ScrapingEngine @Inject constructor(
                 continue
             }
         }
-        
+
         emptyList()
     }
     
@@ -1059,7 +1098,7 @@ class ScrapingEngine @Inject constructor(
                 ?: extractTitleFromUrl(link.url)
                 ?: continue
 
-            val relevanceScore = calculateRelevanceScore(title, query)
+            val relevanceScore = calculateRelevanceScore(title, query, url = link.url)
             results.add(
                 SearchResult(
                     title = title,
@@ -1072,7 +1111,7 @@ class ScrapingEngine @Inject constructor(
             )
         }
 
-        results.sortedByDescending { it.relevanceScore }.take(60)
+        results.sortedByDescending { it.relevanceScore }.take(100)
     }
 
     /**
@@ -1257,7 +1296,7 @@ class ScrapingEngine @Inject constructor(
                         url = url,
                         description = description,
                         thumbnailUrl = thumbnail,
-                        relevanceScore = calculateRelevanceScore(title, query)
+                        relevanceScore = calculateRelevanceScore(title, query, description, url)
                     )
                     
                     allResults.add(result)
@@ -1414,51 +1453,96 @@ class ScrapingEngine @Inject constructor(
     }
     
     /**
-     * Calculate relevance score for ranking results
+     * Calculate relevance score for ranking results.
+     * Considers title, optional description, and URL path keywords.
      */
-    private fun calculateRelevanceScore(title: String, query: String): Float {
+    private fun calculateRelevanceScore(
+        title: String,
+        query: String,
+        description: String? = null,
+        url: String? = null
+    ): Float {
         val titleLower = title.lowercase()
         val queryLower = query.lowercase()
-        val queryTerms = queryLower.split(Regex("\\s+"))
-        
+        val queryTerms = queryLower.split(Regex("\\s+")).filter { it.length > 1 }
+
+        if (queryTerms.isEmpty()) return 5f
+
         var score = 0f
-        
-        // Exact match bonus
+
+        // Exact phrase match bonus
         if (titleLower.contains(queryLower)) {
             score += 50f
         }
-        
-        // Individual term matching
+
+        // Individual term matching in title
         var matchedTerms = 0
         queryTerms.forEach { term ->
             if (titleLower.contains(term)) {
                 matchedTerms++
                 score += 10f
-                
+
                 // Bonus for term at start
-                if (titleLower.startsWith(term)) {
-                    score += 15f
-                }
+                if (titleLower.startsWith(term)) score += 15f
+
+                // Position-based bonus: earlier is better
+                val pos = titleLower.indexOf(term)
+                score += maxOf(0f, 5f - pos / 20f)
             }
         }
-        
+
         // Ratio of matched terms
         val matchRatio = matchedTerms.toFloat() / queryTerms.size
         score += matchRatio * 25f
-        
-        // Penalize very long titles
-        if (title.length > 100) {
-            score -= 5f
+
+        // Description matching (weighted at 40% of title)
+        if (!description.isNullOrBlank()) {
+            val descLower = description.lowercase()
+            if (descLower.contains(queryLower)) score += 20f
+            var descMatched = 0
+            queryTerms.forEach { term ->
+                if (descLower.contains(term)) descMatched++
+            }
+            score += (descMatched.toFloat() / queryTerms.size) * 10f
         }
-        
+
+        // URL path matching (slug keywords)
+        if (!url.isNullOrBlank()) {
+            try {
+                val path = java.net.URL(url).path
+                    .lowercase()
+                    .replace("-", " ")
+                    .replace("_", " ")
+                    .replace("/", " ")
+                var urlMatched = 0
+                queryTerms.forEach { term ->
+                    if (path.contains(term)) urlMatched++
+                }
+                score += (urlMatched.toFloat() / queryTerms.size) * 8f
+            } catch (_: Exception) {}
+        }
+
+        // Penalize very long titles (likely spam or navigation text)
+        if (title.length > 120) score -= 8f
+
         // Word order bonus
         if (queryTerms.size > 1) {
             val pattern = queryTerms.joinToString(".*")
-            if (titleLower.matches(Regex(".*$pattern.*"))) {
-                score += 10f
-            }
+            if (titleLower.matches(Regex(".*$pattern.*"))) score += 10f
         }
-        
+
+        // Fuzzy / partial stem match if no direct match
+        if (matchedTerms == 0) {
+            var fuzzyHits = 0
+            queryTerms.forEach { term ->
+                if (term.length >= 4) {
+                    val stem = term.take(term.length - 1)
+                    if (titleLower.contains(stem)) fuzzyHits++
+                }
+            }
+            if (fuzzyHits > 0) score += fuzzyHits * 3f
+        }
+
         return score.coerceIn(0f, 100f)
     }
     

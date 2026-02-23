@@ -122,6 +122,9 @@ class VideoExtractorEngine @Inject constructor() {
             extractFromSourceTag(document, pageUrl)?.let { allVideos.add(it) }
             extractFromScripts(document, pageUrl)?.let { allVideos.add(it) }
             extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromSsrState(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromMetaTags(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromJsonLd(document, pageUrl)?.let { allVideos.add(it) }
             
             if (allVideos.isNotEmpty()) {
                 return@withContext selectHighestQuality(allVideos).url
@@ -158,6 +161,7 @@ class VideoExtractorEngine @Inject constructor() {
             extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
             extractFromJsonLd(document, pageUrl)?.let { allVideos.add(it) }
             extractFromMetaTags(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromSsrState(document, pageUrl)?.let { allVideos.add(it) }
             
             // If standard parsing found videos, select best quality
             if (allVideos.isNotEmpty()) {
@@ -186,6 +190,7 @@ class VideoExtractorEngine @Inject constructor() {
                     extractFromSourceTag(altDoc, pageUrl)?.let { altVideos.add(it) }
                     extractFromScripts(altDoc, pageUrl)?.let { altVideos.add(it) }
                     extractFromDataAttributes(altDoc, pageUrl)?.let { altVideos.add(it) }
+                    extractFromSsrState(altDoc, pageUrl)?.let { altVideos.add(it) }
                     
                     if (altVideos.isNotEmpty()) {
                         val bestVideo = selectHighestQuality(altVideos)
@@ -413,20 +418,40 @@ class VideoExtractorEngine @Inject constructor() {
     private fun extractFromScripts(document: Document, baseUrl: String): VideoUrlInfo? {
         val scripts = document.select("script").html()
         
-        // Common patterns for video URLs in JS - EXPANDED for more providers
+        // Common patterns for video URLs in JS - EXPANDED for more providers and SPA frameworks
         val patterns = listOf(
-            Regex("""(?:src|file|source|url|video_url|videoUrl|stream|streamUrl|playUrl|mediaUrl|hlsUrl|dashUrl)['":\s]+['"]?(https?://[^'">\s]+\.(?:mp4|m3u8|webm|mpd)[^'">\s]*)['"]?""", RegexOption.IGNORE_CASE),
-            Regex("""['"]?(https?://[^'">\s]+\.(?:mp4|m3u8|webm|mpd)[^'">\s]*)['"]?""", RegexOption.IGNORE_CASE),
+            // Standard video URL assignments
+            Regex("""(?:src|file|source|url|video_url|videoUrl|stream|streamUrl|playUrl|mediaUrl|hlsUrl|dashUrl|videoSrc|streamSrc)['":\s]+['"]?(https?://[^'"\s]+\.(?:mp4|m3u8|webm|mpd)[^'"\s]*)['"]?""", RegexOption.IGNORE_CASE),
+            // Any https URL with a video extension
+            Regex("""['"]?(https?://[^'"\s]+\.(?:mp4|m3u8|webm|mpd)[^'"\s]*)['"]?""", RegexOption.IGNORE_CASE),
+            // JWPlayer file config
             Regex("""file:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            // JWPlayer/Video.js sources list
             Regex("""sources:\s*\[\s*\{\s*(?:file|src):\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            // player.src() call
             Regex("""player\.src\(\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            // video: 'url' pattern
             Regex("""video:\s*['"]([^'"]+\.(?:mp4|m3u8|webm))['"]""", RegexOption.IGNORE_CASE),
+            // .setup({ file: 'url' }) VideoJS
             Regex("""\.setup\(\s*\{[^}]*(?:file|src)\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
-            Regex("""atob\(['"]([A-Za-z0-9+/=]+)['"]"""),
+            // base64 encoded URLs (atob)
+            Regex("""atob\(['"]([A-Za-z0-9+/=]{20,})['"]"""),
+            // HLS/DASH specific variables
             Regex("""(?:hls|dash)(?:Url|Source|Stream)\s*[=:]\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            // .load() calls
             Regex("""\.load\(['"]([^'"]+\.(?:mp4|m3u8|webm|mpd))['"]""", RegexOption.IGNORE_CASE),
-            Regex("""(?:videojs|jwplayer|plyr|clappr)\s*[.(][^)]*['"]([^'"]+\.(?:mp4|m3u8|webm|mpd))['"]""", RegexOption.IGNORE_CASE),
-            Regex("""new\s+Hls\([^)]*\)\.loadSource\(['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
+            // Popular player setup calls (expanded list)
+            Regex("""(?:videojs|jwplayer|plyr|clappr|flowplayer|brightcove|kaltura)\s*[.(][^)]*['"]([^'"]+\.(?:mp4|m3u8|webm|mpd))['"]""", RegexOption.IGNORE_CASE),
+            // Hls.js loadSource()
+            Regex("""new\s+Hls\([^)]*\)\.loadSource\(['"]([^'"]+)['"]\)""", RegexOption.IGNORE_CASE),
+            // React/Vue/Angular component props with video URLs
+            Regex("""['"](?:videoUrl|hlsUrl|streamUrl|video_url|media_url|playback_url)['"]:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            // Common JSON API response fields
+            Regex("""['"](?:stream|stream_url|hls|hls_url|mp4|mp4_url|download_url|direct_url)['"]:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE),
+            // CDN domains: cloudfront / akamai / bunny / fastly / digitalocean spaces
+            Regex("""['"]?(https?://[a-z0-9.-]*(?:cloudfront\.net|akamaized\.net|bunnycdn\.com|b-cdn\.net|fastly\.net|digitaloceanspaces\.com)/[^'"\s]+\.(?:mp4|m3u8|webm|mpd)[^'"\s]*)['"]?""", RegexOption.IGNORE_CASE),
+            // window.videoConfig / window.playerConfig
+            Regex("""window\.(?:videoConfig|playerConfig|mediaConfig|streamConfig)\s*=\s*\{[^}]*['"]?(?:src|url|file)['"]?\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
         )
         
         // Find all matches and pick best quality
@@ -468,25 +493,107 @@ class VideoExtractorEngine @Inject constructor() {
         val dataAttrs = listOf(
             "[data-video-url]", "[data-src]", "[data-video]",
             "[data-file]", "[data-stream]", "[data-mp4]",
-            "[data-hls]", "[data-dash]"
+            "[data-hls]", "[data-dash]", "[data-source]",
+            "[data-url]", "[data-sourceurl]", "[data-media]",
+            "[data-playlist]", "[data-videofile]", "[data-streamurl]",
+            "video[data-setup]", "video-js[data-setup]",
+            "[data-jwplayer-id]", "[data-kaltura]",
+            // Brightcove / Video.js config attributes
+            "[data-video-id]", "[data-player]"
         )
         
         for (selector in dataAttrs) {
-            val element = document.select(selector).firstOrNull()
-            if (element != null) {
-                val attrName = selector.removeSurrounding("[", "]")
-                val url = element.attr(attrName)
-                if (url.isNotEmpty() && VIDEO_EXTENSIONS.any { url.contains(it, ignoreCase = true) }) {
+            val elements = document.select(selector)
+            for (element in elements) {
+                // Try all data-* attributes on the element
+                val candidate = element.attributes().filter { it.key.startsWith("data-") }
+                    .mapNotNull { attr ->
+                        val v = attr.value
+                        if (v.isNotEmpty() && VIDEO_EXTENSIONS.any { v.contains(it, ignoreCase = true) }) v
+                        else null
+                    }.firstOrNull()
+                if (candidate != null) {
                     return VideoUrlInfo(
-                        url = normalizeUrl(url, baseUrl),
-                        quality = detectQuality(url),
-                        format = detectFormat(url),
-                        isStream = url.contains(".m3u8") || url.contains(".mpd")
+                        url = normalizeUrl(candidate, baseUrl),
+                        quality = detectQuality(candidate),
+                        format = detectFormat(candidate),
+                        isStream = candidate.contains(".m3u8") || candidate.contains(".mpd")
                     )
+                }
+                // Also check data-setup JSON (Video.js)
+                val setupJson = element.attr("data-setup")
+                if (setupJson.isNotEmpty()) {
+                    Regex("""['"]?(?:src|file)['"]?\s*:\s*['"]([^'"]+)['"]""", RegexOption.IGNORE_CASE)
+                        .find(setupJson)?.groupValues?.getOrNull(1)?.let { url ->
+                            if (url.isNotEmpty()) return VideoUrlInfo(
+                                url = normalizeUrl(url, baseUrl),
+                                quality = detectQuality(url),
+                                format = detectFormat(url),
+                                isStream = url.contains(".m3u8") || url.contains(".mpd")
+                            )
+                        }
                 }
             }
         }
         
+        return null
+    }
+
+    /**
+     * Extract video URLs from SSR/SPA framework state blobs:
+     * window.__NEXT_DATA__ (Next.js), window.__NUXT__ (Nuxt), window.__INITIAL_STATE__,
+     * window.__REDUX_STATE__, window.APP_INIT_DATA, etc.
+     */
+    private fun extractFromSsrState(document: Document, baseUrl: String): VideoUrlInfo? {
+        val stateVarPatterns = listOf(
+            "window.__NEXT_DATA__",
+            "window.__NUXT__",
+            "window.__INITIAL_STATE__",
+            "window.__REDUX_STATE__",
+            "window.APP_INIT_DATA",
+            "window.pageData",
+            "window.__data__",
+            "window.initialProps"
+        )
+
+        for (script in document.select("script")) {
+            val html = script.html()
+            val isStateBLob = stateVarPatterns.any { html.contains(it) } ||
+                (script.attr("id") == "__NEXT_DATA__") ||
+                (html.trimStart().startsWith("{") && html.length > 100)
+
+            if (!isStateBLob) continue
+
+            // Generic pattern: any key that looks like a video URL field
+            val videoUrlPattern = Regex(
+                """['"](?:videoUrl|video_url|hlsUrl|hls_url|streamUrl|stream_url|mp4Url|mp4_url|"""
+                    + """playback_url|media_url|download_url|directUrl|direct_url|src|file|url)['"]\s*:\s*['"]([^'"]+)['"]""",
+                RegexOption.IGNORE_CASE
+            )
+
+            val allFound = videoUrlPattern.findAll(html)
+                .mapNotNull { it.groupValues.getOrNull(1) }
+                .filter { url -> VIDEO_EXTENSIONS.any { url.contains(it, ignoreCase = true) } }
+                .toList()
+
+            val bestUrl = allFound
+                .sortedByDescending { url ->
+                    QUALITY_ORDER.indexOfFirst { q -> url.contains(q, ignoreCase = true) }
+                        .let { if (it == -1) -100 else -it }
+                }
+                .firstOrNull()
+
+            if (bestUrl != null) {
+                val clean = bestUrl.replace("\\", "").trim()
+                return VideoUrlInfo(
+                    url = normalizeUrl(clean, baseUrl),
+                    quality = detectQuality(clean),
+                    format = detectFormat(clean),
+                    isStream = clean.contains(".m3u8") || clean.contains(".mpd")
+                )
+            }
+        }
+
         return null
     }
     
