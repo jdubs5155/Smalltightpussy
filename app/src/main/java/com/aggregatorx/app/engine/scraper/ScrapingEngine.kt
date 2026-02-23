@@ -356,8 +356,8 @@ class ScrapingEngine @Inject constructor(
      * ENHANCED: Also matches against descriptions and collects related content
      */
     private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
-        // Don't filter too aggressively - let the ranking engine handle query matching
-        // Only filter out obvious non-content (category pages, navigation links)
+        val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 1 }
+
         return results.filter { result ->
             val titleLower = result.title.lowercase()
             val urlLower = result.url.lowercase()
@@ -369,20 +369,34 @@ class ScrapingEngine @Inject constructor(
             val path = try { java.net.URL(result.url).path } catch (_: Exception) { result.url }
             if (path.length <= 1) return@filter false  // root / or empty
 
-            // Filter out category/navigation links only
+            // Filter out category/navigation links
             val isCategoryLink = CATEGORY_URL_PATTERNS.any { urlLower.contains(it) }
+            if (isCategoryLink) return@filter false
 
             // Filter out generic category names only if they have no description AND no thumbnail
             val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES &&
                               result.description.isNullOrEmpty() &&
                               result.thumbnailUrl.isNullOrEmpty()
+            if (isTooGeneric) return@filter false
 
             // Exclude common non-content file types
             val isExcludedExtension = urlLower.matches(Regex(".*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)(\\?.*)?$"))
+            if (isExcludedExtension) return@filter false
 
-            // Only strict filter: Must not be a category link and not too generic
-            // Let ranking engine handle query relevance scoring
-            !isCategoryLink && !isTooGeneric && !isExcludedExtension
+            // ── RELEVANCE GATE ──────────────────────────────────────────────
+            // Result must contain at least ONE query keyword in title, description, or URL path.
+            // This prevents completely unrelated homepage / trending content from leaking through.
+            if (queryWords.isNotEmpty()) {
+                val descLower = result.description?.lowercase() ?: ""
+                val urlPath = try {
+                    java.net.URL(result.url).path.lowercase().replace("-", " ").replace("_", " ")
+                } catch (_: Exception) { urlLower }
+                val combined = "$titleLower $descLower $urlPath"
+                val hasAnyKeyword = queryWords.any { combined.contains(it) }
+                if (!hasAnyKeyword) return@filter false
+            }
+
+            true
         }
     }
     
@@ -427,21 +441,22 @@ class ScrapingEngine @Inject constructor(
         if (word1 == word2) return true
         if (word1.length < 3 || word2.length < 3) return false
         
-        // One contains the other
+        // One contains the other (e.g. "spider" / "spiderman")
         if (word1.contains(word2) || word2.contains(word1)) return true
         
-        // Same start (stem matching)
+        // Same start (stem matching) — must share first 3 letters AND ≥ 4-char prefix
         val minLen = minOf(word1.length, word2.length)
-        if (minLen >= 4 && word1.take(minLen - 1) == word2.take(minLen - 1)) return true
+        if (minLen >= 5 && word1.take(3) == word2.take(3) && word1.take(minLen - 1) == word2.take(minLen - 1)) return true
         
-        // True Levenshtein edit distance check
+        // True Levenshtein edit distance — conservative thresholds
         val maxDist = when {
-            minLen <= 4 -> 1
-            minLen <= 7 -> 2
-            else -> 3
+            minLen <= 4 -> 0   // short words must match exactly
+            minLen <= 6 -> 1
+            minLen <= 9 -> 2
+            else -> 2          // capped at 2 to avoid false positives
         }
         val editDist = levenshteinDistance(word1, word2)
-        return editDist <= maxDist
+        return editDist in 1..maxDist
     }
     
     /**
@@ -487,16 +502,21 @@ class ScrapingEngine @Inject constructor(
         val existingUrls = existingMatches.map { it.url }.toSet()
         val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
         
-        // Find results that partially match or are semantically related
+        // Find results that partially match — require at least one exact keyword
         return allResults
             .filter { it.url !in existingUrls }
+            .filter { result ->
+                // Must contain at least ONE exact query keyword in title or description
+                val combined = "${result.title.lowercase()} ${result.description?.lowercase() ?: ""}"
+                queryWords.any { combined.contains(it) }
+            }
             .map { result ->
                 val relevance = calculatePartialRelevance(result, queryWords)
                 Pair(result, relevance)
             }
-            .filter { it.second > 0.2f }
+            .filter { it.second > 0.4f }
             .sortedByDescending { it.second }
-            .take(20)
+            .take(15)
             .map { it.first.copy(relevanceScore = it.second * 50f) }
     }
     
@@ -1571,14 +1591,19 @@ class ScrapingEngine @Inject constructor(
             try {
                 val document = fetchDocument(homepageUrl)
                 
-                // Extract ALL content from homepage - don't filter by query
-                // The RankingEngine will handle relevance scoring
+                // Extract content from homepage, then keep only results that
+                // actually match the user's query — never return random trending/latest
                 val allResults = extractAllContentFromPage(document, provider)
                 if (allResults.isNotEmpty()) {
-                    // Score them against query for basic ordering
-                    return@withContext allResults.map { result ->
-                        result.copy(relevanceScore = calculateRelevanceScore(result.title, query))
-                    }.sortedByDescending { it.relevanceScore }
+                    val relevant = allResults
+                        .filter { matchesQueryEnhanced(it, query) }
+                        .map { result ->
+                            result.copy(relevanceScore = calculateRelevanceScore(result.title, query))
+                        }
+                        .sortedByDescending { it.relevanceScore }
+                    if (relevant.isNotEmpty()) {
+                        return@withContext relevant
+                    }
                 }
             } catch (e: Exception) {
                 continue

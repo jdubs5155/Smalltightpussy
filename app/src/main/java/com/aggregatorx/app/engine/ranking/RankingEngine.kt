@@ -57,13 +57,13 @@ class RankingEngine @Inject constructor() {
         private const val URL_PATH_MATCH_BONUS = 6f
         private const val NGRAM_MATCH_BONUS = 5f
         
-        // Minimum score thresholds - lowered further for maximum recall
-        private const val MIN_SCORE_FOR_TOP = 0.08f
-        private const val MIN_SCORE_FOR_RELATED = 0.02f
+        // Minimum score thresholds — raised for precision over recall
+        private const val MIN_SCORE_FOR_TOP = 0.15f
+        private const val MIN_SCORE_FOR_RELATED = 0.05f
         
-        // Minimum results to show - increased for better coverage
-        private const val MIN_TOP_RESULTS = 20
-        private const val MIN_RELATED_RESULTS = 30
+        // Target result counts — modest so we never pad with junk
+        private const val MIN_TOP_RESULTS = 10
+        private const val MIN_RELATED_RESULTS = 15
         
         // Levenshtein distance threshold (max edits allowed relative to word length)
         private const val MAX_EDIT_DISTANCE_RATIO = 0.35f
@@ -178,12 +178,12 @@ class RankingEngine @Inject constructor() {
         // Adaptive score threshold: lower floor when total results are scarce
         val totalAvailable = boostedResults.size
         val adaptiveTopThreshold = when {
-            totalAvailable < 10  -> MIN_SCORE_FOR_TOP * 0.25f
-            totalAvailable < 30  -> MIN_SCORE_FOR_TOP * 0.50f
-            totalAvailable < 60  -> MIN_SCORE_FOR_TOP * 0.75f
+            totalAvailable < 10  -> MIN_SCORE_FOR_TOP * 0.60f
+            totalAvailable < 30  -> MIN_SCORE_FOR_TOP * 0.75f
+            totalAvailable < 60  -> MIN_SCORE_FOR_TOP * 0.90f
             else                 -> MIN_SCORE_FOR_TOP
         }
-        val adaptiveRelatedThreshold = adaptiveTopThreshold * 0.25f
+        val adaptiveRelatedThreshold = adaptiveTopThreshold * 0.40f
 
         // Get top results - best matches first
         var topResults = boostedResults
@@ -246,20 +246,7 @@ class RankingEngine @Inject constructor() {
             topResults = (topResults + keywordResults).distinctBy { it.url }.take(30)
         }
         
-        // PASS 4: If STILL few results, add everything available sorted by score  
-        // This is the ultimate fallback - show what the providers have
-        if (topResults.size + relatedResults.size < MIN_TOP_RESULTS + MIN_RELATED_RESULTS) {
-            val existingUrls = (topResults + relatedResults).map { it.url }.toSet()
-            val additionalRelated = boostedResults
-                .filter { it.result.url !in existingUrls }
-                .sortedByDescending { it.score }
-                .take(MIN_RELATED_RESULTS)
-                .map { it.result.copy(relevanceScore = maxOf(it.score, 0.02f)) }
-            
-            relatedResults = (relatedResults + additionalRelated)
-                .distinctBy { normalizeTitle(it.title) }
-                .take(MIN_RELATED_RESULTS)
-        }
+        // (PASS 4 removed — never pad with unrelated content)
 
         // Re-rank results within each successful provider
         val rankedSuccessfulProviders = successfulProviders.map { pr ->
@@ -531,9 +518,9 @@ class RankingEngine @Inject constructor() {
                             synonymMatches * 0.4f + ngramMatches * 0.3f) / queryTerms.size
         score *= (0.3f + coverageRatio * 0.7f)
         
-        // Give minimum score if ANY match found (ensures related results appear)
-        if (titleMatches > 0 || descMatches > 0 || fuzzyMatches > 0 || synonymMatches > 0 || ngramMatches > 0) {
-            score = max(score, 3f)
+        // Small floor only for genuine exact keyword matches (not fuzzy-only)
+        if (titleMatches > 0 || descMatches > 0) {
+            score = max(score, 2f)
         }
         
         // Length penalty for very long titles (likely spam)
