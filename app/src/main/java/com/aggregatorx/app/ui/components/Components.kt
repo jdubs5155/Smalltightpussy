@@ -448,7 +448,8 @@ fun InlineThumbnailPreview(
     duration: String? = null,
     modifier: Modifier = Modifier,
     onLongPress: () -> Unit = {},
-    onVideoExtractionNeeded: (suspend () -> String?)? = null
+    onVideoExtractionNeeded: (suspend () -> String?)? = null,
+    isExtracting: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -660,12 +661,26 @@ fun InlineThumbnailPreview(
                 }
             }
 
-            // Overlay: spinner / play / retry
+            // Overlay: spinner / play / retry / extracting-for-fullscreen
             Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)),
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (isExtracting) 0.55f else 0.22f)),
                 contentAlignment = Alignment.Center
             ) {
                 when {
+                    isExtracting -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = CyberCyan,
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 2.5.dp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "Opening fullscreen…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CyberCyan,
+                            fontSize = 9.sp
+                        )
+                    }
                     isLoading -> CircularProgressIndicator(
                         color = CyberCyan, modifier = Modifier.size(28.dp), strokeWidth = 2.dp
                     )
@@ -677,6 +692,34 @@ fun InlineThumbnailPreview(
                         Icons.Default.PlayCircle, contentDescription = "Play",
                         tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(36.dp)
                     )
+                }
+            }
+
+            // "Hold" hint badge – shown only when idle
+            if (!isExtracting && !isLoading && !playbackFailed) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
+                    shape = RoundedCornerShape(4.dp),
+                    color = CyberCyan.copy(alpha = 0.75f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Fullscreen,
+                            contentDescription = null,
+                            tint = DarkBackground,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            "Hold",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DarkBackground,
+                            fontSize = 8.sp
+                        )
+                    }
                 }
             }
 
@@ -765,6 +808,7 @@ fun SearchResultCard(
                     thumbnailUrl = result.thumbnailUrl,
                     videoUrl = null, // Will be extracted on tap
                     duration = result.duration,
+                    isExtracting = isExtractingForFullscreen,
                     modifier = Modifier.size(140.dp), // Increased size for better visibility
                     onLongPress = {
                         // Long press opens fullscreen player - extract video URL first
@@ -826,18 +870,6 @@ fun SearchResultCard(
                         { onExtractVideoUrl(result.url) }
                     } else null
                 )
-                
-                // Fullscreen player dialog (on long press) - uses extracted video URL
-                if (showFullscreenPlayer && !fullscreenVideoUrl.isNullOrEmpty()) {
-                    VideoPlayerDialog(
-                        videoUrl = fullscreenVideoUrl!!,
-                        title = result.title,
-                        onDismiss = { 
-                            showFullscreenPlayer = false
-                            fullscreenVideoUrl = null
-                        }
-                    )
-                }
                 
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(
@@ -910,6 +942,18 @@ fun SearchResultCard(
                 }
             }
             
+            // Fullscreen player dialog (on long press) - placed at Column level for correct composable scoping
+            if (showFullscreenPlayer && !fullscreenVideoUrl.isNullOrEmpty()) {
+                VideoPlayerDialog(
+                    videoUrl = fullscreenVideoUrl!!,
+                    title = result.title,
+                    onDismiss = {
+                        showFullscreenPlayer = false
+                        fullscreenVideoUrl = null
+                    }
+                )
+            }
+
             // Action buttons row
             if (showControls) {
                 Divider(
