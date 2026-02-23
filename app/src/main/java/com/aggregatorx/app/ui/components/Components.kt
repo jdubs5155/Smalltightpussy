@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.C
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -52,6 +53,8 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import coil.request.CachePolicy
 import java.util.concurrent.ConcurrentHashMap
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.ui.theme.*
@@ -435,7 +438,8 @@ fun StatChip(
 
 /**
  * Inline Thumbnail Preview with Video Playback
- * Plays video directly within the thumbnail box when tapped
+ * Plays video directly within the thumbnail box when tapped.
+ * Supports HLS / DASH / Progressive with automatic format cycling on error.
  */
 @Composable
 fun InlineThumbnailPreview(
@@ -448,58 +452,90 @@ fun InlineThumbnailPreview(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
+
     var isPlaying by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var extractedVideoUrl by remember { mutableStateOf<String?>(videoUrl) }
-    var extractionFailed by remember { mutableStateOf(false) }
     var imageLoadFailed by remember { mutableStateOf(false) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
-    
-    // Create ExoPlayer when we have a video URL and want to play - optimized for fast preview
-    DisposableEffect(isPlaying, extractedVideoUrl) {
+    // 0 = auto-detect, 1 = force HLS, 2 = force DASH, 3 = force Progressive
+    var formatIndex by remember { mutableStateOf(0) }
+    var playbackFailed by remember { mutableStateOf(false) }
+
+    // Build ExoPlayer with the chosen format; recreated whenever formatIndex changes
+    DisposableEffect(isPlaying, extractedVideoUrl, formatIndex) {
         if (isPlaying && !extractedVideoUrl.isNullOrEmpty()) {
             val urlStr = extractedVideoUrl!!
-            // Optimized load control for instant preview playback
-            val fastLoadControl = DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                    1500,   // Min buffer before playback - very fast start
-                    15000,  // Max buffer - small for preview
-                    500,    // Buffer for playback - minimal
-                    1000    // Buffer for rebuffering
-                )
+
+            val loadControl = DefaultLoadControl.Builder()
+                .setBufferDurationsMs(1000, 20000, 600, 1000)
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
-            // HTTP data source factory with browser-like headers (works for any provider)
-            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-                .setConnectTimeoutMs(15_000)
+            // Determine Origin for cross-origin requests
+            val origin = try {
+                val u = java.net.URL(urlStr)
+                "${u.protocol}://${u.host}"
+            } catch (e: Exception) { "" }
+
+            val dsFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
+                .setConnectTimeoutMs(12_000)
                 .setReadTimeoutMs(20_000)
                 .setAllowCrossProtocolRedirects(true)
+                .setDefaultRequestProperties(
+                    mapOf("Accept" to "*/*", "Accept-Language" to "en-US,en;q=0.9")
+                        .let { if (origin.isNotEmpty()) it + ("Origin" to origin) else it }
+                )
 
-            // Auto-detect stream format from URL
             val mediaItem = MediaItem.fromUri(Uri.parse(urlStr))
-            val mediaSource = when {
-                urlStr.contains(".m3u8", ignoreCase = true) ||
-                urlStr.contains("hls", ignoreCase = true) && urlStr.contains("manifest", ignoreCase = true) ->
-                    HlsMediaSource.Factory(httpDataSourceFactory).createMediaSource(mediaItem)
-                urlStr.contains(".mpd", ignoreCase = true) ||
-                urlStr.contains("dash", ignoreCase = true) && urlStr.contains("manifest", ignoreCase = true) ->
-                    DashMediaSource.Factory(httpDataSourceFactory).createMediaSource(mediaItem)
-                else ->
-                    ProgressiveMediaSource.Factory(httpDataSourceFactory).createMediaSource(mediaItem)
+
+            // Determine which format to attempt
+            val format = when (formatIndex) {
+                1 -> "hls"
+                2 -> "dash"
+                3 -> "progressive"
+                else -> when {
+                    urlStr.contains(".m3u8", ignoreCase = true)
+                        || (urlStr.contains("hls", ignoreCase = true)
+                            && urlStr.contains("manifest", ignoreCase = true)) -> "hls"
+                    urlStr.contains(".mpd", ignoreCase = true)
+                        || (urlStr.contains("dash", ignoreCase = true)
+                            && urlStr.contains("manifest", ignoreCase = true)) -> "dash"
+                    else -> "progressive"
+                }
             }
 
-            val player = ExoPlayer.Builder(context)
-                .setLoadControl(fastLoadControl)
-                .build().apply {
-                    setMediaSource(mediaSource)
-                    repeatMode = Player.REPEAT_MODE_ALL
-                    volume = 0f // Muted preview
-                    prepare()
-                    playWhenReady = true
+            val mediaSource = when (format) {
+                "hls" -> HlsMediaSource.Factory(dsFactory)
+                    .setAllowChunklessPreparation(true)
+                    .createMediaSource(mediaItem)
+                "dash" -> DashMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+                else -> ProgressiveMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
+            }
+
+            val player = ExoPlayer.Builder(context).setLoadControl(loadControl).build()
+            player.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    if (formatIndex < 3) {
+                        // Try next format
+                        scope.launch {
+                            exoPlayer?.release()
+                            exoPlayer = null
+                            formatIndex++
+                        }
+                    } else {
+                        // All 3 formats failed
+                        isPlaying = false
+                        playbackFailed = true
+                    }
                 }
+            })
+            player.setMediaSource(mediaSource)
+            player.repeatMode = Player.REPEAT_MODE_ALL
+            player.volume = 0f
+            player.prepare()
+            player.playWhenReady = true
             exoPlayer = player
         }
 
@@ -508,7 +544,7 @@ fun InlineThumbnailPreview(
             exoPlayer = null
         }
     }
-    
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -516,30 +552,46 @@ fun InlineThumbnailPreview(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        if (isPlaying) {
-                            // Stop preview
-                            isPlaying = false
-                            exoPlayer?.release()
-                            exoPlayer = null
-                        } else if (!extractedVideoUrl.isNullOrEmpty()) {
-                            // Play directly if we have URL
-                            isPlaying = true
-                        } else if (onVideoExtractionNeeded != null && !extractionFailed) {
-                            // Try to extract video URL
-                            isLoading = true
-                            scope.launch {
-                                try {
-                                    val url = onVideoExtractionNeeded()
-                                    if (!url.isNullOrEmpty()) {
-                                        extractedVideoUrl = url
-                                        isPlaying = true
-                                    } else {
-                                        extractionFailed = true
+                        when {
+                            isPlaying -> {
+                                // Stop and reset
+                                isPlaying = false
+                                playbackFailed = false
+                                formatIndex = 0
+                                exoPlayer?.release()
+                                exoPlayer = null
+                            }
+                            playbackFailed -> {
+                                // Retry from scratch
+                                playbackFailed = false
+                                formatIndex = 0
+                                extractedVideoUrl = videoUrl // reset to original
+                            }
+                            !extractedVideoUrl.isNullOrEmpty() -> {
+                                // Have URL already — play it
+                                formatIndex = 0
+                                playbackFailed = false
+                                isPlaying = true
+                            }
+                            onVideoExtractionNeeded != null -> {
+                                // Extract then play
+                                isLoading = true
+                                scope.launch {
+                                    try {
+                                        val url = onVideoExtractionNeeded()
+                                        if (!url.isNullOrEmpty()) {
+                                            extractedVideoUrl = url
+                                            formatIndex = 0
+                                            playbackFailed = false
+                                            isPlaying = true
+                                        } else {
+                                            playbackFailed = true
+                                        }
+                                    } catch (e: Exception) {
+                                        playbackFailed = true
+                                    } finally {
+                                        isLoading = false
                                     }
-                                } catch (e: Exception) {
-                                    extractionFailed = true
-                                } finally {
-                                    isLoading = false
                                 }
                             }
                         }
@@ -548,7 +600,7 @@ fun InlineThumbnailPreview(
                 )
             }
     ) {
-        // Show video player when playing
+        // ── Active Player ─────────────────────────────────────────────────────
         if (isPlaying && exoPlayer != null) {
             AndroidView(
                 factory = { ctx ->
@@ -562,126 +614,81 @@ fun InlineThumbnailPreview(
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { playerView ->
-                    playerView.player = exoPlayer
-                }
+                update = { it.player = exoPlayer }
             )
-            
-            // Stop button overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Stop,
-                    contentDescription = "Stop Preview",
-                    tint = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-            
-            // "Playing" indicator
+            // Live badge (tap to stop)
             Surface(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(4.dp),
+                modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
                 shape = RoundedCornerShape(4.dp),
-                color = AccentGreen.copy(alpha = 0.9f)
+                color = AccentGreen.copy(alpha = 0.88f)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "LIVE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        fontSize = 8.sp
-                    )
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
+                    Text("LIVE", style = MaterialTheme.typography.labelSmall, color = Color.White, fontSize = 8.sp)
                 }
             }
         } else {
-            // Show thumbnail
-            if (!thumbnailUrl.isNullOrEmpty() && !imageLoadFailed) {
+            // ── Thumbnail ─────────────────────────────────────────────────────
+            if (!thumbnailUrl.isNullOrEmpty()) {
                 AsyncImage(
-                    model = thumbnailUrl,
+                    model = ImageRequest.Builder(context)
+                        .data(thumbnailUrl)
+                        .crossfade(250)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+                        .addHeader("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
+                        .build(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                     onError = { imageLoadFailed = true },
-                    onLoading = { imageLoadFailed = false }
+                    onSuccess = { imageLoadFailed = false }
                 )
             }
-            
-            // Placeholder when no image
+            // Placeholder
             if (thumbnailUrl.isNullOrEmpty() || imageLoadFailed) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(DarkSurfaceVariant, DarkBackground)
-                            )
-                        ),
+                    modifier = Modifier.fillMaxSize()
+                        .background(Brush.radialGradient(colors = listOf(DarkSurfaceVariant, DarkBackground))),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Image,
-                        contentDescription = null,
-                        tint = TextTertiary,
-                        modifier = Modifier.size(36.dp)
+                    Icon(Icons.Default.Image, contentDescription = null, tint = TextTertiary, modifier = Modifier.size(32.dp))
+                }
+            }
+
+            // Overlay: spinner / play / retry
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f)),
+                contentAlignment = Alignment.Center
+            ) {
+                when {
+                    isLoading -> CircularProgressIndicator(
+                        color = CyberCyan, modifier = Modifier.size(28.dp), strokeWidth = 2.dp
+                    )
+                    playbackFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = AccentOrange, modifier = Modifier.size(22.dp))
+                        Text("Tap to retry", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontSize = 9.sp)
+                    }
+                    else -> Icon(
+                        Icons.Default.PlayCircle, contentDescription = "Play",
+                        tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(36.dp)
                     )
                 }
             }
-            
-            // Play overlay (when not playing)
-            if (!extractionFailed) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.3f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            color = CyberCyan,
-                            modifier = Modifier.size(28.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.PlayCircle,
-                            contentDescription = "Play Preview",
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-                }
-            }
-            
+
             // Duration badge
             duration?.let { dur ->
                 Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
                     shape = RoundedCornerShape(4.dp),
                     color = Color.Black.copy(alpha = 0.7f)
                 ) {
-                    Text(
-                        text = dur,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                    )
+                    Text(dur, style = MaterialTheme.typography.labelSmall, color = Color.White,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                 }
             }
         }
