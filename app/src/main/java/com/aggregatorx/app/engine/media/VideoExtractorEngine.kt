@@ -84,6 +84,12 @@ class VideoExtractorEngine @Inject constructor() {
                 return@withContext pageUrl
             }
             
+            // Also check if the URL responds with a video content-type (handles CDN URLs without extensions)
+            val directCheck = verifyVideoUrl(pageUrl)
+            if (directCheck) {
+                return@withContext pageUrl
+            }
+            
             // Try fast HTML extraction first (no headless browser needed)
             val fastResult = extractVideoUrlFast(pageUrl)
             if (fastResult != null) {
@@ -99,6 +105,26 @@ class VideoExtractorEngine @Inject constructor() {
             null
         } catch (e: Exception) {
             null
+        }
+    }
+    
+    /**
+     * Perform a HEAD request to check if a URL serves video content.
+     * Returns true if the Content-Type is a video MIME type.
+     */
+    private fun verifyVideoUrl(url: String): Boolean {
+        return try {
+            val request = Request.Builder()
+                .url(url)
+                .head()
+                .header("User-Agent", USER_AGENT)
+                .build()
+            val response = httpClient.newCall(request).execute()
+            val ct = response.header("Content-Type")?.lowercase() ?: ""
+            response.close()
+            ct.contains("video") || ct.contains("mpegurl") || ct.contains("dash+xml") || ct.contains("octet-stream")
+        } catch (_: Exception) {
+            false
         }
     }
     
@@ -608,11 +634,11 @@ class VideoExtractorEngine @Inject constructor() {
             
             // Look for contentUrl or embedUrl
             val urlPatterns = listOf(
-                Regex(""""contentUrl"\s*:\s*"([^"]+)""""),
-                Regex(""""embedUrl"\s*:\s*"([^"]+)""""),
-                Regex(""""url"\s*:\s*"([^"]+\.(?:mp4|m3u8|webm))""""),
-                Regex(""""videoUrl"\s*:\s*"([^"]+)""""),
-                Regex(""""streamUrl"\s*:\s*"([^"]+)"""")
+                Regex(""""contentUrl"\s*:\s*"([^"]+)${"\""}"""),
+                Regex(""""embedUrl"\s*:\s*"([^"]+)${"\""}"""),
+                Regex(""""url"\s*:\s*"([^"]+\.(?:mp4|m3u8|webm))${"\""}"""),
+                Regex(""""videoUrl"\s*:\s*"([^"]+)${"\""}"""),
+                Regex(""""streamUrl"\s*:\s*"([^"]+)${'"'}""")
             )
             
             for (pattern in urlPatterns) {

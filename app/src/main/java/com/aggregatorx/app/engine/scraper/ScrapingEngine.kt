@@ -356,7 +356,7 @@ class ScrapingEngine @Inject constructor(
      * ENHANCED: Also matches against descriptions and collects related content
      */
     private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
-        val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 1 }
+        val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
 
         return results.filter { result ->
             val titleLower = result.title.lowercase()
@@ -442,7 +442,12 @@ class ScrapingEngine @Inject constructor(
         if (word1.length < 3 || word2.length < 3) return false
         
         // One contains the other (e.g. "spider" / "spiderman")
-        if (word1.contains(word2) || word2.contains(word1)) return true
+        // Guard: the shorter word must be ≥ 60% the length of the longer to prevent
+        // false positives like "art" matching "started"
+        val shorter = if (word1.length <= word2.length) word1 else word2
+        val longer  = if (word1.length <= word2.length) word2 else word1
+        if (shorter.length >= 4 && shorter.length.toFloat() / longer.length >= 0.6f &&
+            longer.contains(shorter)) return true
         
         // Same start (stem matching) — must share first 3 letters AND ≥ 4-char prefix
         val minLen = minOf(word1.length, word2.length)
@@ -701,10 +706,10 @@ class ScrapingEngine @Inject constructor(
 
             if (combined.size < 5 && allExtracted.size > combined.size) {
                 val existingUrls = combined.map { it.url }.toSet()
-                val remaining = allExtracted
-                    .filter { it.url !in existingUrls }
-                    .sortedByDescending { it.relevanceScore }
-                    .take(30)
+                // ONLY backfill with results that pass the relevance gate
+                val remaining = validateAndFilterResults(
+                    allExtracted.filter { it.url !in existingUrls }, query
+                ).sortedByDescending { it.relevanceScore }.take(15)
                 return (combined + remaining).distinctBy { it.url }
             }
 
@@ -1131,7 +1136,10 @@ class ScrapingEngine @Inject constructor(
             )
         }
 
-        results.sortedByDescending { it.relevanceScore }.take(100)
+        // Filter through relevance gate before returning
+        validateAndFilterResults(results, query)
+            .sortedByDescending { it.relevanceScore }
+            .take(50)
     }
 
     /**

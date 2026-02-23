@@ -8,15 +8,26 @@ import com.aggregatorx.app.engine.media.DownloadManager
 import com.aggregatorx.app.engine.media.DownloadState
 import com.aggregatorx.app.engine.media.VideoExtractorEngine
 import com.aggregatorx.app.engine.media.VideoExtractionResult
+import com.aggregatorx.app.engine.media.VideoStreamResolver
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * Lightweight result returned by video extraction so the UI can forward
+ * both the playable URL **and** the HTTP headers that the CDN expects.
+ */
+data class VideoPreviewResult(
+    val videoUrl: String,
+    val headers: Map<String, String> = emptyMap()
+)
+
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val repository: AggregatorRepository,
     private val videoExtractor: VideoExtractorEngine,
+    private val videoStreamResolver: VideoStreamResolver,
     private val downloadManager: DownloadManager
 ) : ViewModel() {
     
@@ -31,8 +42,8 @@ class SearchViewModel @Inject constructor(
     
     val downloads: StateFlow<Map<String, DownloadState>> = downloadManager.downloads
     
-    // Video URL cache for faster repeated preview loads
-    private val videoUrlCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    // Video URL cache for faster repeated preview loads (caches full result with headers)
+    private val videoPreviewCache = java.util.concurrent.ConcurrentHashMap<String, VideoPreviewResult>()
     
     // Current search job - cancel when new search starts
     private var currentSearchJob: kotlinx.coroutines.Job? = null
@@ -61,7 +72,7 @@ class SearchViewModel @Inject constructor(
             // ALWAYS clear cache for each search to ensure fresh results
             // This prevents stale results from being shown for different queries
             repository.clearSearchCache()
-            videoUrlCache.clear()
+            videoPreviewCache.clear()
             
             // Reset UI state immediately for responsive feedback
             _uiState.update { 
@@ -119,7 +130,7 @@ class SearchViewModel @Inject constructor(
         }
         _providerResults.value = emptyList()
         // Clear video URL cache when search is cleared
-        videoUrlCache.clear()
+        videoPreviewCache.clear()
     }
     
     fun clearError() {
@@ -138,26 +149,77 @@ class SearchViewModel @Inject constructor(
     }
     
     /**
-     * Extract video URL from a page URL - suspend function for inline preview
-     * Returns the extracted video URL or null if extraction fails
-     * Uses caching to speed up repeated requests for the same URL
+     * Extract video URL from a page URL using the FULL resolution chain:
+     *   1) Cache hit
+     *   2) VideoExtractorEngine fast (JSoup, no browser)
+     *   3) VideoStreamResolver (direct → proxy → headless → site-specific extractors)
+     *   4) Fallback: return the page URL itself for embeddable sites
+     *
+     * Returns [VideoPreviewResult] with both the playable URL and the HTTP
+     * headers (Referer / Origin / UA) that the CDN usually requires.
      */
-    suspend fun extractVideoUrlForPreview(pageUrl: String): String? {
-        // Check cache first for instant playback
-        videoUrlCache[pageUrl]?.let { cachedUrl ->
-            return cachedUrl
-        }
-        
+    suspend fun extractVideoForPreview(pageUrl: String): VideoPreviewResult? {
+        // 1. Cache hit
+        videoPreviewCache[pageUrl]?.let { return it }
+
         return try {
-            val extractedUrl = videoExtractor.extractVideoUrlForPreview(pageUrl)
-            // Cache successful extractions for faster future access
-            if (!extractedUrl.isNullOrEmpty()) {
-                videoUrlCache[pageUrl] = extractedUrl
+            // 2. Fast extraction (JSoup only – no headless browser)
+            val fastUrl = videoExtractor.extractVideoUrlForPreview(pageUrl)
+            if (!fastUrl.isNullOrEmpty()) {
+                val result = VideoPreviewResult(
+                    videoUrl = fastUrl,
+                    headers = buildPlaybackHeaders(pageUrl)
+                )
+                videoPreviewCache[pageUrl] = result
+                return result
             }
-            extractedUrl
+
+            // 3. Full resolution chain (proxy → headless → site-specific)
+            val resolved = videoStreamResolver.resolveVideoStream(pageUrl)
+            if (resolved.success && !resolved.streamUrl.isNullOrEmpty()) {
+                val result = VideoPreviewResult(
+                    videoUrl = resolved.streamUrl,
+                    headers = resolved.headers ?: buildPlaybackHeaders(pageUrl)
+                )
+                videoPreviewCache[pageUrl] = result
+                return result
+            }
+
+            // 4. Embeddable sites – just hand the page URL to the player
+            val lower = pageUrl.lowercase()
+            if (lower.contains("youtube.com") || lower.contains("youtu.be") ||
+                lower.contains("vimeo.com") || lower.contains("dailymotion.com")) {
+                val result = VideoPreviewResult(
+                    videoUrl = pageUrl,
+                    headers = buildPlaybackHeaders(pageUrl)
+                )
+                videoPreviewCache[pageUrl] = result
+                return result
+            }
+
+            null
         } catch (e: Exception) {
             null
         }
+    }
+
+    /** Convenience wrapper that keeps the old String?-returning signature for callers that don't need headers. */
+    suspend fun extractVideoUrlForPreview(pageUrl: String): String? {
+        return extractVideoForPreview(pageUrl)?.videoUrl
+    }
+
+    /** Build standard playback headers from the originating page URL. */
+    private fun buildPlaybackHeaders(pageUrl: String): Map<String, String> {
+        val origin = try {
+            val uri = android.net.Uri.parse(pageUrl)
+            "${uri.scheme}://${uri.host}"
+        } catch (_: Exception) { pageUrl }
+        return mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer" to "$origin/",
+            "Origin" to origin,
+            "Accept" to "*/*"
+        )
     }
     
     /**

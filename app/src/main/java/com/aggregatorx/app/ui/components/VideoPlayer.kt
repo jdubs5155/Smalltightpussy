@@ -121,20 +121,17 @@ fun VideoPlayerDialog(
     val activeMediaType = currentFormatOverride ?: detectedMediaType
     val isLikelyValid = remember(videoUrl) { isLikelyVideoUrl(videoUrl) }
     
-    // Show early error for obviously invalid URLs
-    LaunchedEffect(activeMediaType) {
-        if (activeMediaType == MediaType.UNKNOWN && !isLikelyValid && triedFormats.isEmpty()) {
-            hasError = true
-            errorMessage = "URL does not appear to be a video stream. Try opening in browser instead."
-        }
-    }
+    // For UNKNOWN types, always try Progressive first — ExoPlayer will determine the format.
+    // Do NOT show an early error; many valid CDN URLs have no extension at all.
     
     // Create HTTP data source with optimized settings for faster loading
     val httpDataSourceFactory = remember(videoUrl, headers) {
+        val ua = headers?.get("User-Agent")
+            ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         DefaultHttpDataSource.Factory()
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .setConnectTimeoutMs(15000)  // Reduced from 30s for faster failure detection
-            .setReadTimeoutMs(30000)     // Reduced from 60s for faster response
+            .setUserAgent(ua)
+            .setConnectTimeoutMs(15000)
+            .setReadTimeoutMs(30000)
             .setAllowCrossProtocolRedirects(true)
             .apply {
                 headers?.let { hdrs ->
@@ -156,9 +153,9 @@ fun VideoPlayerDialog(
             .build()
     }
     
-    // Create appropriate media source based on URL - only if likely valid
+    // Create appropriate media source based on URL — always attempt playback
     val exoPlayer = remember(videoUrl, retryCount, activeMediaType) {
-        if (hasError && activeMediaType == MediaType.UNKNOWN && triedFormats.size >= 3) null
+        if (hasError && triedFormats.size >= 3) null
         else ExoPlayer.Builder(context)
             .setLoadControl(loadControl)  // Use optimized load control
             .setSeekBackIncrementMs(10000)

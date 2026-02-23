@@ -58,6 +58,7 @@ import coil.request.CachePolicy
 import java.util.concurrent.ConcurrentHashMap
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.ui.theme.*
+import com.aggregatorx.app.ui.viewmodel.VideoPreviewResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -767,6 +768,7 @@ fun SearchResultCard(
     onOpenExternal: () -> Unit = {},
     showControls: Boolean = true,
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
+    onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -775,6 +777,7 @@ fun SearchResultCard(
     
     var showFullscreenPlayer by remember { mutableStateOf(false) }
     var fullscreenVideoUrl by remember { mutableStateOf<String?>(null) }
+    var fullscreenVideoHeaders by remember { mutableStateOf<Map<String, String>?>(null) }
     var isExtractingForFullscreen by remember { mutableStateOf(false) }
     var showExtractionError by remember { mutableStateOf(false) }
     
@@ -811,35 +814,50 @@ fun SearchResultCard(
                     isExtracting = isExtractingForFullscreen,
                     modifier = Modifier.size(140.dp), // Increased size for better visibility
                     onLongPress = {
-                        // Long press opens fullscreen player - extract video URL first
-                        if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null && !isExtractingForFullscreen) {
+                        // Long press opens fullscreen player — use the rich extraction that returns headers
+                        val hasExtractor = onExtractVideoForPreview != null || onExtractVideoUrl != null
+                        if (!result.url.isNullOrEmpty() && hasExtractor && !isExtractingForFullscreen) {
                             isExtractingForFullscreen = true
                             scope.launch {
                                 try {
-                                    val extractedUrl = onExtractVideoUrl(result.url)
-                                    if (!extractedUrl.isNullOrEmpty() && isStreamableVideoUrl(extractedUrl)) {
-                                        // Valid video URL extracted - open fullscreen player
-                                        fullscreenVideoUrl = extractedUrl
-                                        showFullscreenPlayer = true
-                                        showExtractionError = false
-                                    } else if (!extractedUrl.isNullOrEmpty()) {
-                                        // URL returned but might not be a video stream, try anyway
-                                        fullscreenVideoUrl = extractedUrl
-                                        showFullscreenPlayer = true
-                                        showExtractionError = false
-                                    } else {
-                                        // Extraction failed - show error instead of trying page URL
-                                        showExtractionError = true
-                                        withContext(Dispatchers.Main) {
-                                            android.widget.Toast.makeText(
-                                                context,
-                                                "Could not extract video stream. Try opening in browser.",
-                                                android.widget.Toast.LENGTH_SHORT
-                                            ).show()
+                                    // Prefer the new extractor that returns URL + headers
+                                    if (onExtractVideoForPreview != null) {
+                                        val previewResult = onExtractVideoForPreview(result.url)
+                                        if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
+                                            fullscreenVideoUrl = previewResult.videoUrl
+                                            fullscreenVideoHeaders = previewResult.headers
+                                            showFullscreenPlayer = true
+                                            showExtractionError = false
+                                        } else {
+                                            showExtractionError = true
+                                            withContext(Dispatchers.Main) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Could not extract video stream. Try opening in browser.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    } else if (onExtractVideoUrl != null) {
+                                        // Legacy path — no headers
+                                        val extractedUrl = onExtractVideoUrl(result.url)
+                                        if (!extractedUrl.isNullOrEmpty()) {
+                                            fullscreenVideoUrl = extractedUrl
+                                            fullscreenVideoHeaders = null
+                                            showFullscreenPlayer = true
+                                            showExtractionError = false
+                                        } else {
+                                            showExtractionError = true
+                                            withContext(Dispatchers.Main) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Could not extract video stream. Try opening in browser.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    // Extraction error - show toast instead of playing invalid URL
                                     showExtractionError = true
                                     withContext(Dispatchers.Main) {
                                         android.widget.Toast.makeText(
@@ -853,7 +871,6 @@ fun SearchResultCard(
                                 }
                             }
                         } else if (!result.url.isNullOrEmpty()) {
-                            // No extraction function - show helpful message
                             scope.launch {
                                 withContext(Dispatchers.Main) {
                                     android.widget.Toast.makeText(
@@ -947,9 +964,11 @@ fun SearchResultCard(
                 VideoPlayerDialog(
                     videoUrl = fullscreenVideoUrl!!,
                     title = result.title,
+                    headers = fullscreenVideoHeaders,
                     onDismiss = {
                         showFullscreenPlayer = false
                         fullscreenVideoUrl = null
+                        fullscreenVideoHeaders = null
                     }
                 )
             }

@@ -35,6 +35,7 @@ import com.aggregatorx.app.ui.components.*
 import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.ui.viewmodel.SearchUiState
 import com.aggregatorx.app.ui.viewmodel.SearchViewModel
+import com.aggregatorx.app.ui.viewmodel.VideoPreviewResult
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -167,6 +168,9 @@ fun SearchScreen(
                         onExtractVideoUrl = { url ->
                             viewModel.extractVideoUrlForPreview(url)
                         },
+                        onExtractVideoForPreview = { url ->
+                            viewModel.extractVideoForPreview(url)
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -294,6 +298,7 @@ fun ProviderResultsList(
     onDownload: (SearchResult) -> Unit = {},
     onOpenExternal: (SearchResult) -> Unit = {},
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
+    onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
     modifier: Modifier = Modifier
 ) {
     // Separate successful and failed providers (failed go to bottom)
@@ -402,7 +407,8 @@ fun ProviderResultsList(
                         onDownload = { onDownload(result) },
                         onOpenExternal = { onOpenExternal(result) },
                         showControls = true,
-                        onExtractVideoUrl = onExtractVideoUrl
+                        onExtractVideoUrl = onExtractVideoUrl,
+                        onExtractVideoForPreview = onExtractVideoForPreview
                     )
                 }
                 
@@ -437,6 +443,7 @@ fun ProviderResultsList(
                         onOpenExternal = { onOpenExternal(result) },
                         showControls = true,
                         onExtractVideoUrl = onExtractVideoUrl,
+                        onExtractVideoForPreview = onExtractVideoForPreview,
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }

@@ -38,12 +38,12 @@ import kotlin.math.min
 class RankingEngine @Inject constructor() {
     
     companion object {
-        // Scoring weights - rebalanced for better relevance
-        private const val WEIGHT_TEXT_RELEVANCE = 0.45f
-        private const val WEIGHT_PROVIDER_SCORE = 0.08f
-        private const val WEIGHT_FRESHNESS = 0.12f
-        private const val WEIGHT_ENGAGEMENT = 0.20f
-        private const val WEIGHT_QUALITY = 0.15f
+        // Scoring weights — text relevance dominates; non-text signals are secondary
+        private const val WEIGHT_TEXT_RELEVANCE = 0.60f
+        private const val WEIGHT_PROVIDER_SCORE = 0.05f
+        private const val WEIGHT_FRESHNESS = 0.08f
+        private const val WEIGHT_ENGAGEMENT = 0.15f
+        private const val WEIGHT_QUALITY = 0.12f
         
         // Text matching bonuses
         private const val EXACT_MATCH_BONUS = 40f
@@ -57,13 +57,13 @@ class RankingEngine @Inject constructor() {
         private const val URL_PATH_MATCH_BONUS = 6f
         private const val NGRAM_MATCH_BONUS = 5f
         
-        // Minimum score thresholds — raised for precision over recall
-        private const val MIN_SCORE_FOR_TOP = 0.15f
-        private const val MIN_SCORE_FOR_RELATED = 0.05f
+        // Minimum score thresholds — on the SAME 0-100 scale as calculateFinalScore
+        private const val MIN_SCORE_FOR_TOP = 15.0f
+        private const val MIN_SCORE_FOR_RELATED = 5.0f
         
         // Target result counts — modest so we never pad with junk
-        private const val MIN_TOP_RESULTS = 10
-        private const val MIN_RELATED_RESULTS = 15
+        private const val MIN_TOP_RESULTS = 8
+        private const val MIN_RELATED_RESULTS = 12
         
         // Levenshtein distance threshold (max edits allowed relative to word length)
         private const val MAX_EDIT_DISTANCE_RATIO = 0.35f
@@ -307,8 +307,7 @@ class RankingEngine @Inject constructor() {
         return when {
             word.length <= 3 -> 0
             word.length <= 5 -> 1
-            word.length <= 8 -> 2
-            else -> 3
+            else -> 2   // capped at 2 to prevent false positives
         }
     }
     
@@ -341,8 +340,9 @@ class RankingEngine @Inject constructor() {
                     titleLower.contains(synonym) || descLower.contains(synonym)
                 }
             }
+            .filter { it.score >= MIN_SCORE_FOR_RELATED } // must have some base relevance
             .sortedByDescending { it.score }
-            .take(10)
+            .take(8)
             .map { it.result.copy(relevanceScore = it.score + SYNONYM_MATCH_BONUS) }
     }
     
@@ -726,14 +726,14 @@ class RankingEngine @Inject constructor() {
             score += (rating / 10f).coerceIn(0f, 1f)
         }
         
-        return if (factors > 0) score / factors else 0.5f
+        return if (factors > 0) score / factors else 0.0f
     }
     
     /**
      * Calculate quality score based on content indicators
      */
     private fun calculateQualityScore(result: SearchResult): Float {
-        var score = 0.5f
+        var score = 0.0f
         
         // Quality indicator in title
         val qualityIndicators = mapOf(
