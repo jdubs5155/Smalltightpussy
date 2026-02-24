@@ -41,13 +41,14 @@ class VideoExtractorEngine @Inject constructor() {
     
     companion object {
         private const val USER_AGENT = 
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
         
-        // Alternate user agents for fallback
+        // Alternate user agents for fallback (2026)
         private val ALTERNATE_USER_AGENTS = listOf(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1",
+            "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36"
         )
         
         // Video file extensions
@@ -170,6 +171,10 @@ class VideoExtractorEngine @Inject constructor() {
      */
     suspend fun extractVideoUrl(pageUrl: String): VideoExtractionResult = withContext(Dispatchers.IO) {
         try {
+            // ── Host-specific fast-path extractors (bypass generic scraping) ──
+            val hostResult = extractFromKnownHost(pageUrl)
+            if (hostResult != null) return@withContext hostResult
+
             // First try standard HTML parsing
             val document = Jsoup.connect(pageUrl)
                 .userAgent(USER_AGENT)
@@ -843,6 +848,217 @@ class VideoExtractorEngine @Inject constructor() {
             urlLower.contains(".mov") -> "mov"
             else -> ""
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Dedicated host-specific video extractors (2026)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private suspend fun extractFromKnownHost(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        val lowerUrl = url.lowercase()
+        when {
+            lowerUrl.contains("streamtape")   -> extractFromStreamTape(url)
+            lowerUrl.contains("doodstream") ||
+            lowerUrl.contains("dood.w") ||
+            lowerUrl.contains("dood.re")      -> extractFromDoodStream(url)
+            lowerUrl.contains("streamwish") ||
+            lowerUrl.contains("swdyu") ||
+            lowerUrl.contains("awish")        -> extractFromStreamWish(url)
+            lowerUrl.contains("filemoon") ||
+            lowerUrl.contains("fmoonembed")   -> extractFromFileMoon(url)
+            lowerUrl.contains("mixdrop")      -> extractFromMixDrop(url)
+            lowerUrl.contains("voe.sx") ||
+            lowerUrl.contains("voe-unblock")  -> extractFromVOE(url)
+            lowerUrl.contains("vidsrc") ||
+            lowerUrl.contains("vidsrc.to") ||
+            lowerUrl.contains("vidsrc.me")    -> extractFromVidSrc(url)
+            else -> null
+        }
+    }
+
+    /** StreamTape — decodes the obfuscated token from the token JS vars */
+    private suspend fun extractFromStreamTape(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", "https://streamtape.com/")
+                .timeout(12000).ignoreHttpErrors(true).get().html()
+            // StreamTape hides its token in two script vars, then concatenates them
+            val tokenPattern = Regex("""id="ideoooolink[^"]*"[^>]*>[^/]*(//[^<]+)</""")
+            val directLink = tokenPattern.find(html)?.groupValues?.get(1)
+            if (directLink != null) {
+                val cleaned = "https:" + directLink.trim()
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = cleaned,
+                    quality = "auto", format = "mp4", isStream = false
+                )
+            }
+            // Fallback: regex for .mp4 link in JS token concat
+            val fallback = Regex("""(https://[a-z0-9.]+/get_video\?[^'"]+)""").find(html)
+            if (fallback != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = fallback.groupValues[1],
+                    quality = "auto", format = "mp4", isStream = false
+                )
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** DoodStream — solves the MD5 token + ?md5= URL construction */
+    private suspend fun extractFromDoodStream(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", "https://dood.re/")
+                .timeout(12000).ignoreHttpErrors(true).get().html()
+            // DoodStream embeds a /pass_md5/ path
+            val passPattern = Regex("""['"](/pass_md5/[^'"]+)['"]""")
+            val passPath = passPattern.find(html)?.groupValues?.get(1) ?: return@withContext null
+            val base = Regex("""https?://[^/]+""").find(url)?.value ?: "https://dood.re"
+            val passUrl = base + passPath
+            val token = Regex("""[?&]token=([^&'"]+)""").find(html)?.groupValues?.get(1) ?: ""
+            val passResponse = Jsoup.connect(passUrl)
+                .userAgent(USER_AGENT)
+                .header("Referer", url)
+                .timeout(10000).ignoreHttpErrors(true).get().text().trim()
+            if (passResponse.startsWith("http")) {
+                val finalUrl = "$passResponse?token=$token&expiry=${System.currentTimeMillis()}"
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = finalUrl,
+                    quality = "auto", format = "mp4", isStream = false
+                )
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** StreamWish (& mirrors) — HLS m3u8 extraction from JS config */
+    private suspend fun extractFromStreamWish(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", url)
+                .timeout(12000).ignoreHttpErrors(true).get().html()
+            val hlsPattern = Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""")
+            val m3u8 = hlsPattern.find(html)?.groupValues?.get(1)
+            if (m3u8 != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = m3u8,
+                    quality = "auto", format = "hls", isStream = true
+                )
+            }
+            // jwplayer file fallback
+            val jwPattern = Regex("""file\s*:\s*['"](https?://[^'"]+)['"]""")
+            val jwUrl = jwPattern.find(html)?.groupValues?.get(1)
+            if (jwUrl != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = jwUrl,
+                    quality = "auto", format = detectFormat(jwUrl), isStream = jwUrl.contains(".m3u8")
+                )
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** FileMoon — HLS extraction from JS eval'd source */
+    private suspend fun extractFromFileMoon(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", url)
+                .timeout(12000).ignoreHttpErrors(true).get().html()
+            // FileMoon uses jwplayer with a sources array
+            val sourcesPattern = Regex("""sources\s*:\s*\[\s*\{[^}]*file\s*:\s*['"](https?://[^'"]+)['"]""")
+            val fileUrl = sourcesPattern.find(html)?.groupValues?.get(1)
+            if (fileUrl != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = fileUrl,
+                    quality = "auto", format = if (fileUrl.contains(".m3u8")) "hls" else "mp4",
+                    isStream = fileUrl.contains(".m3u8")
+                )
+            }
+            val hlsFallback = Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(html)?.groupValues?.get(1)
+            if (hlsFallback != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = hlsFallback,
+                    quality = "auto", format = "hls", isStream = true
+                )
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** MixDrop — extracts wurl from the obfuscated player JS */
+    private suspend fun extractFromMixDrop(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", "https://mixdrop.ag/")
+                .timeout(12000).ignoreHttpErrors(true).get().html()
+            val wurlPattern = Regex("""wurl\s*=\s*["'](//[^"']+)["']""")
+            val wurl = wurlPattern.find(html)?.groupValues?.get(1)
+            if (wurl != null) {
+                val cleanUrl = "https:$wurl"
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = cleanUrl,
+                    quality = "auto", format = "mp4", isStream = false
+                )
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** VOE — decodes the obfuscated wurl / hls link */
+    private suspend fun extractFromVOE(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", url)
+                .timeout(12000).ignoreHttpErrors(true).get().html()
+            val hlsPattern = Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""")
+            val m3u8 = hlsPattern.find(html)?.groupValues?.get(1)
+            if (m3u8 != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = m3u8,
+                    quality = "auto", format = "hls", isStream = true
+                )
+            }
+            val mp4Pattern = Regex("""['"](https?://[^'"]+\.mp4[^'"]*)['"]""")
+            val mp4Url = mp4Pattern.find(html)?.groupValues?.get(1)
+            if (mp4Url != null) {
+                return@withContext VideoExtractionResult(
+                    success = true, videoUrl = mp4Url,
+                    quality = "auto", format = "mp4", isStream = false
+                )
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    /** VidSrc — follows the embed chain to extract the HLS/mp4 source */
+    private suspend fun extractFromVidSrc(url: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val html = Jsoup.connect(url)
+                .userAgent(USER_AGENT)
+                .header("Referer", "https://vidsrc.to/")
+                .timeout(15000).ignoreHttpErrors(true).get().html()
+            // Look for nested iframe → follow until we find a media URL
+            val iframePattern = Regex("""<iframe[^>]+src=['"]([^'"]+)['"]""")
+            val iframeUrl = iframePattern.find(html)?.groupValues?.get(1)
+            if (iframeUrl != null && iframeUrl.startsWith("http")) {
+                // Recurse once into iframe
+                return@withContext extractFromKnownHost(iframeUrl)
+                    ?: extractVideoUrlFast(iframeUrl)?.let {
+                        VideoExtractionResult(success = true, videoUrl = it, quality = "auto", format = detectFormat(it), isStream = it.contains(".m3u8"))
+                    }
+            }
+            val m3u8 = Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(html)?.groupValues?.get(1)
+            if (m3u8 != null) {
+                return@withContext VideoExtractionResult(success = true, videoUrl = m3u8, quality = "auto", format = "hls", isStream = true)
+            }
+            null
+        } catch (_: Exception) { null }
     }
 }
 

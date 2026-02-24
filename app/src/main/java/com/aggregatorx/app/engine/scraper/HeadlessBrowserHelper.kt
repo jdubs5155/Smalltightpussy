@@ -102,33 +102,89 @@ object HeadlessBrowserHelper {
     private fun createPage(): Page {
         val page = getBrowser().newPage()
         
-        // Set user agent to look like real browser
+        // Set user agent + Chrome 132 full fingerprint headers
         page.setExtraHTTPHeaders(mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
             "Accept-Language" to "en-US,en;q=0.9",
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Encoding" to "gzip, deflate, br",
+            "sec-ch-ua" to "\"Chromium\";v=\"132\", \"Google Chrome\";v=\"132\", \"Not-A.Brand\";v=\"99\"",
+            "sec-ch-ua-mobile" to "?0",
+            "sec-ch-ua-platform" to "\"Windows\"",
+            "Sec-Fetch-Dest" to "document",
+            "Sec-Fetch-Mode" to "navigate",
+            "Sec-Fetch-Site" to "none",
+            "Sec-Fetch-User" to "?1",
+            "Upgrade-Insecure-Requests" to "1",
             "DNT" to "1"
         ))
-        
-        // Inject anti-detection scripts
+
+        // Inject comprehensive Chrome 132 anti-detection fingerprint
         page.addInitScript("""
-            // Overwrite webdriver detection
+            // Remove webdriver flag (most bot checks look for this)
             Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            
-            // Fake plugins
+
+            // Realistic plugin list matching Chrome 132 on Windows 11
             Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
+                get: () => {
+                    const p = Object.create(PluginArray.prototype);
+                    const makePlugin = (name, desc, filename) => {
+                        const pl = Object.create(Plugin.prototype);
+                        Object.defineProperty(pl, 'name', { get: () => name });
+                        Object.defineProperty(pl, 'description', { get: () => desc });
+                        Object.defineProperty(pl, 'filename', { get: () => filename });
+                        Object.defineProperty(pl, 'length', { get: () => 1 });
+                        return pl;
+                    };
+                    const plugins = [
+                        makePlugin('Chrome PDF Plugin', 'Portable Document Format', 'internal-pdf-viewer'),
+                        makePlugin('Chrome PDF Viewer', '', 'mhjfbmdgcfjbbpaeojofohoefgiehjai'),
+                        makePlugin('Native Client', '', 'internal-nacl-plugin')
+                    ];
+                    Object.defineProperty(p, 'length', { get: () => plugins.length });
+                    plugins.forEach((pl, i) => { p[i] = pl; p[pl.name] = pl; });
+                    return p;
+                }
             });
-            
-            // Fake languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-            
-            // Remove automation indicators
+
+            // Realistic languages
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+
+            // Hardware concurrency (8-core machine)
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+
+            // Device memory (8 GB)
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+
+            // Platform
+            Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+
+            // Vendor
+            Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
+
+            // Spoof WebGL renderer/vendor to match real GPU
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37446) return 'Intel(R) Iris(R) Xe Graphics';
+                if (parameter === 37445) return 'Google Inc. (Intel)';
+                return getParameter.call(this, parameter);
+            };
+
+            // Remove Playwright / CDP automation artifacts
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+            delete window.__playwright;
+            delete window.__pw_manual;
+            delete window.__PW_inspect;
+
+            // Resolve permissions query for 'notifications' realistically
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications'
+                    ? Promise.resolve({ state: Notification.permission })
+                    : originalQuery(parameters)
+            );
         """)
         
         return page

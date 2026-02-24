@@ -127,7 +127,7 @@ fun VideoPlayerDialog(
     // Create HTTP data source with optimized settings for faster loading
     val httpDataSourceFactory = remember(videoUrl, headers) {
         val ua = headers?.get("User-Agent")
-            ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
         DefaultHttpDataSource.Factory()
             .setUserAgent(ua)
             .setConnectTimeoutMs(15000)
@@ -140,16 +140,17 @@ fun VideoPlayerDialog(
             }
     }
     
-    // Optimized load control for faster playback start
+    // Optimized load control for faster playback start (2026 network speeds)
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                2500,   // Min buffer before playback starts (reduced from default 15s)
-                30000,  // Max buffer size
-                1000,   // Buffer for playback (reduced from default 2.5s)
-                2000    // Buffer for rebuffering
+                1500,   // Min buffer before playback starts (1.5s — fast fast-forward on modern connections)
+                60000,  // Max buffer size (60s ahead)
+                600,    // Buffer for resuming from stall (very responsive)
+                1500    // Buffer for rebuffering
             )
-            .setPrioritizeTimeOverSizeThresholds(true)  // Prioritize faster start
+            .setPrioritizeTimeOverSizeThresholds(true)  // Always prioritize faster start
+            .setTargetBufferBytes(8 * 1024 * 1024)      // 8 MB target buffer
             .build()
     }
     
@@ -625,7 +626,7 @@ fun VideoPreviewCard(
         // Thumbnail
         if (!thumbnailUrl.isNullOrEmpty()) {
             androidx.compose.foundation.Image(
-                painter = coil.compose.rememberAsyncImagePainter(thumbnailUrl),
+                painter = coil3.compose.rememberAsyncImagePainter(thumbnailUrl),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop

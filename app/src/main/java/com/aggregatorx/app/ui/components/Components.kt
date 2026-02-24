@@ -52,9 +52,9 @@ import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import coil.request.CachePolicy
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.request.CachePolicy
 import java.util.concurrent.ConcurrentHashMap
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.ui.theme.*
@@ -470,7 +470,12 @@ fun InlineThumbnailPreview(
             val urlStr = extractedVideoUrl!!
 
             val loadControl = DefaultLoadControl.Builder()
-                .setBufferDurationsMs(1000, 20000, 600, 1000)
+                .setBufferDurationsMs(
+                    800,    // Min buffer before inline playback (very fast start)
+                    20000,  // Max buffer
+                    400,    // Buffer for resuming playback after stall
+                    800     // Buffer for rebuffering
+                )
                 .setPrioritizeTimeOverSizeThresholds(true)
                 .build()
 
@@ -481,13 +486,18 @@ fun InlineThumbnailPreview(
             } catch (e: Exception) { "" }
 
             val dsFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
-                .setConnectTimeoutMs(12_000)
+                .setUserAgent("Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36")
+                .setConnectTimeoutMs(10_000)
                 .setReadTimeoutMs(20_000)
                 .setAllowCrossProtocolRedirects(true)
                 .setDefaultRequestProperties(
-                    mapOf("Accept" to "*/*", "Accept-Language" to "en-US,en;q=0.9")
-                        .let { if (origin.isNotEmpty()) it + ("Origin" to origin) else it }
+                    mapOf(
+                        "Accept" to "*/*",
+                        "Accept-Language" to "en-US,en;q=0.9",
+                        "Sec-Fetch-Dest" to "video",
+                        "Sec-Fetch-Mode" to "no-cors",
+                        "Sec-Fetch-Site" to "cross-site"
+                    ).let { if (origin.isNotEmpty()) it + ("Origin" to origin) else it }
                 )
 
             val mediaItem = MediaItem.fromUri(Uri.parse(urlStr))
@@ -638,11 +648,8 @@ fun InlineThumbnailPreview(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(thumbnailUrl)
-                        .crossfade(250)
                         .diskCachePolicy(CachePolicy.ENABLED)
                         .memoryCachePolicy(CachePolicy.ENABLED)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
-                        .addHeader("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
                         .build(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),

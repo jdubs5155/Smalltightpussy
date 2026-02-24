@@ -32,7 +32,7 @@ class SmartNavigationEngine @Inject constructor() {
         private const val DEFAULT_TIMEOUT = 12000
         private const val QUICK_TIMEOUT  = 6000
         private const val DEFAULT_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
 
         // Extended search URL patterns (most-to-least common)
         private val SEARCH_URL_PATTERNS = listOf(
@@ -61,21 +61,61 @@ class SmartNavigationEngine @Inject constructor() {
             "{base}/index.php?s={query}",
             "{base}/index.php?q={query}",
             "{base}/?search={query}",
+            "{base}/search?name={query}",
+            "{base}/search?title={query}",
+            "{base}/search?cat=0&search={query}",
+            "{base}/torrents?search={query}",
+            "{base}/torrents.php?search={query}",
+            "{base}/browse.php?search={query}",
+            "{base}/torrent-search?q={query}",
             // API / WordPress REST
             "{base}/api/search?q={query}",
             "{base}/wp-json/wp/v2/search?search={query}",
+            "{base}/wp-json/wp/v2/posts?search={query}",
+            "{base}/wp-json/wp/v2/media?search={query}",
             "{base}/api/v1/search?q={query}",
             "{base}/api/v2/search?q={query}",
+            "{base}/api/v3/search?q={query}",
+            // Ghost CMS
+            "{base}/ghost/api/v4/content/posts/?filter=title:~%27{query}%27&key=",
+            "{base}/ghost/api/content/posts/?filter=title:~%27{query}%27",
+            // Strapi CMS (v4 & v5)
+            "{base}/api/articles?filters[title][\$containsi]={query}",
+            "{base}/api/posts?filters[title][\$containsi]={query}",
+            "{base}/api/videos?filters[title][\$containsi]={query}",
+            "{base}/api/movies?filters[title][\$containsi]={query}",
+            // Directus CMS
+            "{base}/items/articles?filter[title][_contains]={query}",
+            "{base}/items/posts?filter[title][_contains]={query}",
+            "{base}/items/content?filter[title][_contains]={query}",
+            // Contentful
+            "{base}?content_type=blogPost&fields.title[match]={query}",
+            // Generic REST JSON APIs
+            "{base}/api/search?keyword={query}",
+            "{base}/api/search?title={query}",
+            "{base}/api/videos/search?q={query}",
+            "{base}/api/movies/search?q={query}",
             // Slug / path-segment patterns
             "{base}/search/{query}",
             "{base}/search/{query_slug}",
             "{base}/search/videos/{query}",
             "{base}/search/movies/{query}",
+            "{base}/s/{query}",
+            "{base}/q/{query}",
+            "{base}/find/{query}",
+            // Torrent indexer specific
+            "{base}/browse?search={query}&cat=0",
+            "{base}/s/?q={query}&cat=0",
+            "{base}/search?what={query}",
+            "{base}/ajax/movies/search?content={query}",
+            "{base}/suggest?q={query}",
             // Localised patterns
             "{base}/buscar?q={query}",
             "{base}/recherche?q={query}",
             "{base}/suche?q={query}",
-            "{base}/zoeken?q={query}"
+            "{base}/zoeken?q={query}",
+            "{base}/cerca?q={query}",
+            "{base}/pesquisar?q={query}"
         )
 
         // Category page indicators to detect and bypass

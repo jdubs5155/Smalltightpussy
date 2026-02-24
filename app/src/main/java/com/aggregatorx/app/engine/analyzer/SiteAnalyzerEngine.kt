@@ -43,7 +43,7 @@ class SiteAnalyzerEngine @Inject constructor() {
         private const val DEFAULT_TIMEOUT = 30000
         private const val ANALYSIS_CACHE_TTL_MS = 3_600_000L // 1 hour
         private const val DEFAULT_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
         
         // Common selectors for pattern detection
         private val SEARCH_FORM_SELECTORS = listOf(
@@ -73,6 +73,38 @@ class SiteAnalyzerEngine @Inject constructor() {
         private val NAVIGATION_SELECTORS = listOf(
             "nav", ".navigation", ".menu", "#menu", ".navbar", "header nav"
         )
+
+        // CMS detection patterns
+        private val CMS_PATTERNS = mapOf(
+            "WordPress" to listOf("wp-content", "wp-includes", "wp-json", "/wp/"),
+            "Ghost" to listOf("ghost.io", "content/ghost", "/assets/built/"),
+            "Drupal" to listOf("drupal.js", "drupal.min.js", "sites/default/"),
+            "Joomla" to listOf("/templates/", "joomla", "com_content"),
+            "Wix" to listOf("wixstatic.com", "wix.com", "X-Wix-"),
+            "Squarespace" to listOf("squarespace.com", "squarespace-cdn.com"),
+            "Shopify" to listOf("shopify.com", "cdn.shopify.com", "Shopify.theme"),
+            "Strapi" to listOf("/api/", "strapi", "_strapi"),
+            "Contentful" to listOf("contentful.com", "ctfassets.net"),
+            "Webflow" to listOf("webflow.com", "webflow.io"),
+            "Magento" to listOf("mage", "magento", "Magento"),
+            "PrestaShop" to listOf("prestashop", "prestashop.com")
+        )
+
+        // Modern Accept headers that modern browsers send (helps bypass blocks)
+        private val MODERN_REQUEST_HEADERS = mapOf(
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "Accept-Language" to "en-US,en;q=0.9",
+            "Accept-Encoding" to "gzip, deflate, br",
+            "sec-ch-ua" to "\"Chromium\";v=\"132\", \"Google Chrome\";v=\"132\", \"Not-A.Brand\";v=\"99\"",
+            "sec-ch-ua-mobile" to "?0",
+            "sec-ch-ua-platform" to "\"Windows\"",
+            "Sec-Fetch-Dest" to "document",
+            "Sec-Fetch-Mode" to "navigate",
+            "Sec-Fetch-Site" to "none",
+            "Sec-Fetch-User" to "?1",
+            "Upgrade-Insecure-Requests" to "1",
+            "Cache-Control" to "no-cache"
+        )
     }
     
     /**
@@ -92,13 +124,14 @@ class SiteAnalyzerEngine @Inject constructor() {
             val normalizedUrl = normalizeUrl(url)
             val baseUrl = extractBaseUrl(normalizedUrl)
             
-            // Fetch the page
+            // Fetch the page with modern browser headers
             val connection = Jsoup.connect(normalizedUrl)
                 .userAgent(DEFAULT_USER_AGENT)
                 .timeout(DEFAULT_TIMEOUT)
                 .followRedirects(true)
                 .ignoreHttpErrors(true)
                 .ignoreContentType(false)
+                .headers(MODERN_REQUEST_HEADERS)
             
             val response = connection.execute()
             val document = response.parse()
@@ -623,44 +656,140 @@ class SiteAnalyzerEngine @Inject constructor() {
     private fun detectAPIEndpoints(document: Document, html: String): APIAnalysisResult {
         val endpoints = mutableListOf<String>()
         var apiType: String? = null
-        
-        // Look for API calls in scripts
+        val detectedTypes = mutableSetOf<String>()
+
+        // Collect all inline script content for analysis
         val scripts = document.select("script").html()
-        
-        // REST API patterns
-        val restPattern = Regex("""(?:fetch|axios|ajax|get|post)\s*\(\s*['"](\/api\/[^'"]+)['"]""", RegexOption.IGNORE_CASE)
-        restPattern.findAll(scripts).forEach { match ->
-            endpoints.add(match.groupValues[1])
-            apiType = "REST"
-        }
-        
-        // GraphQL patterns
-        if (scripts.contains("graphql", ignoreCase = true) || scripts.contains("query {")) {
-            apiType = "GraphQL"
-            val graphqlPattern = Regex("""['"](\/graphql[^'"]*)['""]""")
-            graphqlPattern.findAll(scripts).forEach { match ->
-                endpoints.add(match.groupValues[1])
+        val allText = html
+
+        // --- REST API patterns (fetch, axios, jQuery ajax, XHR, Angular http) ---
+        val restPatterns = listOf(
+            Regex("""(?:fetch|axios\.get|axios\.post|http\.get|http\.post)\s*\(\s*['"`](\/api\/[^'"`\s\)]+)['"`]""", RegexOption.IGNORE_CASE),
+            Regex("""(?:\$\.ajax|XMLHttpRequest)[^'"]*url['":\s]+['"`](\/[^'"`\s,\)]+)['"`]""", RegexOption.IGNORE_CASE),
+            Regex("""url\s*:\s*['"`](\/api\/[^'"`\s,\)]+)['"`]""", RegexOption.IGNORE_CASE),
+            Regex("""['"`](\/api\/v\d+\/[^'"`\s]+)['"`]"""),
+            Regex("""['"`](\/rest\/[^'"`\s]+)['"`]"""),
+            Regex("""['"`](\/wp-json\/[^'"`\s]+)['"`]"""),  // WordPress REST
+            Regex("""['"`](\/ghost\/api\/[^'"`\s]+)['"`]"""),  // Ghost CMS
+            Regex("""['"`](\/admin\/api\/[^'"`\s]+)['"`]"""),
+            Regex("""['"`](\/content\/api\/[^'"`\s]+)['"`]"""),
+            Regex("""['"`](\/cms\/api\/[^'"`\s]+)['"`]""")
+        )
+        restPatterns.forEach { pattern ->
+            pattern.findAll(scripts).forEach { match ->
+                val ep = match.groupValues[1]
+                if (ep.length > 3 && !ep.contains("//")) {
+                    endpoints.add(ep)
+                    detectedTypes.add("REST")
+                }
             }
         }
-        
-        // JSON endpoints in HTML
-        val jsonPattern = Regex("""['"](https?:\/\/[^'"]+\.json)['""]""")
-        jsonPattern.findAll(html).forEach { match ->
+
+        // --- GraphQL detection ---
+        val graphqlIndicators = listOf("graphql", "gql`", " query {", " mutation {", " subscription {", "ApolloClient", "urql")
+        if (graphqlIndicators.any { scripts.contains(it, ignoreCase = true) }) {
+            detectedTypes.add("GraphQL")
+            listOf(
+                Regex("""['"`](\/graphql[^'"`\s]*)['"`]"""),
+                Regex("""['"](https?:\/\/[^'"`\s]+\/graphql[^'"`\s]*)['"]""")
+            ).forEach { p ->
+                p.findAll(allText).forEach { m -> endpoints.add(m.groupValues[1]) }
+            }
+            // Look for Apollo/GraphQL endpoint config
+            Regex("""uri\s*:\s*['"`]([^'"`\s]+)['"`]""").findAll(scripts).forEach { m ->
+                if (m.groupValues[1].length > 3) endpoints.add(m.groupValues[1])
+            }
+        }
+
+        // --- WebSocket endpoint detection ---
+        val wsPattern = Regex("""new WebSocket\s*\(\s*['"`](wss?:\/\/[^'"`\s]+)['"`]""")
+        wsPattern.findAll(scripts).forEach { match ->
             endpoints.add(match.groupValues[1])
+            detectedTypes.add("WebSocket")
         }
-        
-        // Data attributes with URLs
-        document.select("[data-api], [data-url], [data-endpoint]").forEach { el ->
-            el.attr("data-api").takeIf { it.isNotEmpty() }?.let { endpoints.add(it) }
-            el.attr("data-url").takeIf { it.isNotEmpty() }?.let { endpoints.add(it) }
-            el.attr("data-endpoint").takeIf { it.isNotEmpty() }?.let { endpoints.add(it) }
+
+        // --- Strapi CMS ---
+        if (allText.contains("strapi", ignoreCase = true)) {
+            detectedTypes.add("Strapi")
+            Regex("""['"`](\/api\/[a-z-]+(?:\?[^'"`\s]*)?)['"`]""").findAll(scripts)
+                .forEach { m -> endpoints.add(m.groupValues[1]) }
         }
-        
+
+        // --- Directus CMS ---
+        if (allText.contains("directus", ignoreCase = true)) {
+            detectedTypes.add("Directus")
+            Regex("""['"`](\/items\/[^'"`\s]+)['"`]""").findAll(scripts)
+                .forEach { m -> endpoints.add(m.groupValues[1]) }
+        }
+
+        // --- JSON data endpoints embedded in HTML ---
+        listOf(
+            Regex("""['"`](https?:\/\/[^'"`\s]+\.json[^'"`\s]*)['"`]"""),
+            Regex("""['"`](\/[^'"`\s]+\.json[^'"`\s]*)['"`]"""),
+            Regex("""data-src=['"`](https?:\/\/[^'"`\s]+)['"`]""")
+        ).forEach { p ->
+            p.findAll(allText).forEach { m ->
+                val ep = m.groupValues[1]
+                if (ep.contains("json") || ep.contains("api")) {
+                    endpoints.add(ep)
+                    detectedTypes.add("REST")
+                }
+            }
+        }
+
+        // --- Data attributes ---
+        document.select("[data-api], [data-url], [data-endpoint], [data-src-url], [data-ajax-url]").forEach { el ->
+            listOf("data-api", "data-url", "data-endpoint", "data-src-url", "data-ajax-url").forEach { attr ->
+                el.attr(attr).takeIf { it.isNotEmpty() && it.startsWith("/") }?.let {
+                    endpoints.add(it)
+                    detectedTypes.add("REST")
+                }
+            }
+        }
+
+        // --- Link tags with API/JSON type ---
+        document.select("link[type='application/json'], link[type='application/ld+json']").forEach { el ->
+            el.attr("href").takeIf { it.isNotEmpty() }?.let { endpoints.add(it) }
+        }
+
+        // Determine primary API type
+        apiType = when {
+            "GraphQL" in detectedTypes -> "GraphQL"
+            "WebSocket" in detectedTypes -> "WebSocket"
+            "Strapi" in detectedTypes -> "Strapi"
+            "Directus" in detectedTypes -> "Directus"
+            "REST" in detectedTypes -> "REST"
+            else -> null
+        }
+
         return APIAnalysisResult(
             hasAPI = endpoints.isNotEmpty(),
-            endpoints = endpoints.distinct(),
+            endpoints = endpoints.distinct().take(20),  // cap to avoid noise
             type = apiType
         )
+    }
+
+    /**
+     * Detect CMS / site platform from HTML content and response headers.
+     */
+    fun detectCMS(html: String, headers: Map<String, String> = emptyMap()): String {
+        val allContent = html + headers.values.joinToString(" ")
+        for ((cms, signals) in CMS_PATTERNS) {
+            if (signals.any { allContent.contains(it, ignoreCase = true) }) return cms
+        }
+        // Framework-level JS detection
+        return when {
+            html.contains("__NEXT_DATA__") || html.contains("/_next/") -> "Next.js"
+            html.contains("__NUXT__") || html.contains("_nuxt/") -> "Nuxt.js"
+            html.contains("data-reactroot") || html.contains("_ReactDOM") -> "React SPA"
+            html.contains("ng-version") || html.contains("ng-app") -> "Angular"
+            html.contains("data-v-") && html.contains("__vue_") -> "Vue.js"
+            html.contains("sveltekit") || html.contains("__sveltekit") -> "SvelteKit"
+            html.contains("astro-island") -> "Astro"
+            html.contains("window.SolidJS") || html.contains("solid-js") -> "SolidJS"
+            html.contains("_app.js") && html.contains("gatsby") -> "Gatsby"
+            else -> "Unknown"
+        }
     }
     
     /**
@@ -714,24 +843,47 @@ class SiteAnalyzerEngine @Inject constructor() {
     }
     
     private fun detectJavaScriptRequirement(document: Document): Boolean {
-        // Check for SPA frameworks
         val html = document.html()
+        // 2026-era SPA and SSR framework indicators
         val indicators = listOf(
-            "ng-app", "data-ng", // Angular
-            "__NEXT_DATA__", "_next", // Next.js
-            "__NUXT__", // Nuxt.js
-            "data-reactroot", "data-react", // React
-            "data-v-", // Vue
-            "window.__INITIAL_STATE__",
-            "application/json\">{"
+            // Angular (2+)
+            "ng-app", "ng-version", "[_nghost", "[_ngcontent",
+            // Next.js / React
+            "__NEXT_DATA__", "/_next/static", "data-reactroot", "__react",
+            // Nuxt.js / Vue
+            "__NUXT__", "/_nuxt/", "data-v-", "__vue_",
+            // SvelteKit
+            "__sveltekit", "sveltekit", "svelte-",
+            // Astro
+            "astro-island", "astro:load", "/@astro/",
+            // Remix
+            "__remixContext", "/__remix-",
+            // SolidJS
+            "solid-js", "window._solid",
+            // Gatsby
+            "___gatsby", "gatsby-runtime",
+            // Qwik
+            "qwik-", "q:base",
+            // Generic SSR/SPA injection
+            "window.__INITIAL_STATE__", "window.__PRELOADED_STATE__",
+            "window.__APP_STATE__", "window.__SERVER_DATA__",
+            // JSON embedded state blobs
+            "application/json\">{",
+            // CloudFlare JS challenge
+            "cf-chl-bypass", "__cf_chl_"
         )
-        
+
         if (indicators.any { html.contains(it) }) return true
-        
-        // Check if content is mostly empty (JS-rendered)
+
+        // If body text is sparse but scripts are heavy → JS-rendered
         val bodyText = document.body()?.text() ?: ""
-        if (bodyText.length < 100 && document.select("script").size > 3) return true
-        
+        val scriptCount = document.select("script[src]").size
+        if (bodyText.length < 200 && scriptCount >= 3) return true
+
+        // Check for noscript fallback warning (classic SPA pattern)
+        val noscript = document.select("noscript").text()
+        if (noscript.contains("JavaScript", ignoreCase = true) && bodyText.length < 500) return true
+
         return false
     }
     
