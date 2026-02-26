@@ -165,13 +165,38 @@ class ScrapingEngine @Inject constructor(
         val results = mutableListOf<ProviderSearchResults>()
 
         // Search ALL providers concurrently - NEVER BREAK THE LOOP, NEVER SKIP ANY
+        // Per-provider timeout prevents a single hung provider from blocking the entire search
+        val perProviderTimeoutMs = 45_000L
+
         coroutineScope {
             val deferredResults = enabledProviders.map { provider ->
                 async {
                     semaphore.withPermit {
                         processedProviders.add(provider.id)
-                        // Wrap in comprehensive try-catch to ensure no single provider breaks the loop
-                        safeSearchProvider(provider, query)
+                        // Wrap in comprehensive try-catch + timeout to ensure no single provider breaks the loop
+                        try {
+                            withTimeoutOrNull(perProviderTimeoutMs) {
+                                safeSearchProvider(provider, query)
+                            } ?: ProviderSearchResults(
+                                provider = provider,
+                                results = emptyList(),
+                                searchTime = perProviderTimeoutMs,
+                                success = false,
+                                errorMessage = "Provider ${provider.name} timed out after ${perProviderTimeoutMs / 1000}s"
+                            )
+                        } catch (e: CancellationException) {
+                            // Coroutine was cancelled (e.g. user navigated away) — still produce a result
+                            // but re-throw so the parent scope knows
+                            throw e
+                        } catch (e: Exception) {
+                            ProviderSearchResults(
+                                provider = provider,
+                                results = emptyList(),
+                                searchTime = 0L,
+                                success = false,
+                                errorMessage = "Provider ${provider.name} error: ${e.message?.take(120)}"
+                            )
+                        }
                     }
                 }
             }
@@ -184,6 +209,19 @@ class ScrapingEngine @Inject constructor(
                     val result = deferred.await()
                     results.add(result)
                     emit(result)
+                } catch (e: CancellationException) {
+                    // Search was cancelled by user — emit what we have and stop cleanly
+                    if (provider != null) {
+                        val cancelledResult = ProviderSearchResults(
+                            provider = provider,
+                            results = emptyList(),
+                            searchTime = 0L,
+                            success = false,
+                            errorMessage = "Search cancelled"
+                        )
+                        results.add(cancelledResult)
+                        emit(cancelledResult)
+                    }
                 } catch (e: Exception) {
                     // Even if await fails somehow, don't break - create failed result for this provider
                     // This guarantees the UI knows about every provider
@@ -198,6 +236,20 @@ class ScrapingEngine @Inject constructor(
                     emit(failedResult)
                 }
             }
+        }
+
+        // Safety net: check if any enabled provider was missed (should never happen)
+        val missedProviders = enabledProviders.filter { it.id !in processedProviders }
+        for (missed in missedProviders) {
+            val failedResult = ProviderSearchResults(
+                provider = missed,
+                results = emptyList(),
+                searchTime = 0L,
+                success = false,
+                errorMessage = "Provider ${missed.name} was not processed (safety net)"
+            )
+            results.add(failedResult)
+            emit(failedResult)
         }
 
         // Cache successful results
@@ -220,17 +272,38 @@ class ScrapingEngine @Inject constructor(
         val startTime = System.currentTimeMillis()
         val domain = extractDomain(provider.baseUrl)
         
+        // Even providers in "cooldown" still get searched via fallback methods
+        // so NO provider is ever silently skipped
+        val inCooldown = provider.failedSearches > 5 && 
+            provider.failedSearches.toFloat() / maxOf(provider.totalSearches, 1).toFloat() > 0.7f
+        
         return try {
-            // Check if provider is in cooldown due to repeated failures
-            if (provider.failedSearches > 5 && 
-                provider.failedSearches.toFloat() / maxOf(provider.totalSearches, 1).toFloat() > 0.7f) {
-                ProviderSearchResults(
-                    provider = provider,
-                    results = emptyList(),
-                    searchTime = 0L,
-                    success = false,
-                    errorMessage = "Provider in cooldown (${provider.failedSearches} failures)"
-                )
+            if (inCooldown) {
+                // Skip the primary smart search but STILL try fallback methods
+                // This gives struggling providers a lightweight retry path
+                try {
+                    val fallbackResult = tryFallbackScraping(
+                        provider, query, startTime,
+                        Exception("Provider in cooldown — trying fallback only")
+                    )
+                    if (fallbackResult.success && fallbackResult.results.isNotEmpty()) {
+                        val validatedResults = validateAndFilterResults(fallbackResult.results, query)
+                        if (validatedResults.isNotEmpty()) {
+                            // Provider recovered via fallback — reset cooldown learning
+                            aiDecisionEngine.learnRecovery(domain, "COOLDOWN", "FALLBACK_RECOVERY")
+                            return fallbackResult.copy(results = validatedResults)
+                        }
+                    }
+                    fallbackResult
+                } catch (e: Exception) {
+                    ProviderSearchResults(
+                        provider = provider,
+                        results = emptyList(),
+                        searchTime = System.currentTimeMillis() - startTime,
+                        success = false,
+                        errorMessage = "Provider in cooldown, fallback also failed: ${e.message?.take(80)}"
+                    )
+                }
             } else {
                 // Get AI recommended strategy
                 val recommendedStrategy = aiDecisionEngine.getAdaptiveStrategy(domain)
@@ -287,16 +360,21 @@ class ScrapingEngine @Inject constructor(
                     result
                 }
             }
+        } catch (e: CancellationException) {
+            // Respect coroutine cancellation — re-throw so parent handles it
+            throw e
         } catch (e: Exception) {
             // LEARN: exception failure
-            aiDecisionEngine.learnFromFailure(
-                domain = domain,
-                errorType = "EXCEPTION",
-                errorMessage = e.message,
-                strategy = ScrapingStrategy.HTML_PARSING,
-                selector = null,
-                url = provider.baseUrl
-            )
+            try {
+                aiDecisionEngine.learnFromFailure(
+                    domain = domain,
+                    errorType = "EXCEPTION",
+                    errorMessage = e.message,
+                    strategy = ScrapingStrategy.HTML_PARSING,
+                    selector = null,
+                    url = provider.baseUrl
+                )
+            } catch (_: Exception) { /* learning should never break the loop */ }
             
             // Primary search failed - try fallback (NEVER BREAK THE LOOP)
             try {
@@ -313,28 +391,32 @@ class ScrapingEngine @Inject constructor(
                         )
                     } else {
                         // LEARN: successful fallback recovery
-                        aiDecisionEngine.learnRecovery(domain, "EXCEPTION", "FALLBACK_SUCCESS")
-                        aiDecisionEngine.learnFromSuccess(
-                            domain = domain,
-                            strategy = ScrapingStrategy.HTML_PARSING,
-                            resultSelector = null,
-                            titleSelector = null,
-                            thumbnailSelector = null,
-                            resultCount = validatedResults.size,
-                            responseTime = System.currentTimeMillis() - startTime
-                        )
+                        try {
+                            aiDecisionEngine.learnRecovery(domain, "EXCEPTION", "FALLBACK_SUCCESS")
+                            aiDecisionEngine.learnFromSuccess(
+                                domain = domain,
+                                strategy = ScrapingStrategy.HTML_PARSING,
+                                resultSelector = null,
+                                titleSelector = null,
+                                thumbnailSelector = null,
+                                resultCount = validatedResults.size,
+                                responseTime = System.currentTimeMillis() - startTime
+                            )
+                        } catch (_: Exception) { /* learning should never break the loop */ }
                         
                         fallbackResult.copy(results = validatedResults)
                     }
                 } else {
                     fallbackResult
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (fallbackEx: Exception) {
                 // All methods failed - return graceful failure (LOOP CONTINUES)
                 ProviderSearchResults(
                     provider = provider,
                     results = emptyList(),
-                    searchTime = 0L,
+                    searchTime = System.currentTimeMillis() - startTime,
                     success = false,
                     errorMessage = "All search methods failed: ${e.message?.take(100)}"
                 )

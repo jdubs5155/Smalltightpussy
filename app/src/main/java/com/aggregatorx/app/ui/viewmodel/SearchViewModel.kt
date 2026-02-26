@@ -95,23 +95,39 @@ class SearchViewModel @Inject constructor(
             
             repository.searchAllProviders(query)
                 .catch { e ->
-                    _uiState.update { 
-                        it.copy(error = e.message ?: "Search failed") 
+                    // Only set error if we have NO results at all — otherwise partial results are fine
+                    if (results.isEmpty()) {
+                        _uiState.update { 
+                            it.copy(error = e.message ?: "Search failed") 
+                        }
                     }
                 }
                 .collect { providerResult ->
                     results.add(providerResult)
                     _providerResults.value = results.toList()
                     
-                    // Update aggregated results
-                    val aggregated = repository.aggregateSearchResults(query, results)
-                    _uiState.update { 
-                        it.copy(
-                            aggregatedResults = aggregated,
-                            totalResults = aggregated.totalResults,
-                            successfulProviders = aggregated.successfulProviders,
-                            failedProviders = aggregated.failedProviders
-                        ) 
+                    // Update aggregated results — wrap in try-catch so aggregation
+                    // failure never kills the collection loop
+                    try {
+                        val aggregated = repository.aggregateSearchResults(query, results)
+                        _uiState.update { 
+                            it.copy(
+                                aggregatedResults = aggregated,
+                                totalResults = aggregated.totalResults,
+                                successfulProviders = aggregated.successfulProviders,
+                                failedProviders = aggregated.failedProviders,
+                                error = null // clear any previous error since we got results
+                            ) 
+                        }
+                    } catch (e: Exception) {
+                        // Aggregation failed — still show raw provider results
+                        _uiState.update {
+                            it.copy(
+                                totalResults = results.sumOf { r -> r.results.size },
+                                successfulProviders = results.count { r -> r.success },
+                                failedProviders = results.count { r -> !r.success }
+                            )
+                        }
                     }
                 }
             
