@@ -126,7 +126,7 @@ fun ProvidersScreen(
                                     viewModel.deleteProvider(provider.id)
                                 },
                                 isAnalyzing = analyzingProviders.contains(provider.id),
-                                modifier = Modifier.animateItemPlacement()
+                                modifier = Modifier.animateItem()
                             )
                         }
                     }
@@ -158,7 +158,7 @@ fun ProvidersScreen(
                                 },
                                 isAnalyzing = analyzingProviders.contains(provider.id),
                                 modifier = Modifier
-                                    .animateItemPlacement()
+                                    .animateItem()
                                     .alpha(0.6f)
                             )
                         }

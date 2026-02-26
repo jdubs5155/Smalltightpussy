@@ -175,7 +175,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                         AnimatedVisibility(visible = uiState.isRefreshingAll) {
                             Column {
                                 LinearProgressIndicator(
-                                    progress = uiState.refreshProgress,
+                                    progress = { uiState.refreshProgress },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(4.dp)
@@ -500,7 +500,7 @@ fun AnalysisResultCard(
                 onClick = onViewDetails,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberCyan),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
+                border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                     brush = SolidColor(CyberCyan.copy(alpha = 0.5f))
                 )
             ) {

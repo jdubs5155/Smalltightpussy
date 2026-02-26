@@ -24,7 +24,7 @@ object DatabaseModule {
             AggregatorDatabase::class.java,
             "aggregator_database"
         )
-        .fallbackToDestructiveMigration()
+        .fallbackToDestructiveMigration(dropAllTables = true)
         .build()
     }
     

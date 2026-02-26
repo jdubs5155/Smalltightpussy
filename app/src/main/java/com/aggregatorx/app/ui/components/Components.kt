@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -164,7 +165,7 @@ fun FuturisticSearchBar(
                 enabled = query.isNotEmpty() && !isLoading
             ) {
                 Icon(
-                    imageVector = Icons.Default.ArrowForward,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Search",
                     tint = DarkBackground
                 )
@@ -360,7 +361,7 @@ fun ProviderCard(
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = CyberCyan
                     ),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                    border = ButtonDefaults.outlinedButtonBorder(enabled = !isAnalyzing).copy(
                         brush = Brush.horizontalGradient(
                             colors = listOf(CyberCyan.copy(alpha = 0.5f), CyberBlue.copy(alpha = 0.5f))
                         )
@@ -388,7 +389,7 @@ fun ProviderCard(
                 
                 OutlinedButton(
                     onClick = onDelete,
-                    border = ButtonDefaults.outlinedButtonBorder
+                    border = ButtonDefaults.outlinedButtonBorder(enabled = true)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
@@ -982,7 +983,7 @@ fun SearchResultCard(
 
             // Action buttons row
             if (showControls) {
-                Divider(
+                HorizontalDivider(
                     color = DarkSurfaceVariant,
                     thickness = 1.dp
                 )
@@ -1022,7 +1023,7 @@ fun SearchResultCard(
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = CyberCyan
                         ),
-                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                        border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(CyberCyan.copy(alpha = 0.6f), CyberBlue.copy(alpha = 0.6f))
                             )
@@ -1096,7 +1097,7 @@ fun DownloadProgressCard(
             Spacer(modifier = Modifier.height(8.dp))
             
             LinearProgressIndicator(
-                progress = progress / 100f,
+                progress = { progress / 100f },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)

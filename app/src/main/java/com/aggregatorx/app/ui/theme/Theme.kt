@@ -56,7 +56,9 @@ fun AggregatorXTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            @Suppress("DEPRECATION")
             window.statusBarColor = DarkBackground.toArgb()
+            @Suppress("DEPRECATION")
             window.navigationBarColor = DarkBackground.toArgb()
             WindowCompat.getInsetsController(window, view).apply {
                 isAppearanceLightStatusBars = false

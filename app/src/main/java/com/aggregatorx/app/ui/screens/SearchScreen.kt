@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -413,7 +414,7 @@ fun ProviderResultsList(
                 }
                 
                 item(key = "top_divider") {
-                    Divider(
+                    HorizontalDivider(
                         color = DarkSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
                     )
@@ -491,7 +492,7 @@ fun ProviderResultsList(
             // Failed providers at the BOTTOM
             if (failedProviders.isNotEmpty()) {
                 item(key = "failed_header") {
-                    Divider(
+                    HorizontalDivider(
                         color = AccentRed.copy(alpha = 0.3f),
                         modifier = Modifier.padding(vertical = 12.dp)
                     )
@@ -682,7 +683,7 @@ fun RecentSearches(
                             )
                         }
                         Icon(
-                            imageVector = Icons.Default.ArrowForward,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
                             tint = CyberCyan,
                             modifier = Modifier.size(20.dp)
