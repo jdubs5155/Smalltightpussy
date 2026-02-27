@@ -898,7 +898,46 @@ class AIDecisionEngine @Inject constructor() {
         
         updateAIState()
     }
+
+    // ─── Endpoint Learning ──────────────────────────────────────────
     
+    // Remembers which API endpoints worked for each domain
+    private val endpointKnowledge = ConcurrentHashMap<String, EndpointKnowledge>()
+
+    /**
+     * Learn a working endpoint for a domain so future searches skip discovery.
+     */
+    fun learnEndpoint(
+        domain: String,
+        endpoint: String,
+        strategy: ScrapingStrategy,
+        resultCount: Int
+    ) {
+        val existing = endpointKnowledge[domain] ?: EndpointKnowledge(domain)
+        val updated = existing.copy(
+            workingEndpoints = (existing.workingEndpoints + EndpointRecord(
+                endpoint = endpoint,
+                strategy = strategy,
+                successCount = 1,
+                lastResultCount = resultCount,
+                lastUsed = System.currentTimeMillis()
+            )).distinctBy { it.endpoint }.takeLast(10),
+            lastUpdated = System.currentTimeMillis()
+        )
+        endpointKnowledge[domain] = updated
+    }
+
+    /**
+     * Get the best-known working endpoint for a domain (null if none learned).
+     */
+    fun getBestKnownEndpoint(domain: String): String? {
+        val knowledge = endpointKnowledge[domain] ?: return null
+        return knowledge.workingEndpoints
+            .filter { System.currentTimeMillis() - it.lastUsed < 6 * 60 * 60 * 1000L } // 6 hours
+            .maxByOrNull { it.successCount * it.lastResultCount }
+            ?.endpoint
+    }
+
     /**
      * Get a recommended strategy based on learned knowledge
      */
@@ -1225,4 +1264,21 @@ data class GlobalLearningState(
     val adaptedStrategies: Int = 0,
     val recoveredFailures: Int = 0,
     val lastLearningTime: Long = System.currentTimeMillis()
+)
+
+/**
+ * Knowledge about working API endpoints per domain
+ */
+data class EndpointKnowledge(
+    val domain: String,
+    val workingEndpoints: List<EndpointRecord> = emptyList(),
+    val lastUpdated: Long = System.currentTimeMillis()
+)
+
+data class EndpointRecord(
+    val endpoint: String,
+    val strategy: ScrapingStrategy,
+    val successCount: Int = 0,
+    val lastResultCount: Int = 0,
+    val lastUsed: Long = System.currentTimeMillis()
 )

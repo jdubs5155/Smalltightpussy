@@ -8,7 +8,7 @@
 
 Or download from the [Releases](https://github.com/zimbiss/aggrevation-x/releases) page when available.
 
-## 🚀 Features
+## 🚀 Featuresl
 
 ### Multi-Provider Search
 - **Concurrent searching** across all configured providers

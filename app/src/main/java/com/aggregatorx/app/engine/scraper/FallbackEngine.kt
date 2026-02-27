@@ -26,7 +26,7 @@ class FallbackEngine @Inject constructor() {
     suspend fun fetchWithFallbackAndHeadless(
         url: String,
         waitSelector: String? = null,
-        timeout: Int = 12000,
+        timeout: Int = 30000,
         query: String? = null,
         onHeadless: ((String) -> Unit)? = null
     ): String? {

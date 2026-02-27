@@ -7,7 +7,9 @@ import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
 import com.aggregatorx.app.engine.analyzer.PageType
 import com.aggregatorx.app.engine.analyzer.ContainerType
+import com.aggregatorx.app.engine.analyzer.EndpointDiscoveryEngine
 import com.aggregatorx.app.engine.ai.AIDecisionEngine
+import com.aggregatorx.app.engine.network.CloudflareBypassEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -44,7 +46,9 @@ class ScrapingEngine @Inject constructor(
     private val siteAnalysisDao: SiteAnalysisDao,
     private val smartNavigationEngine: SmartNavigationEngine,
     private val smartContentClassifier: SmartContentClassifier,
-    private val aiDecisionEngine: AIDecisionEngine
+    private val aiDecisionEngine: AIDecisionEngine,
+    private val cloudflareBypassEngine: CloudflareBypassEngine,
+    private val endpointDiscoveryEngine: EndpointDiscoveryEngine
 ) {
     fun clearCache() {
         synchronized(resultCache) {
@@ -59,11 +63,11 @@ class ScrapingEngine @Inject constructor(
     private val lastRequestTime = ConcurrentHashMap<String, Long>()
     
     companion object {
-        private const val DEFAULT_TIMEOUT = 15000
-        private const val DEFAULT_RETRY_COUNT = 2
-        private const val DEFAULT_RETRY_DELAY = 500L
-        private const val DEFAULT_RATE_LIMIT_MS = 100L
-        private const val MAX_CONCURRENT_PROVIDERS = 15
+        private const val DEFAULT_TIMEOUT = 30000
+        private const val DEFAULT_RETRY_COUNT = 3
+        private const val DEFAULT_RETRY_DELAY = 800L
+        private const val DEFAULT_RATE_LIMIT_MS = 50L
+        private const val MAX_CONCURRENT_PROVIDERS = 20
         private const val DEFAULT_USER_AGENT = 
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
         
@@ -166,7 +170,7 @@ class ScrapingEngine @Inject constructor(
 
         // Search ALL providers concurrently - NEVER BREAK THE LOOP, NEVER SKIP ANY
         // Per-provider timeout prevents a single hung provider from blocking the entire search
-        val perProviderTimeoutMs = 45_000L
+        val perProviderTimeoutMs = 90_000L
 
         coroutineScope {
             val deferredResults = enabledProviders.map { provider ->
@@ -676,6 +680,33 @@ class ScrapingEngine @Inject constructor(
                     success = true
                 )
             }
+
+            // Step 2.5: Try advanced endpoint discovery (hidden APIs, CMS endpoints)
+            try {
+                val apiSearchUrl = endpointDiscoveryEngine.getBestSearchEndpoint(provider.baseUrl, query)
+                if (apiSearchUrl != null) {
+                    val apiDoc = fetchDocument(apiSearchUrl)
+                    val apiResults = extractResultsWithThumbnails(apiDoc, provider, query)
+                    if (apiResults.isNotEmpty()) {
+                        updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                        aiDecisionEngine.learnFromSuccess(
+                            domain = extractDomain(provider.baseUrl),
+                            strategy = ScrapingStrategy.API_BASED,
+                            resultSelector = null,
+                            titleSelector = null,
+                            thumbnailSelector = null,
+                            resultCount = apiResults.size,
+                            responseTime = System.currentTimeMillis() - startTime
+                        )
+                        return ProviderSearchResults(
+                            provider = provider,
+                            results = apiResults,
+                            searchTime = System.currentTimeMillis() - startTime,
+                            success = true
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
 
             // Step 3: Fall back to normal search with all its own fallbacks
             searchProvider(provider, query)
@@ -1227,7 +1258,7 @@ class ScrapingEngine @Inject constructor(
     }
 
     /**
-     * Fetch document with retries
+     * Fetch document with retries + Cloudflare bypass fallback
      */
     private suspend fun fetchDocument(
         url: String,
@@ -1236,14 +1267,16 @@ class ScrapingEngine @Inject constructor(
         var lastException: Exception? = null
         val retryCount = config?.retryCount ?: DEFAULT_RETRY_COUNT
         val retryDelay = config?.retryDelay ?: DEFAULT_RETRY_DELAY
-        
+        val timeout = config?.timeout ?: DEFAULT_TIMEOUT
+
+        // ── Layer 1: Standard Jsoup fetch with retries ──
         repeat(retryCount) { attempt ->
             try {
                 val connection = Jsoup.connect(url)
                     .userAgent(config?.userAgent ?: getRandomUserAgent())
-                    .timeout(config?.timeout ?: DEFAULT_TIMEOUT)
+                    .timeout(timeout)
                     .followRedirects(true)
-                    .ignoreHttpErrors(false)
+                    .ignoreHttpErrors(true)   // handle 403/503 ourselves
                     .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                     .header("Accept-Language", "en-US,en;q=0.9")
                     .header("Accept-Encoding", "gzip, deflate, br")
@@ -1255,7 +1288,7 @@ class ScrapingEngine @Inject constructor(
                     .header("Sec-Fetch-Site", "none")
                     .header("Sec-Fetch-User", "?1")
                     .header("Upgrade-Insecure-Requests", "1")
-                
+
                 // Add custom headers
                 config?.headers?.let { headersJson ->
                     try {
@@ -1263,16 +1296,32 @@ class ScrapingEngine @Inject constructor(
                         headers.forEach { (key, value) -> connection.header(key, value) }
                     } catch (e: Exception) { /* ignore */ }
                 }
-                
-                // Add cookies
+
+                // Add cookies (including any cached CF bypass cookies)
+                val cfCookies = cloudflareBypassEngine.getCookiesForDomain(url)
+                cfCookies.forEach { (key, value) -> connection.cookie(key, value) }
                 config?.cookies?.let { cookiesJson ->
                     try {
                         val cookies = parseCookies(cookiesJson)
                         cookies.forEach { (key, value) -> connection.cookie(key, value) }
                     } catch (e: Exception) { /* ignore */ }
                 }
-                
-                return@withContext connection.get()
+
+                val response = connection.execute()
+                val statusCode = response.statusCode()
+
+                // If we got a successful response with real content, parse and return
+                if (statusCode in 200..399) {
+                    val doc = response.parse()
+                    val html = doc.html()
+                    // Check if it's a Cloudflare challenge page
+                    if (!html.contains("Checking your browser") && !html.contains("cf_chl_opt") &&
+                        !html.contains("Just a moment") && html.length > 500) {
+                        return@withContext doc
+                    }
+                    // It's a challenge page — break to bypass layer
+                }
+                // 403/503/429 — break to bypass layer
             } catch (e: Exception) {
                 lastException = e
                 if (attempt < retryCount - 1) {
@@ -1280,8 +1329,22 @@ class ScrapingEngine @Inject constructor(
                 }
             }
         }
-        
-        throw lastException ?: Exception("Failed to fetch document")
+
+        // ── Layer 2: Cloudflare bypass engine ──
+        try {
+            val bypassDoc = cloudflareBypassEngine.fetchJsoupDocument(url, timeout)
+            if (bypassDoc != null) return@withContext bypassDoc
+        } catch (_: Exception) {}
+
+        // ── Layer 3: Headless browser fetch ──
+        try {
+            val headlessHtml = HeadlessBrowserHelper.fetchPageContentWithShadowAndAdSkip(url, null, timeout)
+            if (!headlessHtml.isNullOrEmpty() && headlessHtml.length > 500) {
+                return@withContext Jsoup.parse(headlessHtml, url)
+            }
+        } catch (_: Exception) {}
+
+        throw lastException ?: Exception("Failed to fetch document after all strategies")
     }
     
     /**

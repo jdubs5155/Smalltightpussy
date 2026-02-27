@@ -6,9 +6,11 @@ import com.aggregatorx.app.engine.ai.AIDecisionEngine
 import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
 import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
 import com.aggregatorx.app.engine.analyzer.UniversalFormatParser
+import com.aggregatorx.app.engine.analyzer.EndpointDiscoveryEngine
 import com.aggregatorx.app.engine.media.VideoExtractorEngine
 import com.aggregatorx.app.engine.media.VideoStreamResolver
 import com.aggregatorx.app.engine.network.ProxyVPNEngine
+import com.aggregatorx.app.engine.network.CloudflareBypassEngine
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -28,6 +30,20 @@ object EngineModule {
     @Singleton
     fun provideProxyVPNEngine(): ProxyVPNEngine {
         return ProxyVPNEngine()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideCloudflareBypassEngine(): CloudflareBypassEngine {
+        return CloudflareBypassEngine()
+    }
+
+    @Provides
+    @Singleton
+    fun provideEndpointDiscoveryEngine(
+        cloudflareBypassEngine: CloudflareBypassEngine
+    ): EndpointDiscoveryEngine {
+        return EndpointDiscoveryEngine(cloudflareBypassEngine)
     }
     
     @Provides

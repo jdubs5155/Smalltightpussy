@@ -29,8 +29,13 @@ import javax.inject.Singleton
 class SmartNavigationEngine @Inject constructor() {
 
     companion object {
-        private const val DEFAULT_TIMEOUT = 12000
-        private const val QUICK_TIMEOUT  = 6000
+        // Increased timeouts so that slow-but-valid sites (7-15 s response) succeed.
+        // Pre-4.0 regression: QUICK_TIMEOUT was 6 000 ms which caused reliable providers to
+        // consistently time out before returning a response, triggering the cooldown path.
+        private const val DEFAULT_TIMEOUT = 30000   // generous timeout for slow sites
+        private const val QUICK_TIMEOUT  = 20000   // enough for sites that take 7-15s to respond
+        // Number of URL patterns checked in parallel per batch
+        private const val CONCURRENT_PATTERN_CHECKS = 18
         private const val DEFAULT_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
 
@@ -185,7 +190,7 @@ class SmartNavigationEngine @Inject constructor() {
         val slugQuery = query.trim().lowercase().replace(Regex("\\s+"), "-")
         val plusQuery = query.trim().replace(Regex("\\s+"), "+")
 
-        // First try to detect a search form on the homepage (avoids extra requests)
+        // Step 1: Detect a search form on the homepage (single fast request)
         try {
             val homepage = Jsoup.connect(baseUrl)
                 .userAgent(DEFAULT_USER_AGENT)
@@ -206,31 +211,38 @@ class SmartNavigationEngine @Inject constructor() {
             }
         } catch (_: Exception) {}
 
-        // Try pattern-based search URLs
-        for (pattern in SEARCH_URL_PATTERNS) {
-            val searchUrl = pattern
+        // Step 2: Try pattern-based search URLs CONCURRENTLY (batches of CONCURRENT_PATTERN_CHECKS)
+        // Pre-4.0 regression: patterns were checked SEQUENTIALLY with a 6 s timeout each.
+        // With 65+ patterns that means ~7 patterns checked before the 45 s per-provider wall
+        // was hit.  Running them in parallel batches means the right pattern is found in
+        // at most one timeout period (~15 s) per batch instead of 65 * timeout seconds.
+        val candidateUrls = SEARCH_URL_PATTERNS.map { pattern ->
+            pattern
                 .replace("{base}", baseUrl.trimEnd('/'))
                 .replace("{query_slug}", slugQuery)
                 .replace("{query_plus}", plusQuery)
                 .replace("{query}", encodedQuery)
+        }
 
-            try {
-                val response = Jsoup.connect(searchUrl)
-                    .userAgent(DEFAULT_USER_AGENT)
-                    .timeout(QUICK_TIMEOUT)
-                    .followRedirects(true)
-                    .ignoreHttpErrors(true)
-                    .execute()
-
-                if (response.statusCode() == 200) {
-                    val doc = response.parse()
-                    if (isSearchResultsPage(doc)) {
-                        return@withContext searchUrl
+        for (chunk in candidateUrls.chunked(CONCURRENT_PATTERN_CHECKS)) {
+            val batchResult: String? = coroutineScope {
+                chunk.map { searchUrl ->
+                    async(Dispatchers.IO) {
+                        try {
+                            val response = Jsoup.connect(searchUrl)
+                                .userAgent(DEFAULT_USER_AGENT)
+                                .timeout(QUICK_TIMEOUT)
+                                .followRedirects(true)
+                                .ignoreHttpErrors(true)
+                                .execute()
+                            if (response.statusCode() == 200 && isSearchResultsPage(response.parse())) {
+                                searchUrl
+                            } else null
+                        } catch (_: Exception) { null }
                     }
-                }
-            } catch (_: Exception) {
-                continue
+                }.awaitAll().firstOrNull { it != null }
             }
+            if (batchResult != null) return@withContext batchResult
         }
 
         null

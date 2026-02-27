@@ -15,8 +15,8 @@ android {
         applicationId = "com.aggregatorx.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "4.0.0"
+        versionCode = 5
+        versionName = "4.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -95,6 +95,13 @@ dependencies {
     
     // HTML Parsing & Scraping
     implementation("org.jsoup:jsoup:1.18.3")
+
+    // Advanced HTTP client for Cloudflare bypass & connection pooling
+    implementation("com.squareup.okhttp3:okhttp-brotli:4.12.0")
+    implementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+
+    // DNS-over-HTTPS for bypassing DNS-level blocks
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0")
     
     // JSON
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")

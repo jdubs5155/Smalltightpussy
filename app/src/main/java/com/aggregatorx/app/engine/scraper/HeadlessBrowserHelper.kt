@@ -191,6 +191,13 @@ object HeadlessBrowserHelper {
     }
 
     /**
+     * Create a new page with full anti-detection settings.
+     * Public wrapper so that other engines (e.g. CloudflareBypassEngine)
+     * can obtain a stealth page without duplicating the fingerprint logic.
+     */
+    fun createAntiDetectionPage(): Page = createPage()
+
+    /**
      * Fetch page content with comprehensive ad/popup handling
      */
     fun fetchPageContent(url: String, waitSelector: String? = null, timeout: Int = 15000): String? {
