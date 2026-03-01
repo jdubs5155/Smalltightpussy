@@ -3,6 +3,8 @@ package com.aggregatorx.app.engine.ranking
 import com.aggregatorx.app.data.model.AggregatedSearchResults
 import com.aggregatorx.app.data.model.ProviderSearchResults
 import com.aggregatorx.app.data.model.SearchResult
+import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
+import com.aggregatorx.app.engine.nlp.ProcessedQuery
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -32,7 +34,9 @@ import kotlin.math.min
  * - Never returns empty if ANY content exists
  */
 @Singleton
-class RankingEngine @Inject constructor() {
+class RankingEngine @Inject constructor(
+    private val nlpProcessor: NaturalLanguageQueryProcessor
+) {
 
     // ── User preference data (set before each ranking call) ─────────────
     // These are populated from the LikedResult database by the repository
@@ -41,6 +45,18 @@ class RankingEngine @Inject constructor() {
     private var preferredProviders: Map<String, Float> = emptyMap()
     private var preferredQualities: Map<String, Float> = emptyMap()
     private var likedUrls: Set<String> = emptySet()
+
+    // NLP processed query set by the search pipeline before ranking
+    @Volatile
+    private var currentProcessedQuery: ProcessedQuery? = null
+
+    /**
+     * Set the NLP-processed query before ranking so concept-based
+     * relevance scoring is available during result ranking.
+     */
+    fun setProcessedQuery(processed: ProcessedQuery?) {
+        currentProcessedQuery = processed
+    }
 
     /**
      * Feed learned user preferences into the engine before ranking.
@@ -578,6 +594,29 @@ class RankingEngine @Inject constructor() {
         // Length penalty for very long titles (likely spam)
         if (title.length > 150) {
             score *= 0.85f
+        }
+
+        // ── NLP SEMANTIC CONCEPT SCORING ────────────────────────────────
+        // When NLP processing is available, add concept-based relevance.
+        // This is critical for natural language queries where the raw
+        // keywords may not appear in the result but semantic concepts do.
+        val processed = currentProcessedQuery
+        if (processed != null) {
+            val semanticScore = nlpProcessor.calculateSemanticRelevance(
+                title, description, processed.concepts
+            )
+            // Blend based on how well keyword matching worked
+            val keywordCoverage = (titleMatches + descMatches).toFloat() / queryTerms.size.coerceAtLeast(1)
+            if (keywordCoverage < 0.2f) {
+                // Keywords barely matched — lean heavily on semantic understanding
+                score += semanticScore * 0.7f
+            } else if (keywordCoverage < 0.5f) {
+                // Partial keyword match — add moderate semantic boost
+                score += semanticScore * 0.4f
+            } else {
+                // Good keyword coverage — add a small semantic refinement
+                score += semanticScore * 0.15f
+            }
         }
         
         return score.coerceIn(0f, 100f) / 100f

@@ -9,6 +9,7 @@ import com.aggregatorx.app.engine.analyzer.UniversalFormatParser
 import com.aggregatorx.app.engine.analyzer.EndpointDiscoveryEngine
 import com.aggregatorx.app.engine.media.VideoExtractorEngine
 import com.aggregatorx.app.engine.media.VideoStreamResolver
+import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
 import com.aggregatorx.app.engine.network.ProxyVPNEngine
 import com.aggregatorx.app.engine.network.CloudflareBypassEngine
 import dagger.Module
@@ -81,6 +82,12 @@ object EngineModule {
         return UniversalFormatParser()
     }
     
+    @Provides
+    @Singleton
+    fun provideNaturalLanguageQueryProcessor(): NaturalLanguageQueryProcessor {
+        return NaturalLanguageQueryProcessor()
+    }
+
     @Provides
     @Singleton
     fun provideUnifiedContentEngine(

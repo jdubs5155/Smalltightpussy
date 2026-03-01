@@ -9,6 +9,8 @@ import com.aggregatorx.app.engine.analyzer.PageType
 import com.aggregatorx.app.engine.analyzer.ContainerType
 import com.aggregatorx.app.engine.analyzer.EndpointDiscoveryEngine
 import com.aggregatorx.app.engine.ai.AIDecisionEngine
+import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
+import com.aggregatorx.app.engine.nlp.ProcessedQuery
 import com.aggregatorx.app.engine.network.CloudflareBypassEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -38,6 +40,8 @@ import kotlin.math.max
  * - INTELLIGENT RESULT VALIDATION - detects category pages vs real results
  * - NEVER BREAKS LOOP - continues to all providers even on failures
  * - AI LEARNING INTEGRATION - learns from every scraping attempt
+ * - NLP QUERY UNDERSTANDING - translates natural language descriptions into effective search terms
+ * - SEMANTIC RESULT MATCHING - scores results by concept similarity, not just keywords
  */
 @Singleton
 class ScrapingEngine @Inject constructor(
@@ -48,8 +52,12 @@ class ScrapingEngine @Inject constructor(
     private val smartContentClassifier: SmartContentClassifier,
     private val aiDecisionEngine: AIDecisionEngine,
     private val cloudflareBypassEngine: CloudflareBypassEngine,
-    private val endpointDiscoveryEngine: EndpointDiscoveryEngine
+    private val endpointDiscoveryEngine: EndpointDiscoveryEngine,
+    private val nlpProcessor: NaturalLanguageQueryProcessor
 ) {
+    // Current NLP-processed query for semantic scoring throughout the pipeline
+    @Volatile
+    private var currentProcessedQuery: ProcessedQuery? = null
     fun clearCache() {
         synchronized(resultCache) {
             resultCache.clear()
@@ -137,6 +145,14 @@ class ScrapingEngine @Inject constructor(
     var cacheResults: Boolean = true
 
     fun searchAllProviders(query: String, cache: Boolean = cacheResults): Flow<ProviderSearchResults> = flow {
+        // ── NLP QUERY PROCESSING ────────────────────────────────────
+        // Transform the raw query into optimised search terms using
+        // natural language understanding. This enables descriptive queries
+        // like "scared my cat and it jumped so high" to produce effective
+        // searches like "cat jump scare", "scared cat reaction", etc.
+        val processedQuery = nlpProcessor.processQuery(query)
+        currentProcessedQuery = processedQuery
+
         // Check cache first (respects TTL)
         if (cache) {
             val cachedEntry = synchronized(resultCache) {
@@ -330,11 +346,17 @@ class ScrapingEngine @Inject constructor(
                             url = provider.baseUrl
                         )
                         
-                        result.copy(
-                            results = emptyList(),
-                            success = false,
-                            errorMessage = "Results were category/navigation pages, not actual content"
-                        )
+                        // ── NLP RETRY: try NLP-generated queries before giving up ────
+                        val nlpRetryResult = retryWithNlpQueries(provider, query, startTime)
+                        if (nlpRetryResult != null) {
+                            nlpRetryResult
+                        } else {
+                            result.copy(
+                                results = emptyList(),
+                                success = false,
+                                errorMessage = "Results were category/navigation pages, not actual content"
+                            )
+                        }
                     } else {
                         // LEARN: successful scraping
                         aiDecisionEngine.learnFromSuccess(
@@ -350,18 +372,24 @@ class ScrapingEngine @Inject constructor(
                         result.copy(results = validatedResults)
                     }
                 } else {
-                    // LEARN: no results failure
-                    if (!result.success) {
-                        aiDecisionEngine.learnFromFailure(
-                            domain = domain,
-                            errorType = "NO_RESULTS",
-                            errorMessage = result.errorMessage,
-                            strategy = ScrapingStrategy.HTML_PARSING,
-                            selector = null,
-                            url = provider.baseUrl
-                        )
+                    // ── NLP RETRY: primary search returned nothing — try NLP queries ──
+                    val nlpRetryResult = retryWithNlpQueries(provider, query, startTime)
+                    if (nlpRetryResult != null) {
+                        nlpRetryResult
+                    } else {
+                        // LEARN: no results failure
+                        if (!result.success) {
+                            aiDecisionEngine.learnFromFailure(
+                                domain = domain,
+                                errorType = "NO_RESULTS",
+                                errorMessage = result.errorMessage,
+                                strategy = ScrapingStrategy.HTML_PARSING,
+                                selector = null,
+                                url = provider.baseUrl
+                            )
+                        }
+                        result
                     }
-                    result
                 }
             }
         } catch (e: CancellationException) {
@@ -427,7 +455,86 @@ class ScrapingEngine @Inject constructor(
             }
         }
     }
-    
+
+    /**
+     * Retry a provider search using NLP-generated query variants.
+     *
+     * When the user's raw query (e.g. "scared my cat and it jumped so high")
+     * returned zero results, we re-search the same provider with the
+     * semantically rewritten queries produced by [NaturalLanguageQueryProcessor]
+     * (e.g. "cat jump scare", "scared cat reaction", "cat startled jumping").
+     *
+     * Returns a successful [ProviderSearchResults] if any NLP query variant
+     * produced validated results, or null to let the caller fall through to
+     * its existing fallback logic.
+     */
+    private suspend fun retryWithNlpQueries(
+        provider: Provider,
+        originalQuery: String,
+        startTime: Long
+    ): ProviderSearchResults? {
+        val processed = currentProcessedQuery ?: return null
+        if (processed.searchQueries.isEmpty()) return null
+
+        // Only retry with NLP queries that differ from the original
+        val nlpQueries = processed.searchQueries
+            .filter { it.lowercase() != originalQuery.lowercase() }
+            .take(4) // Limit retries to keep latency reasonable
+
+        if (nlpQueries.isEmpty()) return null
+
+        val allResults = mutableListOf<SearchResult>()
+        val seenUrls = mutableSetOf<String>()
+
+        for (nlpQuery in nlpQueries) {
+            try {
+                val result = searchProviderSmart(provider, nlpQuery)
+                if (result.success && result.results.isNotEmpty()) {
+                    val validated = validateAndFilterResults(result.results, originalQuery)
+                    for (r in validated) {
+                        if (r.url !in seenUrls) {
+                            seenUrls.add(r.url)
+                            allResults.add(r.copy(
+                                relevanceScore = calculateRelevanceScore(
+                                    r.title, originalQuery, r.description, r.url
+                                )
+                            ))
+                        }
+                    }
+                    // If we already have a decent batch, stop early
+                    if (allResults.size >= 15) break
+                }
+            } catch (_: CancellationException) {
+                throw CancellationException("Cancelled during NLP retry")
+            } catch (_: Exception) {
+                continue
+            }
+        }
+
+        return if (allResults.isNotEmpty()) {
+            val domain = extractDomain(provider.baseUrl)
+            try {
+                aiDecisionEngine.learnRecovery(domain, "NO_RESULTS", "NLP_QUERY_RETRY")
+                aiDecisionEngine.learnFromSuccess(
+                    domain = domain,
+                    strategy = ScrapingStrategy.HTML_PARSING,
+                    resultSelector = null,
+                    titleSelector = null,
+                    thumbnailSelector = null,
+                    resultCount = allResults.size,
+                    responseTime = System.currentTimeMillis() - startTime
+                )
+            } catch (_: Exception) {}
+
+            ProviderSearchResults(
+                provider = provider,
+                results = allResults.sortedByDescending { it.relevanceScore },
+                searchTime = System.currentTimeMillis() - startTime,
+                success = true
+            )
+        } else null
+    }
+
     /**
      * Extract domain from URL for AI learning key
      */
@@ -445,6 +552,7 @@ class ScrapingEngine @Inject constructor(
      */
     private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
         val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
+        val processed = currentProcessedQuery
 
         return results.filter { result ->
             val titleLower = result.title.lowercase()
@@ -471,17 +579,40 @@ class ScrapingEngine @Inject constructor(
             val isExcludedExtension = urlLower.matches(Regex(".*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)(\\?.*)?$"))
             if (isExcludedExtension) return@filter false
 
-            // ── RELEVANCE GATE ──────────────────────────────────────────────
-            // Result must contain at least ONE query keyword in title, description, or URL path.
-            // This prevents completely unrelated homepage / trending content from leaking through.
-            if (queryWords.isNotEmpty()) {
+            // ── RELEVANCE GATE (NLP-ENHANCED) ───────────────────────────────
+            // Accept results that match EITHER:
+            //  1. At least one raw query keyword, OR
+            //  2. Any concept term from NLP processing (subjects, actions, synonyms)
+            //  3. A semantic relevance score ≥ 15 from the NLP processor
+            if (queryWords.isNotEmpty() || processed != null) {
                 val descLower = result.description?.lowercase() ?: ""
                 val urlPath = try {
                     java.net.URL(result.url).path.lowercase().replace("-", " ").replace("_", " ")
                 } catch (_: Exception) { urlLower }
                 val combined = "$titleLower $descLower $urlPath"
+
+                // Check 1: raw keyword match (original behaviour)
                 val hasAnyKeyword = queryWords.any { combined.contains(it) }
-                if (!hasAnyKeyword) return@filter false
+                if (hasAnyKeyword) return@filter true
+
+                // Check 2: NLP concept term match
+                if (processed != null) {
+                    val hasConceptMatch = processed.conceptTerms.any { term ->
+                        combined.contains(term)
+                    }
+                    if (hasConceptMatch) return@filter true
+
+                    // Check 3: semantic relevance scoring
+                    val semanticScore = nlpProcessor.calculateSemanticRelevance(
+                        result.title,
+                        result.description,
+                        processed.concepts
+                    )
+                    if (semanticScore >= 15f) return@filter true
+                }
+
+                // None of the checks passed — reject this result
+                return@filter false
             }
 
             true
@@ -489,8 +620,9 @@ class ScrapingEngine @Inject constructor(
     }
     
     /**
-     * Enhanced matching that searches in titles, descriptions, and URLs
-     * Returns true if any part of the content matches the query
+     * Enhanced matching that searches in titles, descriptions, and URLs.
+     * Now also checks NLP concept terms and semantic synonyms.
+     * Returns true if any part of the content matches the query.
      */
     private fun matchesQueryEnhanced(result: SearchResult, query: String): Boolean {
         val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
@@ -517,6 +649,19 @@ class ScrapingEngine @Inject constructor(
             for (titleWord in titleWords) {
                 if (areSimilarWords(queryWord, titleWord)) return true
             }
+        }
+
+        // ── NLP concept matching ─────────────────────────────────────────
+        val processed = currentProcessedQuery
+        if (processed != null) {
+            val combined = "$titleLower $descLower $urlPath"
+            // Check NLP concept terms (subjects, actions, descriptors + their synonyms)
+            if (processed.conceptTerms.any { combined.contains(it) }) return true
+            // Semantic relevance threshold
+            val semanticScore = nlpProcessor.calculateSemanticRelevance(
+                result.title, result.description, processed.concepts
+            )
+            if (semanticScore >= 15f) return true
         }
         
         return false
@@ -648,12 +793,28 @@ class ScrapingEngine @Inject constructor(
     suspend fun searchProviderSmart(provider: Provider, query: String): ProviderSearchResults {
         val startTime = System.currentTimeMillis()
 
+        // ── NLP QUERY SELECTION ─────────────────────────────────────────
+        // When the raw query is conversational natural language, use the
+        // first (best) NLP-generated search query for the actual provider
+        // search. This converts e.g. "scared my cat and it jumped so high"
+        // into "cat jump scare" which matches real content titles.
+        val processed = currentProcessedQuery
+        val effectiveQuery = if (processed != null &&
+            processed.isNaturalLanguage &&
+            processed.searchQueries.isNotEmpty() &&
+            query == processed.originalQuery
+        ) {
+            processed.searchQueries.first()
+        } else {
+            query
+        }
+
         return try {
             enforceRateLimit(provider.id)
             providerDao.incrementSearchCount(provider.id)
 
             // Step 1: Try to find a search URL (works for most providers)
-            val smartSearchUrl = smartNavigationEngine.findSearchUrl(provider.baseUrl, query)
+            val smartSearchUrl = smartNavigationEngine.findSearchUrl(provider.baseUrl, effectiveQuery)
 
             if (smartSearchUrl != null) {
                 val results = scrapeWithSmartNavigation(provider, query, smartSearchUrl)
@@ -670,7 +831,7 @@ class ScrapingEngine @Inject constructor(
 
             // Step 2: No search found – try crawling tabs/categories as a smart alternative
             // This handles sites that organise content by genre/category tabs without search
-            val tabResults = scrapeWithTabCrawl(provider, query)
+            val tabResults = scrapeWithTabCrawl(provider, effectiveQuery)
             if (tabResults.isNotEmpty()) {
                 updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
                 return ProviderSearchResults(
@@ -683,7 +844,7 @@ class ScrapingEngine @Inject constructor(
 
             // Step 2.5: Try advanced endpoint discovery (hidden APIs, CMS endpoints)
             try {
-                val apiSearchUrl = endpointDiscoveryEngine.getBestSearchEndpoint(provider.baseUrl, query)
+                val apiSearchUrl = endpointDiscoveryEngine.getBestSearchEndpoint(provider.baseUrl, effectiveQuery)
                 if (apiSearchUrl != null) {
                     val apiDoc = fetchDocument(apiSearchUrl)
                     val apiResults = extractResultsWithThumbnails(apiDoc, provider, query)
@@ -709,9 +870,9 @@ class ScrapingEngine @Inject constructor(
             } catch (_: Exception) {}
 
             // Step 3: Fall back to normal search with all its own fallbacks
-            searchProvider(provider, query)
+            searchProvider(provider, effectiveQuery)
         } catch (e: Exception) {
-            searchProvider(provider, query)
+            searchProvider(provider, effectiveQuery)
         }
     }
     
@@ -1729,6 +1890,27 @@ class ScrapingEngine @Inject constructor(
             if (fuzzyHits > 0) score += fuzzyHits * 3f
         }
 
+        // ── NLP SEMANTIC SCORING BOOST ──────────────────────────────────
+        // If the NLP processor has analysed the query, add a semantic
+        // similarity component that understands concept relationships.
+        // This is especially important for natural language queries where
+        // the raw keywords may not appear in the result at all but the
+        // semantic concepts do (e.g. "scared my cat" → title "cat jump scare").
+        val processed = currentProcessedQuery
+        if (processed != null) {
+            val semanticScore = nlpProcessor.calculateSemanticRelevance(
+                title, description, processed.concepts
+            )
+            // Blend: if keyword matching found nothing, semantic can carry; otherwise it boosts
+            if (matchedTerms == 0) {
+                // Keyword matching failed — lean heavily on semantic understanding
+                score += semanticScore * 0.8f
+            } else {
+                // Keywords matched too — add a modest semantic boost
+                score += semanticScore * 0.3f
+            }
+        }
+
         return score.coerceIn(0f, 100f)
     }
     
@@ -1877,26 +2059,36 @@ class ScrapingEngine @Inject constructor(
         provider: Provider,
         query: String
     ): List<SearchResult> = withContext(Dispatchers.IO) {
-        val keywords = query.lowercase()
-            .split(Regex("\\s+"))
-            .filter { it.length > 2 }
-            .distinct()
-        
-        if (keywords.size <= 1) return@withContext emptyList()
-        
+        // ── NLP-enhanced decomposition ──────────────────────────────────
+        // Instead of naively splitting the raw query into individual keywords,
+        // use the NLP-generated search queries which are semantically meaningful
+        // and formatted to match how content is actually titled on the web.
+        val processed = currentProcessedQuery
+        val searchTerms: List<String> = if (processed != null && processed.searchQueries.isNotEmpty()) {
+            // Use up to 5 of the best NLP-generated queries
+            processed.searchQueries.take(5)
+        } else {
+            // Fallback: split raw query into individual keywords
+            val keywords = query.lowercase()
+                .split(Regex("\\s+"))
+                .filter { it.length > 2 }
+                .distinct()
+            if (keywords.size <= 1) return@withContext emptyList()
+            keywords.take(3)
+        }
+
         val allResults = mutableListOf<SearchResult>()
         val seenUrls = mutableSetOf<String>()
-        
-        // Try searching with each keyword individually
-        for (keyword in keywords.take(3)) { // Limit to 3 keywords to avoid flooding
+
+        for (searchTerm in searchTerms) {
             try {
                 val searchPatterns = listOf(
-                    "${provider.baseUrl}/search?q=${URLEncoder.encode(keyword, "UTF-8")}",
-                    "${provider.baseUrl}/search?query=${URLEncoder.encode(keyword, "UTF-8")}",
-                    "${provider.baseUrl}/search/${URLEncoder.encode(keyword, "UTF-8")}",
-                    "${provider.baseUrl}/?s=${URLEncoder.encode(keyword, "UTF-8")}"
+                    "${provider.baseUrl}/search?q=${URLEncoder.encode(searchTerm, "UTF-8")}",
+                    "${provider.baseUrl}/search?query=${URLEncoder.encode(searchTerm, "UTF-8")}",
+                    "${provider.baseUrl}/search/${URLEncoder.encode(searchTerm, "UTF-8")}",
+                    "${provider.baseUrl}/?s=${URLEncoder.encode(searchTerm, "UTF-8")}"
                 )
-                
+
                 for (pattern in searchPatterns) {
                     try {
                         val document = fetchDocument(pattern)
@@ -1910,7 +2102,7 @@ class ScrapingEngine @Inject constructor(
                                 ))
                             }
                         }
-                        if (results.isNotEmpty()) break // Got results for this keyword
+                        if (results.isNotEmpty()) break // Got results for this search term
                     } catch (e: Exception) {
                         continue
                     }
@@ -1919,7 +2111,7 @@ class ScrapingEngine @Inject constructor(
                 continue
             }
         }
-        
+
         allResults.sortedByDescending { it.relevanceScore }
     }
     

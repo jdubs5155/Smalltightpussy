@@ -3,6 +3,7 @@ package com.aggregatorx.app.data.repository
 import com.aggregatorx.app.data.database.*
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
+import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
 import com.aggregatorx.app.engine.ranking.RankingEngine
 import com.aggregatorx.app.engine.scraper.ScrapingEngine
 import kotlinx.coroutines.flow.*
@@ -21,7 +22,8 @@ class AggregatorRepository @Inject constructor(
     private val learnedProfileDao: LearnedProfileDao,
     private val siteAnalyzerEngine: SiteAnalyzerEngine,
     private val scrapingEngine: ScrapingEngine,
-    private val rankingEngine: RankingEngine
+    private val rankingEngine: RankingEngine,
+    private val nlpProcessor: NaturalLanguageQueryProcessor
 ) {
     fun clearSearchCache() {
         scrapingEngine.clearCache()
@@ -139,6 +141,10 @@ class AggregatorRepository @Inject constructor(
         } else {
             rankingEngine.setUserPreferences(liked = likedUrls)
         }
+
+        // Pass NLP-processed query to ranking engine for semantic scoring
+        val processedQuery = nlpProcessor.processQuery(query)
+        rankingEngine.setProcessedQuery(processedQuery)
 
         return rankingEngine.rankAndAggregate(query, providerResults)
     }
