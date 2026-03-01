@@ -41,6 +41,10 @@ class SearchViewModel @Inject constructor(
     val videoExtractionState: StateFlow<VideoExtractionState> = _videoExtractionState.asStateFlow()
     
     val downloads: StateFlow<Map<String, DownloadState>> = downloadManager.downloads
+
+    // ── Liked-result state ──────────────────────────────────────────────
+    private val _likedUrls = MutableStateFlow<Set<String>>(emptySet())
+    val likedUrls: StateFlow<Set<String>> = _likedUrls.asStateFlow()
     
     // Video URL cache for faster repeated preview loads (caches full result with headers)
     private val videoPreviewCache = java.util.concurrent.ConcurrentHashMap<String, VideoPreviewResult>()
@@ -53,6 +57,20 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             repository.getRecentSearches().collect { searches ->
                 _uiState.update { it.copy(recentSearches = searches) }
+            }
+        }
+        // Pre-load liked URLs so the UI can render heart icons immediately
+        viewModelScope.launch {
+            _likedUrls.value = repository.getAllLikedUrls()
+        }
+    }
+
+    /** Toggle like on a search result. Updates local set immediately for snappy UI. */
+    fun toggleLike(result: SearchResult) {
+        viewModelScope.launch {
+            val nowLiked = repository.toggleLike(result)
+            _likedUrls.update { urls ->
+                if (nowLiked) urls + result.url else urls - result.url
             }
         }
     }

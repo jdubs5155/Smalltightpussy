@@ -17,6 +17,8 @@ class AggregatorRepository @Inject constructor(
     private val siteAnalysisDao: SiteAnalysisDao,
     private val scrapingConfigDao: ScrapingConfigDao,
     private val searchHistoryDao: SearchHistoryDao,
+    private val likedResultDao: LikedResultDao,
+    private val learnedProfileDao: LearnedProfileDao,
     private val siteAnalyzerEngine: SiteAnalyzerEngine,
     private val scrapingEngine: ScrapingEngine,
     private val rankingEngine: RankingEngine
@@ -122,7 +124,22 @@ class AggregatorRepository @Inject constructor(
             providersSearched = providerResults.size,
             successfulProviders = providerResults.count { it.success }
         ))
-        
+
+        // Inject learned user preferences into the ranking engine
+        // so they influence Top Results scoring only.
+        val likedUrls = likedResultDao.getAllLikedUrls().toSet()
+        val profile = learnedProfileDao.getProfile()
+        if (profile != null) {
+            rankingEngine.setUserPreferences(
+                keywords = profile.preferredKeywordsMap(),
+                providers = profile.preferredProvidersMap(),
+                qualities = profile.preferredQualitiesMap(),
+                liked = likedUrls
+            )
+        } else {
+            rankingEngine.setUserPreferences(liked = likedUrls)
+        }
+
         return rankingEngine.rankAndAggregate(query, providerResults)
     }
     
@@ -204,5 +221,109 @@ class AggregatorRepository @Inject constructor(
             
             else -> ProviderCategory.GENERAL
         }
+    }
+
+    // ── Like / preference learning ─────────────────────────────────────
+
+    /** Toggle a like on/off. Returns true if the result is now liked. */
+    suspend fun toggleLike(result: SearchResult): Boolean {
+        val existing = likedResultDao.getLikedByUrl(result.url)
+        return if (existing != null) {
+            likedResultDao.removeLikeByUrl(result.url)
+            rebuildLearnedProfile()
+            false
+        } else {
+            val titleKeywords = result.title.lowercase()
+                .split(Regex("\\W+"))
+                .filter { it.length > 2 }
+                .distinct()
+                .joinToString(",")
+
+            likedResultDao.insertLike(
+                LikedResult(
+                    title = result.title,
+                    url = result.url,
+                    providerId = result.providerId,
+                    providerName = result.providerName,
+                    category = result.category.orEmpty(),
+                    quality = result.quality.orEmpty(),
+                    thumbnailUrl = result.thumbnailUrl,
+                    description = result.description,
+                    seeders = result.seeders,
+                    rating = result.rating,
+                    titleKeywords = titleKeywords
+                )
+            )
+            rebuildLearnedProfile()
+            true
+        }
+    }
+
+    /** Returns all liked URLs for quick UI state lookup. */
+    suspend fun getAllLikedUrls(): Set<String> =
+        likedResultDao.getAllLikedUrls().toSet()
+
+    /** Returns Flow of all liked results (for a future "Liked" screen). */
+    fun getAllLikedResults(): Flow<List<LikedResult>> =
+        likedResultDao.getAllLikedResults()
+
+    /**
+     * Rebuild the learned user profile from the full like history.
+     * Called automatically whenever a like is added or removed.
+     *
+     * The profile aggregates keyword frequencies, provider frequencies,
+     * and quality preferences into normalised 0-1 weight maps so the
+     * RankingEngine can boost Top Results accordingly.
+     */
+    private suspend fun rebuildLearnedProfile() {
+        val likes = likedResultDao.getAllLikedResults().first()
+        if (likes.isEmpty()) {
+            learnedProfileDao.saveProfile(LearnedUserProfile())
+            return
+        }
+
+        // ── Keyword frequencies ───────────────────────────────────────
+        val keywordCounts = mutableMapOf<String, Int>()
+        likes.forEach { like ->
+            like.titleKeywords.split(",").filter { it.isNotBlank() }.forEach { kw ->
+                keywordCounts[kw] = (keywordCounts[kw] ?: 0) + 1
+            }
+        }
+        val maxKwCount = keywordCounts.values.maxOrNull()?.toFloat() ?: 1f
+        val keywordWeights = keywordCounts.mapValues { (_, count) ->
+            count.toFloat() / maxKwCount
+        }
+
+        // ── Provider frequencies ──────────────────────────────────────
+        val providerCounts = likes.groupingBy { it.providerId }.eachCount()
+        val maxProvCount = providerCounts.values.maxOrNull()?.toFloat() ?: 1f
+        val providerWeights = providerCounts.mapValues { (_, count) ->
+            count.toFloat() / maxProvCount
+        }
+
+        // ── Quality frequencies ───────────────────────────────────────
+        val qualityCounts = likes.filter { !it.quality.isNullOrBlank() }
+            .groupingBy { it.quality!!.lowercase() }.eachCount()
+        val maxQCount = qualityCounts.values.maxOrNull()?.toFloat() ?: 1f
+        val qualityWeights = qualityCounts.mapValues { (_, count) ->
+            count.toFloat() / maxQCount
+        }
+
+        // ── Category frequencies (stored but reserved for future use) ─
+        val categoryCounts = likes.filter { !it.category.isNullOrBlank() }
+            .groupingBy { it.category!!.lowercase() }.eachCount()
+        val maxCatCount = categoryCounts.values.maxOrNull()?.toFloat() ?: 1f
+        val categoryWeights = categoryCounts.mapValues { (_, count) ->
+            count.toFloat() / maxCatCount
+        }
+
+        val profile = LearnedUserProfile(
+            preferredKeywords = keywordWeights.entries.joinToString(";") { "${it.key}:${it.value}" },
+            preferredProviders = providerWeights.entries.joinToString(";") { "${it.key}:${it.value}" },
+            preferredCategories = categoryWeights.entries.joinToString(";") { "${it.key}:${it.value}" },
+            preferredQualities = qualityWeights.entries.joinToString(";") { "${it.key}:${it.value}" },
+            totalLikes = likes.size
+        )
+        learnedProfileDao.saveProfile(profile)
     }
 }

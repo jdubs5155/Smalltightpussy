@@ -305,3 +305,59 @@ data class UserPreferences(
     val favoriteProviders: String = "[]", // JSON array of favorite provider IDs
     val lastUpdated: Long = System.currentTimeMillis()
 )
+
+/**
+ * Liked Result - Tracks individual results the user has liked/thumbs-up'd.
+ * The learning system analyses these to discover user preferences over time
+ * and boost similar content in the Top Results list.
+ */
+@Entity(tableName = "liked_results")
+@Serializable
+data class LikedResult(
+    @PrimaryKey
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val url: String,
+    val providerId: String,
+    val providerName: String,
+    val category: String? = null,
+    val quality: String? = null,
+    val thumbnailUrl: String? = null,
+    val description: String? = null,
+    val seeders: Int? = null,
+    val rating: Float? = null,
+    val likedAt: Long = System.currentTimeMillis(),
+    // Extracted keywords from title for preference learning
+    val titleKeywords: String = "[]" // JSON array of lowercase keywords
+)
+
+/**
+ * Learned User Profile - Aggregated preference model built from liked results.
+ * Updated periodically as the user likes more content.
+ */
+@Entity(tableName = "learned_profile")
+@Serializable
+data class LearnedUserProfile(
+    @PrimaryKey
+    val id: Int = 1, // Single row
+    val preferredKeywords: String = "", // Serialised: "key:0.5;key2:1.0"
+    val preferredProviders: String = "",
+    val preferredCategories: String = "",
+    val preferredQualities: String = "",
+    val totalLikes: Int = 0,
+    val lastUpdated: Long = System.currentTimeMillis()
+) {
+    /** Parse "key:weight;key2:weight" into a Map<String, Float> */
+    private fun parseWeightMap(raw: String): Map<String, Float> {
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(";").mapNotNull { entry ->
+            val parts = entry.split(":", limit = 2)
+            if (parts.size == 2) parts[0] to (parts[1].toFloatOrNull() ?: 0f) else null
+        }.toMap()
+    }
+
+    fun preferredKeywordsMap(): Map<String, Float> = parseWeightMap(preferredKeywords)
+    fun preferredProvidersMap(): Map<String, Float> = parseWeightMap(preferredProviders)
+    fun preferredCategoriesMap(): Map<String, Float> = parseWeightMap(preferredCategories)
+    fun preferredQualitiesMap(): Map<String, Float> = parseWeightMap(preferredQualities)
+}

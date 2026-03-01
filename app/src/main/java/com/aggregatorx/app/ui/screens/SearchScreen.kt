@@ -47,6 +47,7 @@ fun SearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val providerResults by viewModel.providerResults.collectAsState()
+    val likedUrls by viewModel.likedUrls.collectAsState()
     val context = LocalContext.current
     
     val listState = rememberLazyListState()
@@ -166,6 +167,8 @@ fun SearchScreen(
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
                             context.startActivity(intent)
                         },
+                        onLike = { result -> viewModel.toggleLike(result) },
+                        likedUrls = likedUrls,
                         onExtractVideoUrl = { url ->
                             viewModel.extractVideoUrlForPreview(url)
                         },
@@ -298,6 +301,8 @@ fun ProviderResultsList(
     onResultClick: (SearchResult) -> Unit,
     onDownload: (SearchResult) -> Unit = {},
     onOpenExternal: (SearchResult) -> Unit = {},
+    onLike: (SearchResult) -> Unit = {},
+    likedUrls: Set<String> = emptySet(),
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
     modifier: Modifier = Modifier
@@ -407,6 +412,8 @@ fun ProviderResultsList(
                         onClick = { onResultClick(result) },
                         onDownload = { onDownload(result) },
                         onOpenExternal = { onOpenExternal(result) },
+                        onLike = { onLike(result) },
+                        isLiked = result.url in likedUrls,
                         showControls = true,
                         onExtractVideoUrl = onExtractVideoUrl,
                         onExtractVideoForPreview = onExtractVideoForPreview
@@ -442,6 +449,8 @@ fun ProviderResultsList(
                         onClick = { onResultClick(result) },
                         onDownload = { onDownload(result) },
                         onOpenExternal = { onOpenExternal(result) },
+                        onLike = { onLike(result) },
+                        isLiked = result.url in likedUrls,
                         showControls = true,
                         onExtractVideoUrl = onExtractVideoUrl,
                         onExtractVideoForPreview = onExtractVideoForPreview,

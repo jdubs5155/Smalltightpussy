@@ -1,6 +1,8 @@
 package com.aggregatorx.app.data.database
 
 import androidx.room.*
+import com.aggregatorx.app.data.model.LearnedUserProfile
+import com.aggregatorx.app.data.model.LikedResult
 import com.aggregatorx.app.data.model.Provider
 import com.aggregatorx.app.data.model.ScrapingConfig
 import com.aggregatorx.app.data.model.SearchHistoryEntry
@@ -141,4 +143,61 @@ interface UserPreferencesDao {
     
     @Query("UPDATE user_preferences SET preferredQualities = :qualities WHERE id = 1")
     suspend fun updatePreferredQualities(qualities: String)
+}
+
+/**
+ * Liked Results DAO - Tracks which results the user has liked.
+ * Powers the preference learning system.
+ */
+@Dao
+interface LikedResultDao {
+    @Query("SELECT * FROM liked_results ORDER BY likedAt DESC")
+    fun getAllLikedResults(): Flow<List<LikedResult>>
+
+    @Query("SELECT * FROM liked_results ORDER BY likedAt DESC")
+    suspend fun getAllLikedResultsSync(): List<LikedResult>
+
+    @Query("SELECT * FROM liked_results WHERE url = :url LIMIT 1")
+    suspend fun getLikedByUrl(url: String): LikedResult?
+
+    @Query("SELECT COUNT(*) FROM liked_results")
+    suspend fun getLikedCount(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLike(liked: LikedResult)
+
+    @Query("DELETE FROM liked_results WHERE url = :url")
+    suspend fun removeLikeByUrl(url: String)
+
+    @Query("DELETE FROM liked_results WHERE id = :id")
+    suspend fun removeLikeById(id: String)
+
+    @Query("SELECT url FROM liked_results")
+    suspend fun getAllLikedUrls(): List<String>
+
+    /** Most-liked providers (by count) for weighting */
+    @Query("SELECT providerName, COUNT(*) as cnt FROM liked_results GROUP BY providerName ORDER BY cnt DESC LIMIT 20")
+    suspend fun getTopLikedProviders(): List<ProviderLikeCount>
+
+    /** Most common keywords across all liked result titles */
+    @Query("SELECT titleKeywords FROM liked_results ORDER BY likedAt DESC LIMIT 200")
+    suspend fun getRecentLikedKeywords(): List<String>
+}
+
+/** Helper data class for provider like counts */
+data class ProviderLikeCount(
+    val providerName: String,
+    val cnt: Int
+)
+
+/**
+ * Learned User Profile DAO - Stores the aggregated preference model.
+ */
+@Dao
+interface LearnedProfileDao {
+    @Query("SELECT * FROM learned_profile WHERE id = 1")
+    suspend fun getProfile(): LearnedUserProfile?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveProfile(profile: LearnedUserProfile)
 }

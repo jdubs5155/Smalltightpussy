@@ -781,6 +781,8 @@ fun SearchResultCard(
     onClick: () -> Unit,
     onDownload: () -> Unit = {},
     onOpenExternal: () -> Unit = {},
+    onLike: () -> Unit = {},
+    isLiked: Boolean = false,
     showControls: Boolean = true,
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
@@ -1070,6 +1072,19 @@ fun SearchResultCard(
                         Text(
                             text = "Browser",
                             style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+
+                    // Like / thumbs-up button
+                    IconButton(
+                        onClick = onLike,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = if (isLiked) "Unlike" else "Like",
+                            tint = if (isLiked) Color(0xFFFF4081) else TextSecondary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

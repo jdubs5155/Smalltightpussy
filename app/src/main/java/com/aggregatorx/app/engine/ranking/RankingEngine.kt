@@ -11,31 +11,52 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Advanced Intelligent Result Ranking Engine v2
+ * Advanced Intelligent Result Ranking Engine v3
  * 
- * Uses multiple factors to rank and score search results:
- * - Text relevance (TF-IDF inspired with fuzzy matching)
- * - Levenshtein edit distance for typo tolerance
- * - N-gram substring matching for partial word detection 
- * - Provider reliability score
- * - Content freshness
- * - User engagement signals (seeders, views, ratings)
- * - Quality indicators
- * - URL path keyword extraction
+ * IMPORTANT DESIGN PRINCIPLE:
+ * - This engine's ranking/scoring is used ONLY for the "Top Results" list.
+ * - Provider-specific result sections keep their NATIVE order exactly as
+ *   returned by each site's own search logic. We never re-sort them.
+ * - Top Results are pinned/sorted using text relevance, user preference
+ *   learning (from likes), engagement signals, and quality indicators.
  * 
  * Features:
+ * - Text relevance (TF-IDF inspired with fuzzy matching)
+ * - Levenshtein edit distance for typo tolerance
+ * - N-gram substring matching for partial word detection
+ * - User preference learning from liked results (keyword/provider/quality boost)
+ * - Provider reliability score
+ * - Content freshness, engagement signals, quality indicators
  * - Error providers automatically sorted to bottom
- * - Fuzzy/partial matching with true edit distance for better results
- * - Related content discovery even with partial matches
- * - Enhanced description-based matching
- * - Synonym and related term matching (expanded dictionary)
- * - N-gram based substring similarity
- * - Smart fallback to related content when few matches
- * - Keyword extraction from query for broader matching
- * - Never returns empty if ANY content exists - always shows best available
+ * - Deduplicates by normalized title in Top Results
+ * - Never returns empty if ANY content exists
  */
 @Singleton
 class RankingEngine @Inject constructor() {
+
+    // ── User preference data (set before each ranking call) ─────────────
+    // These are populated from the LikedResult database by the repository
+    // before calling rankAndAggregate, so the engine itself stays stateless.
+    private var preferredKeywords: Map<String, Float> = emptyMap()
+    private var preferredProviders: Map<String, Float> = emptyMap()
+    private var preferredQualities: Map<String, Float> = emptyMap()
+    private var likedUrls: Set<String> = emptySet()
+
+    /**
+     * Feed learned user preferences into the engine before ranking.
+     * Called by the repository each time it aggregates results.
+     */
+    fun setUserPreferences(
+        keywords: Map<String, Float> = emptyMap(),
+        providers: Map<String, Float> = emptyMap(),
+        qualities: Map<String, Float> = emptyMap(),
+        liked: Set<String> = emptySet()
+    ) {
+        preferredKeywords = keywords
+        preferredProviders = providers
+        preferredQualities = qualities
+        likedUrls = liked
+    }
     
     companion object {
         // Scoring weights — text relevance dominates; non-text signals are secondary
@@ -248,21 +269,17 @@ class RankingEngine @Inject constructor() {
         
         // (PASS 4 removed — never pad with unrelated content)
 
-        // Re-rank results within each successful provider
-        val rankedSuccessfulProviders = successfulProviders.map { pr ->
-            val rankedResults = pr.results
-                .map { result ->
-                    result.copy(
-                        relevanceScore = calculateFinalScore(result, query, pr)
-                    )
-                }
-                .sortedByDescending { it.relevanceScore }
+        // ── Provider-specific sections: PRESERVE NATIVE ORDER ───────────
+        // Each provider's results stay exactly as that site returned them.
+        // We do NOT re-rank or re-sort them — the user wants to see each
+        // site's own relevance order as if they searched there directly.
+        // Only order the provider SECTIONS by the number of results (most
+        // productive providers first) so the user sees the richest data up top.
+        val orderedSuccessfulProviders = successfulProviders
+            .sortedByDescending { it.results.size }
 
-            pr.copy(results = rankedResults)
-        }.sortedByDescending { it.results.firstOrNull()?.relevanceScore ?: 0f }
-        
         // Failed providers go at the bottom - keep original error info
-        val orderedProviderResults = rankedSuccessfulProviders + failedProviders
+        val orderedProviderResults = orderedSuccessfulProviders + failedProviders
 
         return AggregatedSearchResults(
             query = query,
@@ -347,7 +364,9 @@ class RankingEngine @Inject constructor() {
     }
     
     /**
-     * Calculate final score combining all factors
+     * Calculate final score combining all factors.
+     * This score is used ONLY for the Top Results list.
+     * Includes user preference boost from learned likes.
      */
     private fun calculateFinalScore(
         result: SearchResult,
@@ -359,12 +378,45 @@ class RankingEngine @Inject constructor() {
         val freshnessScore = calculateFreshnessScore(result.date)
         val engagementScore = calculateEngagementScore(result)
         val qualityScore = calculateQualityScore(result)
-        
-        return (textScore * WEIGHT_TEXT_RELEVANCE +
+
+        var baseScore = (textScore * WEIGHT_TEXT_RELEVANCE +
                 providerScore * WEIGHT_PROVIDER_SCORE +
                 freshnessScore * WEIGHT_FRESHNESS +
                 engagementScore * WEIGHT_ENGAGEMENT +
                 qualityScore * WEIGHT_QUALITY) * 100f
+
+        // ── User Preference Boost (from liked results) ─────────────────
+        // Boost results that match learned user preferences.
+        // This only affects Top Results scoring — provider sections are untouched.
+        var prefBoost = 0f
+
+        // Already-liked results get the biggest push to the top
+        if (result.url in likedUrls) {
+            prefBoost += 15f
+        }
+
+        // Keyword preference boost: title words that appear in liked history
+        if (preferredKeywords.isNotEmpty()) {
+            val titleWords = result.title.lowercase().split(Regex("\\W+")).filter { it.length > 2 }
+            val keywordScore = titleWords.sumOf { word ->
+                (preferredKeywords[word] ?: 0f).toDouble()
+            }.toFloat()
+            // Normalise: max ≈ 10 points
+            prefBoost += (keywordScore * 10f).coerceAtMost(10f)
+        }
+
+        // Provider preference boost
+        val providerPref = preferredProviders[result.providerId] ?: 0f
+        prefBoost += providerPref * 5f  // max ≈ 5 points
+
+        // Quality preference boost
+        val qualityTag = result.quality?.lowercase() ?: ""
+        if (qualityTag.isNotEmpty()) {
+            val qualityPref = preferredQualities[qualityTag] ?: 0f
+            prefBoost += qualityPref * 3f  // max ≈ 3 points
+        }
+
+        return (baseScore + prefBoost).coerceIn(0f, 100f)
     }
     
     /**

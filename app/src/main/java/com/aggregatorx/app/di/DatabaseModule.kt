@@ -54,6 +54,16 @@ object DatabaseModule {
     }
     
     @Provides
+    fun provideLikedResultDao(database: AggregatorDatabase): LikedResultDao {
+        return database.likedResultDao()
+    }
+    
+    @Provides
+    fun provideLearnedProfileDao(database: AggregatorDatabase): LearnedProfileDao {
+        return database.learnedProfileDao()
+    }
+    
+    @Provides
     @Singleton
     fun provideSmartNavigationEngine(): SmartNavigationEngine {
         return SmartNavigationEngine()
