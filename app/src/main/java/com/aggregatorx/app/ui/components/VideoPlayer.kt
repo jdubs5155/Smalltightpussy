@@ -535,30 +535,78 @@ fun VideoPlayerDialog(
                             }
                         }
                         
-                        // Center play/pause
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .size(72.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .clickable {
-                                    exoPlayer?.let { player ->
-                                        if (isPlaying) {
-                                            player.pause()
-                                        } else {
-                                            player.play()
-                                        }
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
+                        // Center controls: Skip Back | Play/Pause | Skip Forward
+                        Row(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(48.dp)
-                            )
+                            // Skip back 10s
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .clickable {
+                                        exoPlayer?.let { player ->
+                                            player.seekTo(maxOf(0, player.currentPosition - 10000))
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Replay10,
+                                    contentDescription = "Skip back 10s",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                            
+                            // Play/Pause
+                            Box(
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .clickable {
+                                        exoPlayer?.let { player ->
+                                            if (isPlaying) {
+                                                player.pause()
+                                            } else {
+                                                player.play()
+                                            }
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            }
+                            
+                            // Skip forward 10s
+                            Box(
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .clickable {
+                                        exoPlayer?.let { player ->
+                                            player.seekTo(minOf(player.duration, player.currentPosition + 10000))
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Forward10,
+                                    contentDescription = "Skip forward 10s",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         }
                         
                         // Bottom controls

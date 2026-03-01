@@ -565,9 +565,20 @@ fun InlineThumbnailPreview(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
+                        // Tap opens fullscreen video player
+                        if (isPlaying) {
+                            isPlaying = false
+                            playbackFailed = false
+                            formatIndex = 0
+                            exoPlayer?.release()
+                            exoPlayer = null
+                        }
+                        onLongPress()
+                    },
+                    onLongPress = {
+                        // Long press starts inline muted preview
                         when {
                             isPlaying -> {
-                                // Stop and reset
                                 isPlaying = false
                                 playbackFailed = false
                                 formatIndex = 0
@@ -575,19 +586,16 @@ fun InlineThumbnailPreview(
                                 exoPlayer = null
                             }
                             playbackFailed -> {
-                                // Retry from scratch
                                 playbackFailed = false
                                 formatIndex = 0
-                                extractedVideoUrl = videoUrl // reset to original
+                                extractedVideoUrl = videoUrl
                             }
                             !extractedVideoUrl.isNullOrEmpty() -> {
-                                // Have URL already — play it
                                 formatIndex = 0
                                 playbackFailed = false
                                 isPlaying = true
                             }
                             onVideoExtractionNeeded != null -> {
-                                // Extract then play
                                 isLoading = true
                                 scope.launch {
                                     try {
@@ -608,8 +616,7 @@ fun InlineThumbnailPreview(
                                 }
                             }
                         }
-                    },
-                    onLongPress = { onLongPress() }
+                    }
                 )
             }
     ) {
@@ -704,7 +711,7 @@ fun InlineThumbnailPreview(
                 }
             }
 
-            // "Hold" hint badge – shown only when idle
+            // Play hint badge – shown only when idle
             if (!isExtracting && !isLoading && !playbackFailed) {
                 Surface(
                     modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
@@ -716,14 +723,14 @@ fun InlineThumbnailPreview(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.Fullscreen,
+                            Icons.Default.PlayArrow,
                             contentDescription = null,
                             tint = DarkBackground,
                             modifier = Modifier.size(10.dp)
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            "Hold",
+                            "Watch",
                             style = MaterialTheme.typography.labelSmall,
                             color = DarkBackground,
                             fontSize = 8.sp
@@ -789,6 +796,75 @@ fun SearchResultCard(
     var isExtractingForFullscreen by remember { mutableStateOf(false) }
     var showExtractionError by remember { mutableStateOf(false) }
     
+    // Reusable fullscreen extraction & launch
+    val openFullscreenPlayer: () -> Unit = {
+        val hasExtractor = onExtractVideoForPreview != null || onExtractVideoUrl != null
+        if (!result.url.isNullOrEmpty() && hasExtractor && !isExtractingForFullscreen) {
+            isExtractingForFullscreen = true
+            scope.launch {
+                try {
+                    if (onExtractVideoForPreview != null) {
+                        val previewResult = onExtractVideoForPreview(result.url)
+                        if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
+                            fullscreenVideoUrl = previewResult.videoUrl
+                            fullscreenVideoHeaders = previewResult.headers
+                            showFullscreenPlayer = true
+                            showExtractionError = false
+                        } else {
+                            showExtractionError = true
+                            withContext(Dispatchers.Main) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Could not extract video stream. Try opening in browser.",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    } else if (onExtractVideoUrl != null) {
+                        val extractedUrl = onExtractVideoUrl(result.url)
+                        if (!extractedUrl.isNullOrEmpty()) {
+                            fullscreenVideoUrl = extractedUrl
+                            fullscreenVideoHeaders = null
+                            showFullscreenPlayer = true
+                            showExtractionError = false
+                        } else {
+                            showExtractionError = true
+                            withContext(Dispatchers.Main) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Could not extract video stream. Try opening in browser.",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    showExtractionError = true
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Video extraction failed: ${e.message?.take(50) ?: "Unknown error"}",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } finally {
+                    isExtractingForFullscreen = false
+                }
+            }
+        } else if (!result.url.isNullOrEmpty()) {
+            scope.launch {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Video preview not available. Opening in browser instead.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            onOpenExternal()
+        }
+    }
+    
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -821,76 +897,7 @@ fun SearchResultCard(
                     duration = result.duration,
                     isExtracting = isExtractingForFullscreen,
                     modifier = Modifier.size(140.dp), // Increased size for better visibility
-                    onLongPress = {
-                        // Long press opens fullscreen player — use the rich extraction that returns headers
-                        val hasExtractor = onExtractVideoForPreview != null || onExtractVideoUrl != null
-                        if (!result.url.isNullOrEmpty() && hasExtractor && !isExtractingForFullscreen) {
-                            isExtractingForFullscreen = true
-                            scope.launch {
-                                try {
-                                    // Prefer the new extractor that returns URL + headers
-                                    if (onExtractVideoForPreview != null) {
-                                        val previewResult = onExtractVideoForPreview(result.url)
-                                        if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
-                                            fullscreenVideoUrl = previewResult.videoUrl
-                                            fullscreenVideoHeaders = previewResult.headers
-                                            showFullscreenPlayer = true
-                                            showExtractionError = false
-                                        } else {
-                                            showExtractionError = true
-                                            withContext(Dispatchers.Main) {
-                                                android.widget.Toast.makeText(
-                                                    context,
-                                                    "Could not extract video stream. Try opening in browser.",
-                                                    android.widget.Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        }
-                                    } else if (onExtractVideoUrl != null) {
-                                        // Legacy path — no headers
-                                        val extractedUrl = onExtractVideoUrl(result.url)
-                                        if (!extractedUrl.isNullOrEmpty()) {
-                                            fullscreenVideoUrl = extractedUrl
-                                            fullscreenVideoHeaders = null
-                                            showFullscreenPlayer = true
-                                            showExtractionError = false
-                                        } else {
-                                            showExtractionError = true
-                                            withContext(Dispatchers.Main) {
-                                                android.widget.Toast.makeText(
-                                                    context,
-                                                    "Could not extract video stream. Try opening in browser.",
-                                                    android.widget.Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    showExtractionError = true
-                                    withContext(Dispatchers.Main) {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "Video extraction failed: ${e.message?.take(50) ?: "Unknown error"}",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                } finally {
-                                    isExtractingForFullscreen = false
-                                }
-                            }
-                        } else if (!result.url.isNullOrEmpty()) {
-                            scope.launch {
-                                withContext(Dispatchers.Main) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "Video preview not available. Opening in browser instead.",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                            onOpenExternal()
-                        }
-                    },
+                    onLongPress = openFullscreenPlayer,
                     onVideoExtractionNeeded = if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null) {
                         { onExtractVideoUrl(result.url) }
                     } else null
@@ -994,6 +1001,29 @@ fun SearchResultCard(
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
+                    // Watch button - Opens fullscreen video player
+                    Button(
+                        onClick = openFullscreenPlayer,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CyberCyan,
+                            contentColor = DarkBackground
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Watch",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    
                     // Download button - Auto downloads highest quality
                     Button(
                         onClick = onDownload,
