@@ -314,7 +314,9 @@ class ScrapingEngine @Inject constructor(
                             return fallbackResult.copy(results = validatedResults)
                         }
                     }
-                    fallbackResult
+                    // Cooldown fallback also returned nothing — try NLP queries as last resort
+                    val nlpCooldownResult = retryWithNlpQueries(provider, query, startTime)
+                    nlpCooldownResult ?: fallbackResult
                 } catch (e: Exception) {
                     ProviderSearchResults(
                         provider = provider,
@@ -416,7 +418,9 @@ class ScrapingEngine @Inject constructor(
                 if (fallbackResult.success && fallbackResult.results.isNotEmpty()) {
                     val validatedResults = validateAndFilterResults(fallbackResult.results, query)
                     if (validatedResults.isEmpty() && fallbackResult.results.isNotEmpty()) {
-                        fallbackResult.copy(
+                        // Fallback returned category pages — try NLP queries before giving up
+                        val nlpExceptionResult = retryWithNlpQueries(provider, query, startTime)
+                        nlpExceptionResult ?: fallbackResult.copy(
                             results = emptyList(),
                             success = false,
                             errorMessage = "Fallback results were category/navigation pages"
@@ -439,13 +443,19 @@ class ScrapingEngine @Inject constructor(
                         fallbackResult.copy(results = validatedResults)
                     }
                 } else {
-                    fallbackResult
+                    // Fallback search also returned nothing — NLP retry as last resort
+                    val nlpFallbackResult = retryWithNlpQueries(provider, query, startTime)
+                    nlpFallbackResult ?: fallbackResult
                 }
             } catch (ce: CancellationException) {
                 throw ce
             } catch (fallbackEx: Exception) {
-                // All methods failed - return graceful failure (LOOP CONTINUES)
-                ProviderSearchResults(
+                // All methods failed — final NLP attempt before giving up
+                val nlpLastResort = try {
+                    retryWithNlpQueries(provider, query, startTime)
+                } catch (_: Exception) { null }
+
+                nlpLastResort ?: ProviderSearchResults(
                     provider = provider,
                     results = emptyList(),
                     searchTime = System.currentTimeMillis() - startTime,
