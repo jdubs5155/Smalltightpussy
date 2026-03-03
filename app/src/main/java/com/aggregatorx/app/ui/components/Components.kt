@@ -441,7 +441,11 @@ fun StatChip(
 
 /**
  * Inline Thumbnail Preview with Video Playback
- * Plays video directly within the thumbnail box when tapped.
+ *
+ * Gesture mapping:
+ *   TAP        → opens fullscreen video player (full video with controls)
+ *   LONG PRESS → starts inline muted preview within the thumbnail
+ *
  * Supports HLS / DASH / Progressive with automatic format cycling on error.
  */
 @Composable
@@ -450,7 +454,7 @@ fun InlineThumbnailPreview(
     videoUrl: String?,
     duration: String? = null,
     modifier: Modifier = Modifier,
-    onLongPress: () -> Unit = {},
+    onTapFullscreen: () -> Unit = {},
     onVideoExtractionNeeded: (suspend () -> String?)? = null,
     isExtracting: Boolean = false
 ) {
@@ -566,7 +570,7 @@ fun InlineThumbnailPreview(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        // Tap opens fullscreen video player
+                        // TAP → open fullscreen video player with full video
                         if (isPlaying) {
                             isPlaying = false
                             playbackFailed = false
@@ -574,10 +578,10 @@ fun InlineThumbnailPreview(
                             exoPlayer?.release()
                             exoPlayer = null
                         }
-                        onLongPress()
+                        onTapFullscreen()
                     },
                     onLongPress = {
-                        // Long press starts inline muted preview
+                        // LONG PRESS → start inline muted preview within thumbnail
                         when {
                             isPlaying -> {
                                 isPlaying = false
@@ -799,72 +803,65 @@ fun SearchResultCard(
     var isExtractingForFullscreen by remember { mutableStateOf(false) }
     var showExtractionError by remember { mutableStateOf(false) }
     
-    // Reusable fullscreen extraction & launch
+    // Reusable fullscreen extraction & launch — ALWAYS opens the player.
+    // If extraction finds a stream URL, great; otherwise we hand the raw
+    // result URL to the player and let ExoPlayer attempt it.  The player's
+    // own error UI gives the user Retry / Open-in-Browser options.
     val openFullscreenPlayer: () -> Unit = {
-        val hasExtractor = onExtractVideoForPreview != null || onExtractVideoUrl != null
-        if (!result.url.isNullOrEmpty() && hasExtractor && !isExtractingForFullscreen) {
-            isExtractingForFullscreen = true
-            scope.launch {
-                try {
-                    if (onExtractVideoForPreview != null) {
-                        val previewResult = onExtractVideoForPreview(result.url)
-                        if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
-                            fullscreenVideoUrl = previewResult.videoUrl
-                            fullscreenVideoHeaders = previewResult.headers
-                            showFullscreenPlayer = true
-                            showExtractionError = false
-                        } else {
-                            showExtractionError = true
-                            withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Could not extract video stream. Try opening in browser.",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
+        if (!result.url.isNullOrEmpty() && !isExtractingForFullscreen) {
+            val hasExtractor = onExtractVideoForPreview != null || onExtractVideoUrl != null
+            if (hasExtractor) {
+                isExtractingForFullscreen = true
+                scope.launch {
+                    try {
+                        var resolved = false
+
+                        // Attempt 1: full extraction chain (6-step) with headers
+                        if (!resolved && onExtractVideoForPreview != null) {
+                            val previewResult = onExtractVideoForPreview(result.url)
+                            if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
+                                fullscreenVideoUrl = previewResult.videoUrl
+                                fullscreenVideoHeaders = previewResult.headers
+                                resolved = true
                             }
                         }
-                    } else if (onExtractVideoUrl != null) {
-                        val extractedUrl = onExtractVideoUrl(result.url)
-                        if (!extractedUrl.isNullOrEmpty()) {
-                            fullscreenVideoUrl = extractedUrl
+
+                        // Attempt 2: simple URL extraction
+                        if (!resolved && onExtractVideoUrl != null) {
+                            val extractedUrl = onExtractVideoUrl(result.url)
+                            if (!extractedUrl.isNullOrEmpty()) {
+                                fullscreenVideoUrl = extractedUrl
+                                fullscreenVideoHeaders = null
+                                resolved = true
+                            }
+                        }
+
+                        // Attempt 3: use the raw result URL directly — let the
+                        // player try it; many CDN links work without extraction.
+                        if (!resolved) {
+                            fullscreenVideoUrl = result.url
                             fullscreenVideoHeaders = null
-                            showFullscreenPlayer = true
-                            showExtractionError = false
-                        } else {
-                            showExtractionError = true
-                            withContext(Dispatchers.Main) {
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "Could not extract video stream. Try opening in browser.",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
                         }
+
+                        showFullscreenPlayer = true
+                        showExtractionError = false
+                    } catch (e: Exception) {
+                        // Even on error, open the player with the raw URL so the
+                        // user can tap Retry or Open-in-Browser from the player UI.
+                        fullscreenVideoUrl = result.url
+                        fullscreenVideoHeaders = null
+                        showFullscreenPlayer = true
+                        showExtractionError = false
+                    } finally {
+                        isExtractingForFullscreen = false
                     }
-                } catch (e: Exception) {
-                    showExtractionError = true
-                    withContext(Dispatchers.Main) {
-                        android.widget.Toast.makeText(
-                            context,
-                            "Video extraction failed: ${e.message?.take(50) ?: "Unknown error"}",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                } finally {
-                    isExtractingForFullscreen = false
                 }
+            } else {
+                // No extractors available — open the player with the raw URL
+                fullscreenVideoUrl = result.url
+                fullscreenVideoHeaders = null
+                showFullscreenPlayer = true
             }
-        } else if (!result.url.isNullOrEmpty()) {
-            scope.launch {
-                withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        context,
-                        "Video preview not available. Opening in browser instead.",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-            onOpenExternal()
         }
     }
     
@@ -899,8 +896,8 @@ fun SearchResultCard(
                     videoUrl = null, // Will be extracted on tap
                     duration = result.duration,
                     isExtracting = isExtractingForFullscreen,
-                    modifier = Modifier.size(140.dp), // Increased size for better visibility
-                    onLongPress = openFullscreenPlayer,
+                    modifier = Modifier.size(140.dp),
+                    onTapFullscreen = openFullscreenPlayer,
                     onVideoExtractionNeeded = if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null) {
                         { onExtractVideoUrl(result.url) }
                     } else null
@@ -987,6 +984,12 @@ fun SearchResultCard(
                         showFullscreenPlayer = false
                         fullscreenVideoUrl = null
                         fullscreenVideoHeaders = null
+                    },
+                    onOpenExternal = {
+                        showFullscreenPlayer = false
+                        fullscreenVideoUrl = null
+                        fullscreenVideoHeaders = null
+                        onOpenExternal()
                     }
                 )
             }

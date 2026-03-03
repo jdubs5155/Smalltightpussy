@@ -191,11 +191,15 @@ class SearchViewModel @Inject constructor(
      *   4) VideoStreamResolver (direct → proxy → headless → site-specific extractors)
      *   5) Direct URL probe: if pageUrl itself looks playable, try it directly
      *   6) Fallback: return the page URL itself for embeddable sites
+     *   7) Last resort: pass the raw URL to the player (never returns null)
      *
      * Returns [VideoPreviewResult] with both the playable URL and the HTTP
      * headers (Referer / Origin / UA) that the CDN usually requires.
+     * This method NEVER returns null — it always falls back to the raw URL
+     * so the fullscreen player always opens and the user can Retry or
+     * Open-in-Browser from the player's error UI.
      */
-    suspend fun extractVideoForPreview(pageUrl: String): VideoPreviewResult? {
+    suspend fun extractVideoForPreview(pageUrl: String): VideoPreviewResult {
         // 1. Cache hit
         videoPreviewCache[pageUrl]?.let { return it }
 
@@ -258,9 +262,23 @@ class SearchViewModel @Inject constructor(
                 return result
             }
 
-            null
+            // 7. Last resort — pass the raw URL to the player and let ExoPlayer
+            //    attempt it.  The player will cycle through Progressive/HLS/DASH
+            //    formats automatically and show Retry/Open-in-Browser on failure.
+            //    Returning null here used to cause silent "no source" toasts; this
+            //    is strictly better because the user at least sees the player UI.
+            val fallback = VideoPreviewResult(
+                videoUrl = pageUrl,
+                headers = buildPlaybackHeaders(pageUrl)
+            )
+            videoPreviewCache[pageUrl] = fallback
+            return fallback
         } catch (e: Exception) {
-            null
+            // Even on exception, return the raw URL so the player can attempt it
+            return VideoPreviewResult(
+                videoUrl = pageUrl,
+                headers = buildPlaybackHeaders(pageUrl)
+            )
         }
     }
 

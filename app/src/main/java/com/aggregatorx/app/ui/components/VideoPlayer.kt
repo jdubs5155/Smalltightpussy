@@ -103,6 +103,7 @@ fun VideoPlayerDialog(
     title: String,
     onDismiss: () -> Unit,
     onDownload: () -> Unit = {},
+    onOpenExternal: () -> Unit = {},
     headers: Map<String, String>? = null,
     onStreamError: ((String, RecoveryStrategy?) -> Unit)? = null
 ) {
@@ -396,7 +397,7 @@ fun VideoPlayerDialog(
                     
                     // Recovery action buttons
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Retry button
                         Button(
@@ -421,6 +422,27 @@ fun VideoPlayerDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Retry",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        
+                        // Open in browser button — always available as escape hatch
+                        Button(
+                            onClick = onOpenExternal,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AIAccent,
+                                contentColor = DarkBackground
+                            ),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.OpenInBrowser,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Browser",
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
