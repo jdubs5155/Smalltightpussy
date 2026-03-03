@@ -12,6 +12,7 @@ import com.aggregatorx.app.engine.media.VideoStreamResolver
 import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
 import com.aggregatorx.app.engine.network.ProxyVPNEngine
 import com.aggregatorx.app.engine.network.CloudflareBypassEngine
+import com.aggregatorx.app.engine.scraper.SmartNavigationEngine
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -53,7 +54,17 @@ object EngineModule {
         return AIDecisionEngine()
     }
     
-    // VideoExtractorEngine is provided by DatabaseModule
+    @Provides
+    @Singleton
+    fun provideSmartNavigationEngine(): SmartNavigationEngine {
+        return SmartNavigationEngine()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideVideoExtractorEngine(): VideoExtractorEngine {
+        return VideoExtractorEngine()
+    }
     
     @Provides
     @Singleton

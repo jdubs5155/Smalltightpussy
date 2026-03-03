@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.withPermit
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import com.aggregatorx.app.engine.util.EngineUtils
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -76,19 +77,10 @@ class ScrapingEngine @Inject constructor(
         private const val DEFAULT_RETRY_DELAY = 800L
         private const val DEFAULT_RATE_LIMIT_MS = 50L
         private const val MAX_CONCURRENT_PROVIDERS = 20
-        private const val DEFAULT_USER_AGENT = 
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        private val DEFAULT_USER_AGENT = EngineUtils.DEFAULT_USER_AGENT
         
-        // Alternate user agents for rotation (Chrome 132, Firefox 135, Safari 17.6, Edge 132 — Feb 2026)
-        private val USER_AGENTS = listOf(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0",
-            "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36"
-        )
+        // Delegate to shared user agent pool
+        private val USER_AGENTS = EngineUtils.USER_AGENTS
         
         // Patterns to identify category/navigation URLs
         private val CATEGORY_URL_PATTERNS = listOf(
@@ -545,16 +537,9 @@ class ScrapingEngine @Inject constructor(
         } else null
     }
 
-    /**
-     * Extract domain from URL for AI learning key
-     */
-    private fun extractDomain(url: String): String {
-        return try {
-            java.net.URL(url).host.removePrefix("www.")
-        } catch (e: Exception) {
-            url
-        }
-    }
+    /** Delegate to shared implementation. */
+    private fun extractDomain(url: String): String =
+        EngineUtils.extractDomain(url)
     
     /**
      * Validate and filter results to ensure they are actual content, not category pages
@@ -707,36 +692,9 @@ class ScrapingEngine @Inject constructor(
         return editDist in 1..maxDist
     }
     
-    /**
-     * Levenshtein edit distance (optimized single-row DP)
-     */
-    private fun levenshteinDistance(a: String, b: String): Int {
-        if (a == b) return 0
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-        
-        val s1 = if (a.length <= b.length) a else b
-        val s2 = if (a.length <= b.length) b else a
-        
-        var prevRow = IntArray(s1.length + 1) { it }
-        var currRow = IntArray(s1.length + 1)
-        
-        for (j in 1..s2.length) {
-            currRow[0] = j
-            for (i in 1..s1.length) {
-                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-                currRow[i] = minOf(
-                    currRow[i - 1] + 1,
-                    prevRow[i] + 1,
-                    prevRow[i - 1] + cost
-                )
-            }
-            val temp = prevRow
-            prevRow = currRow
-            currRow = temp
-        }
-        return prevRow[s1.length]
-    }
+    /** Delegate to shared implementation. */
+    private fun levenshteinDistance(a: String, b: String): Int =
+        EngineUtils.levenshteinDistance(a, b)
     
     /**
      * Generate related/similar results even when main query doesn't match exactly
@@ -1054,18 +1012,7 @@ class ScrapingEngine @Inject constructor(
             .firstOrNull()?.text()?.takeIf { it.isNotBlank() }
     }
     
-    private fun matchesQuery(text: String, query: String): Boolean {
-        val queryWords = query.lowercase().split(" ").filter { it.length > 2 }
-        val textLower = text.lowercase()
-        return queryWords.any { textLower.contains(it) }
-    }
-    
-    private fun calculateRelevance(title: String, query: String): Float {
-        val queryWords = query.lowercase().split(" ")
-        val titleWords = title.lowercase().split(" ")
-        val matchCount = queryWords.count { qw -> titleWords.any { it.contains(qw) } }
-        return (matchCount.toFloat() / queryWords.size.coerceAtLeast(1)) * 100
-    }
+
     
     /**
      * Search a single provider with full error handling and fallback
@@ -1335,39 +1282,28 @@ class ScrapingEngine @Inject constructor(
     }
     
     /**
-     * Try alternate search URL patterns
+     * Try alternate search URL patterns not covered by scrapeGeneric.
+     * Uses extractResultsWithThumbnails instead of extractResultsGeneric for
+     * richer result extraction (thumbnails, descriptions, SmartNavigation).
      */
     private suspend fun scrapeWithAlternateSearchPatterns(
         provider: Provider,
         query: String
     ): List<SearchResult> = withContext(Dispatchers.IO) {
         val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val slug = query.trim().lowercase().replace(Regex("\\s+"), "-")
         val baseUrl = provider.baseUrl.trimEnd('/')
-        
-        // Extended list of search patterns
-        val searchPatterns = listOf(
-            "$baseUrl/search?q=$encodedQuery",
-            "$baseUrl/search?query=$encodedQuery",
-            "$baseUrl/search?s=$encodedQuery",
-            "$baseUrl/search?keyword=$encodedQuery",
-            "$baseUrl/search?term=$encodedQuery",
-            "$baseUrl/search/$encodedQuery",
-            "$baseUrl/search/${query.replace(" ", "-")}",
-            "$baseUrl/search/${query.replace(" ", "+")}",
-            "$baseUrl/?s=$encodedQuery",
-            "$baseUrl/?q=$encodedQuery",
-            "$baseUrl/videos?search=$encodedQuery",
+
+        // Only patterns NOT already in scrapeGeneric
+        val extraPatterns = listOf(
+            "$baseUrl/search/$slug",
             "$baseUrl/videos?q=$encodedQuery",
-            "$baseUrl/movies?search=$encodedQuery",
             "$baseUrl/movies?q=$encodedQuery",
-            "$baseUrl/find?q=$encodedQuery",
             "$baseUrl/results?search_query=$encodedQuery",
-            "$baseUrl/search.php?q=$encodedQuery",
-            "$baseUrl/search.html?q=$encodedQuery",
-            "$baseUrl/index.php?s=$encodedQuery"
+            "$baseUrl/search/${query.replace(" ", "+")}"
         )
 
-        for (pattern in searchPatterns) {
+        for (pattern in extraPatterns) {
             try {
                 val document = fetchDocument(pattern)
                 val results = extractResultsWithThumbnails(document, provider, query)
@@ -2211,7 +2147,7 @@ class ScrapingEngine @Inject constructor(
         providerHealthMap[providerId] = newHealth
     }
     
-    private fun getRandomUserAgent(): String = USER_AGENTS.random()
+    private fun getRandomUserAgent(): String = EngineUtils.getRandomUserAgent()
     
     private fun parseHeaders(json: String): Map<String, String> {
         // Simple JSON parsing for headers

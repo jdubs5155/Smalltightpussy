@@ -9,6 +9,7 @@ import com.aggregatorx.app.engine.media.DownloadState
 import com.aggregatorx.app.engine.media.VideoExtractorEngine
 import com.aggregatorx.app.engine.media.VideoExtractionResult
 import com.aggregatorx.app.engine.media.VideoStreamResolver
+import com.aggregatorx.app.engine.util.EngineUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -249,7 +250,7 @@ class SearchViewModel @Inject constructor(
             "${uri.scheme}://${uri.host}"
         } catch (_: Exception) { pageUrl }
         return mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent" to EngineUtils.DEFAULT_USER_AGENT,
             "Referer" to "$origin/",
             "Origin" to origin,
             "Accept" to "*/*"

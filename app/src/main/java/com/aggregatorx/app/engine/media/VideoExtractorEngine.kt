@@ -40,8 +40,7 @@ class VideoExtractorEngine @Inject constructor() {
         .build()
     
     companion object {
-        private const val USER_AGENT = 
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        private val USER_AGENT = com.aggregatorx.app.engine.util.EngineUtils.DEFAULT_USER_AGENT
         
         // Alternate user agents for fallback (2026)
         private val ALTERNATE_USER_AGENTS = listOf(

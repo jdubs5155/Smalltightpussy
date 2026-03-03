@@ -3,8 +3,6 @@ package com.aggregatorx.app.di
 import android.content.Context
 import androidx.room.Room
 import com.aggregatorx.app.data.database.*
-import com.aggregatorx.app.engine.scraper.SmartNavigationEngine
-import com.aggregatorx.app.engine.media.VideoExtractorEngine
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -61,17 +59,5 @@ object DatabaseModule {
     @Provides
     fun provideLearnedProfileDao(database: AggregatorDatabase): LearnedProfileDao {
         return database.learnedProfileDao()
-    }
-    
-    @Provides
-    @Singleton
-    fun provideSmartNavigationEngine(): SmartNavigationEngine {
-        return SmartNavigationEngine()
-    }
-    
-    @Provides
-    @Singleton
-    fun provideVideoExtractorEngine(): VideoExtractorEngine {
-        return VideoExtractorEngine()
     }
 }

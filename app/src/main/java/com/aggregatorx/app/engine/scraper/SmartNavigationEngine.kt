@@ -36,8 +36,7 @@ class SmartNavigationEngine @Inject constructor() {
         private const val QUICK_TIMEOUT  = 20000   // enough for sites that take 7-15s to respond
         // Number of URL patterns checked in parallel per batch
         private const val CONCURRENT_PATTERN_CHECKS = 18
-        private const val DEFAULT_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        private val DEFAULT_USER_AGENT = com.aggregatorx.app.engine.util.EngineUtils.DEFAULT_USER_AGENT
 
         // Extended search URL patterns (most-to-least common)
         private val SEARCH_URL_PATTERNS = listOf(

@@ -377,11 +377,8 @@ class EndpointDiscoveryEngine @Inject constructor(
             sitemaps
         }
 
-    private fun extractDomain(url: String): String {
-        return try {
-            java.net.URL(url).host.removePrefix("www.")
-        } catch (_: Exception) { url }
-    }
+    private fun extractDomain(url: String): String =
+        com.aggregatorx.app.engine.util.EngineUtils.extractDomain(url)
 }
 
 /**

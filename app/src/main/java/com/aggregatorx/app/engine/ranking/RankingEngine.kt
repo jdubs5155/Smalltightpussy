@@ -5,6 +5,7 @@ import com.aggregatorx.app.data.model.ProviderSearchResults
 import com.aggregatorx.app.data.model.SearchResult
 import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
 import com.aggregatorx.app.engine.nlp.ProcessedQuery
+import com.aggregatorx.app.engine.util.EngineUtils
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -667,38 +668,9 @@ class RankingEngine @Inject constructor(
         return (1f - editDist.toFloat() / maxLen).coerceIn(0f, 1f)
     }
     
-    /**
-     * Compute Levenshtein edit distance between two strings
-     * Uses optimized single-row DP approach (O(min(m,n)) space)
-     */
-    private fun levenshteinDistance(a: String, b: String): Int {
-        if (a == b) return 0
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-        
-        // Ensure a is the shorter string for space optimization
-        val s1 = if (a.length <= b.length) a else b
-        val s2 = if (a.length <= b.length) b else a
-        
-        var prevRow = IntArray(s1.length + 1) { it }
-        var currRow = IntArray(s1.length + 1)
-        
-        for (j in 1..s2.length) {
-            currRow[0] = j
-            for (i in 1..s1.length) {
-                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-                currRow[i] = minOf(
-                    currRow[i - 1] + 1,      // insertion
-                    prevRow[i] + 1,           // deletion
-                    prevRow[i - 1] + cost     // substitution
-                )
-            }
-            val temp = prevRow
-            prevRow = currRow
-            currRow = temp
-        }
-        return prevRow[s1.length]
-    }
+    /** Delegate to shared implementation. */
+    private fun levenshteinDistance(a: String, b: String): Int =
+        EngineUtils.levenshteinDistance(a, b)
     
     /**
      * Generate character n-grams from a string

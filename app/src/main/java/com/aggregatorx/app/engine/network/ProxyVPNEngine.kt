@@ -11,6 +11,7 @@ import org.jsoup.Connection
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
+import com.aggregatorx.app.engine.util.EngineUtils
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,7 +32,7 @@ import javax.inject.Singleton
 class ProxyVPNEngine @Inject constructor() {
     
     companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        private val USER_AGENT = EngineUtils.DEFAULT_USER_AGENT
         
         // Netherlands country code for geo-filtering
         private const val TARGET_COUNTRY = "NL"

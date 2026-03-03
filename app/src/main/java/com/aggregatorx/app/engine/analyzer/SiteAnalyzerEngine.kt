@@ -42,8 +42,7 @@ class SiteAnalyzerEngine @Inject constructor() {
     companion object {
         private const val DEFAULT_TIMEOUT = 30000
         private const val ANALYSIS_CACHE_TTL_MS = 3_600_000L // 1 hour
-        private const val DEFAULT_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        private val DEFAULT_USER_AGENT = com.aggregatorx.app.engine.util.EngineUtils.DEFAULT_USER_AGENT
         
         // Common selectors for pattern detection
         private val SEARCH_FORM_SELECTORS = listOf(

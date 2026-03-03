@@ -20,7 +20,7 @@ Or download from the [Releases](https://github.com/zimbiss/aggrevation-x/release
 ### 🖱️ Auto-Click Ad Bypass
 - **Automatic popup/ad dismissal** - Clicks close buttons automatically
 - **Shadow DOM support** - Detects and clicks buttons in shadow DOM
-- **Cookie consent handling** - Auto-accepts cookie banners
+- **Cookie consent.  .handling** - Auto-accepts cookie banners
 - **Video player ad skip** - Bypasses video player ads
 - **Multi-pass removal** - Multiple attempts to ensure all overlays removed
 
