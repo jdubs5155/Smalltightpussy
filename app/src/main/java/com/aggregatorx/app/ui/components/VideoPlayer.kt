@@ -279,7 +279,7 @@ fun VideoPlayerDialog(
                     } else {
                         // All formats tried and all retries exhausted
                         hasError = true
-                        errorMessage = errorMsg
+                        errorMessage = "Unable to play this video stream. The source may be geo-restricted, expired, or incompatible."
                     }
                 }
             }
@@ -677,75 +677,6 @@ fun VideoPlayerDialog(
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * Compact Video Preview Component
- */
-@Composable
-fun VideoPreviewCard(
-    thumbnailUrl: String?,
-    duration: String? = null,
-    isPlaying: Boolean = false,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(DarkSurfaceVariant)
-            .clickable(onClick = onClick)
-    ) {
-        // Thumbnail
-        if (!thumbnailUrl.isNullOrEmpty()) {
-            androidx.compose.foundation.Image(
-                painter = coil3.compose.rememberAsyncImagePainter(thumbnailUrl),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-            )
-        }
-        
-        // Play icon overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isPlaying) {
-                CircularProgressIndicator(
-                    color = CyberCyan,
-                    modifier = Modifier.size(32.dp)
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.PlayCircle,
-                    contentDescription = "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
-        }
-        
-        // Duration badge
-        duration?.let { dur ->
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp),
-                shape = RoundedCornerShape(4.dp),
-                color = Color.Black.copy(alpha = 0.7f)
-            ) {
-                Text(
-                    text = dur,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                )
             }
         }
     }

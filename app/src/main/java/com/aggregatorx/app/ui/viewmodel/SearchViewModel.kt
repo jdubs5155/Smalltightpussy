@@ -193,20 +193,22 @@ class SearchViewModel @Inject constructor(
      *   6) Fallback: return the page URL itself for embeddable sites
      *   7) Last resort: pass the raw URL to the player (never returns null)
      *
-     * Returns [VideoPreviewResult] with both the playable URL and the HTTP
-     * headers (Referer / Origin / UA) that the CDN usually requires.
-     * This method NEVER returns null — it always falls back to the raw URL
-     * so the fullscreen player always opens and the user can Retry or
-     * Open-in-Browser from the player's error UI.
+     * Returns [VideoPreviewResult] with a playable URL and HTTP headers,
+     * or **null** if no playable stream could be found.  Null is explicitly
+     * preferable to returning an HTML page URL — the caller should show
+     * an error dialog instead of feeding HTML to ExoPlayer.
      */
-    suspend fun extractVideoForPreview(pageUrl: String): VideoPreviewResult {
-        // 1. Cache hit
-        videoPreviewCache[pageUrl]?.let { return it }
+    suspend fun extractVideoForPreview(pageUrl: String): VideoPreviewResult? {
+        // 1. Cache hit — only return if the cached URL still looks valid
+        videoPreviewCache[pageUrl]?.let { cached ->
+            if (isLikelyMediaUrl(cached.videoUrl)) return cached
+            else videoPreviewCache.remove(pageUrl)  // purge stale/bad cache entries
+        }
 
         return try {
             // 2. Fast extraction (JSoup only – no headless browser)
             val fastUrl = videoExtractor.extractVideoUrlForPreview(pageUrl)
-            if (!fastUrl.isNullOrEmpty()) {
+            if (!fastUrl.isNullOrEmpty() && isLikelyMediaUrl(fastUrl)) {
                 val result = VideoPreviewResult(
                     videoUrl = fastUrl,
                     headers = buildPlaybackHeaders(pageUrl)
@@ -217,7 +219,9 @@ class SearchViewModel @Inject constructor(
 
             // 3. Full extraction (known host extractors + standard HTML + headless)
             val fullExtraction = videoExtractor.extractVideoUrl(pageUrl)
-            if (fullExtraction.success && !fullExtraction.videoUrl.isNullOrEmpty()) {
+            if (fullExtraction.success && !fullExtraction.videoUrl.isNullOrEmpty()
+                && isLikelyMediaUrl(fullExtraction.videoUrl)
+            ) {
                 val result = VideoPreviewResult(
                     videoUrl = fullExtraction.videoUrl,
                     headers = buildPlaybackHeaders(pageUrl)
@@ -228,7 +232,9 @@ class SearchViewModel @Inject constructor(
 
             // 4. Full resolution chain (proxy → headless → site-specific)
             val resolved = videoStreamResolver.resolveVideoStream(pageUrl)
-            if (resolved.success && !resolved.streamUrl.isNullOrEmpty()) {
+            if (resolved.success && !resolved.streamUrl.isNullOrEmpty()
+                && isLikelyMediaUrl(resolved.streamUrl)
+            ) {
                 val result = VideoPreviewResult(
                     videoUrl = resolved.streamUrl,
                     headers = resolved.headers ?: buildPlaybackHeaders(pageUrl)
@@ -237,10 +243,8 @@ class SearchViewModel @Inject constructor(
                 return result
             }
 
-            // 5. Direct URL probe – if the page URL itself looks like a video, try it
-            val lowerUrl = pageUrl.lowercase()
-            val videoExtensions = listOf(".mp4", ".m3u8", ".webm", ".mpd", ".mkv", ".mov", ".ts")
-            if (videoExtensions.any { lowerUrl.contains(it) }) {
+            // 5. Direct URL probe – if the page URL itself is a direct media link
+            if (isLikelyMediaUrl(pageUrl)) {
                 val result = VideoPreviewResult(
                     videoUrl = pageUrl,
                     headers = buildPlaybackHeaders(pageUrl)
@@ -249,37 +253,53 @@ class SearchViewModel @Inject constructor(
                 return result
             }
 
-            // 6. Embeddable sites – just hand the page URL to the player
-            if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be") ||
-                lowerUrl.contains("vimeo.com") || lowerUrl.contains("dailymotion.com") ||
-                lowerUrl.contains("rumble.com") || lowerUrl.contains("bitchute.com") ||
-                lowerUrl.contains("odysee.com")) {
-                val result = VideoPreviewResult(
+            // 6. (removed) — Embeddable sites (YouTube, Vimeo, etc.) cannot be
+            //    played directly in ExoPlayer.  They would need yt-dlp or similar
+            //    which we don't bundle.  Don't pretend these are playable.
+
+            // 7. Last resort — only return the raw URL if it actually looks like
+            //    a media stream (e.g. direct .mp4 link from a CDN).
+            //    If the URL is just an HTML page, return null so the caller
+            //    can show a proper error instead of feeding HTML to ExoPlayer.
+            if (isLikelyMediaUrl(pageUrl)) {
+                val fallback = VideoPreviewResult(
                     videoUrl = pageUrl,
                     headers = buildPlaybackHeaders(pageUrl)
                 )
-                videoPreviewCache[pageUrl] = result
-                return result
+                videoPreviewCache[pageUrl] = fallback
+                return fallback
             }
 
-            // 7. Last resort — pass the raw URL to the player and let ExoPlayer
-            //    attempt it.  The player will cycle through Progressive/HLS/DASH
-            //    formats automatically and show Retry/Open-in-Browser on failure.
-            //    Returning null here used to cause silent "no source" toasts; this
-            //    is strictly better because the user at least sees the player UI.
-            val fallback = VideoPreviewResult(
-                videoUrl = pageUrl,
-                headers = buildPlaybackHeaders(pageUrl)
-            )
-            videoPreviewCache[pageUrl] = fallback
-            return fallback
+            // Extraction failed — no playable stream found
+            return null
         } catch (e: Exception) {
-            // Even on exception, return the raw URL so the player can attempt it
-            return VideoPreviewResult(
-                videoUrl = pageUrl,
-                headers = buildPlaybackHeaders(pageUrl)
-            )
+            // On exception, only return raw URL if it looks like actual media
+            return if (isLikelyMediaUrl(pageUrl)) {
+                VideoPreviewResult(
+                    videoUrl = pageUrl,
+                    headers = buildPlaybackHeaders(pageUrl)
+                )
+            } else {
+                null
+            }
         }
+    }
+
+    /**
+     * Checks whether a URL plausibly points to a media stream rather than an HTML page.
+     * Used as a safety gate to avoid handing HTML pages to ExoPlayer.
+     */
+    private fun isLikelyMediaUrl(url: String): Boolean {
+        val lowerUrl = url.lowercase()
+        val videoIndicators = listOf(
+            ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
+            ".flv", ".wmv", ".ts", ".m4v", ".3gp", ".f4v", ".ogv",
+            "/hls/", "/dash/", "/video/", "/stream/", "videoplayback",
+            "/get_video", "/dl/", "/media/", "/embed/",
+            "googlevideo.com", "akamaized.net", "cdn.streamtape",
+            "dood.", "filemoon.", "streamwish.", "mixdrop.", "voe.sx"
+        )
+        return videoIndicators.any { lowerUrl.contains(it) }
     }
 
     /** Convenience wrapper that keeps the old String?-returning signature for callers that don't need headers. */

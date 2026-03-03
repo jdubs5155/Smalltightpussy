@@ -1,8 +1,5 @@
 package com.aggregatorx.app.ui.components
 
-import android.net.Uri
-import android.view.ViewGroup
-import android.widget.FrameLayout
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -33,7 +30,6 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import com.aggregatorx.app.engine.util.EngineUtils
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -41,23 +37,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.C
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.hls.HlsMediaSource
-import androidx.media3.exoplayer.dash.DashMediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.CachePolicy
-import java.util.concurrent.ConcurrentHashMap
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.ui.viewmodel.VideoPreviewResult
@@ -440,126 +422,38 @@ fun StatChip(
 }
 
 /**
- * Inline Thumbnail Preview with Video Playback
+ * Result Thumbnail Component
  *
- * Gesture mapping:
- *   TAP        → opens fullscreen video player (full video with controls)
- *   LONG PRESS → starts inline muted preview within the thumbnail
+ * Gesture mapping (matches user expectation):
+ *   TAP        → quick animated preview pulse (visual feedback only — lightweight)
+ *   LONG PRESS → triggers fullscreen video extraction & playback of the FULL video
  *
- * Supports HLS / DASH / Progressive with automatic format cycling on error.
+ * This component is intentionally lightweight — NO inline ExoPlayer.
+ * All heavy video extraction + playback happens in the fullscreen VideoPlayerDialog.
  */
 @Composable
 fun InlineThumbnailPreview(
     thumbnailUrl: String?,
-    videoUrl: String?,
     duration: String? = null,
     modifier: Modifier = Modifier,
-    onTapFullscreen: () -> Unit = {},
-    onVideoExtractionNeeded: (suspend () -> String?)? = null,
+    onHoldFullscreen: () -> Unit = {},
     isExtracting: Boolean = false
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    var isPlaying by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
-    var extractedVideoUrl by remember { mutableStateOf<String?>(videoUrl) }
     var imageLoadFailed by remember { mutableStateOf(false) }
-    var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
-    // 0 = auto-detect, 1 = force HLS, 2 = force DASH, 3 = force Progressive
-    var formatIndex by remember { mutableStateOf(0) }
-    var playbackFailed by remember { mutableStateOf(false) }
+    // Tap ripple animation
+    var showTapPulse by remember { mutableStateOf(false) }
+    val pulseAlpha by animateFloatAsState(
+        targetValue = if (showTapPulse) 0.5f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        finishedListener = { if (showTapPulse) showTapPulse = false }
+    )
 
-    // Build ExoPlayer with the chosen format; recreated whenever formatIndex changes
-    DisposableEffect(isPlaying, extractedVideoUrl, formatIndex) {
-        if (isPlaying && !extractedVideoUrl.isNullOrEmpty()) {
-            val urlStr = extractedVideoUrl!!
-
-            val loadControl = DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                    800,    // Min buffer before inline playback (very fast start)
-                    20000,  // Max buffer
-                    400,    // Buffer for resuming playback after stall
-                    800     // Buffer for rebuffering
-                )
-                .setPrioritizeTimeOverSizeThresholds(true)
-                .build()
-
-            // Determine Origin for cross-origin requests
-            val origin = try {
-                val u = java.net.URL(urlStr)
-                "${u.protocol}://${u.host}"
-            } catch (e: Exception) { "" }
-
-            val dsFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent(EngineUtils.DEFAULT_USER_AGENT)
-                .setConnectTimeoutMs(10_000)
-                .setReadTimeoutMs(20_000)
-                .setAllowCrossProtocolRedirects(true)
-                .setDefaultRequestProperties(
-                    mapOf(
-                        "Accept" to "*/*",
-                        "Accept-Language" to "en-US,en;q=0.9",
-                        "Sec-Fetch-Dest" to "video",
-                        "Sec-Fetch-Mode" to "no-cors",
-                        "Sec-Fetch-Site" to "cross-site"
-                    ).let { if (origin.isNotEmpty()) it + ("Origin" to origin) else it }
-                )
-
-            val mediaItem = MediaItem.fromUri(Uri.parse(urlStr))
-
-            // Determine which format to attempt
-            val format = when (formatIndex) {
-                1 -> "hls"
-                2 -> "dash"
-                3 -> "progressive"
-                else -> when {
-                    urlStr.contains(".m3u8", ignoreCase = true)
-                        || (urlStr.contains("hls", ignoreCase = true)
-                            && urlStr.contains("manifest", ignoreCase = true)) -> "hls"
-                    urlStr.contains(".mpd", ignoreCase = true)
-                        || (urlStr.contains("dash", ignoreCase = true)
-                            && urlStr.contains("manifest", ignoreCase = true)) -> "dash"
-                    else -> "progressive"
-                }
-            }
-
-            val mediaSource = when (format) {
-                "hls" -> HlsMediaSource.Factory(dsFactory)
-                    .setAllowChunklessPreparation(true)
-                    .createMediaSource(mediaItem)
-                "dash" -> DashMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
-                else -> ProgressiveMediaSource.Factory(dsFactory).createMediaSource(mediaItem)
-            }
-
-            val player = ExoPlayer.Builder(context).setLoadControl(loadControl).build()
-            player.addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    if (formatIndex < 3) {
-                        // Try next format
-                        scope.launch {
-                            exoPlayer?.release()
-                            exoPlayer = null
-                            formatIndex++
-                        }
-                    } else {
-                        // All 3 formats failed
-                        isPlaying = false
-                        playbackFailed = true
-                    }
-                }
-            })
-            player.setMediaSource(mediaSource)
-            player.repeatMode = Player.REPEAT_MODE_ALL
-            player.volume = 0f
-            player.prepare()
-            player.playWhenReady = true
-            exoPlayer = player
-        }
-
-        onDispose {
-            exoPlayer?.release()
-            exoPlayer = null
+    // Reset pulse after brief flash
+    LaunchedEffect(showTapPulse) {
+        if (showTapPulse) {
+            delay(350)
+            showTapPulse = false
         }
     }
 
@@ -570,189 +464,137 @@ fun InlineThumbnailPreview(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        // TAP → open fullscreen video player with full video
-                        if (isPlaying) {
-                            isPlaying = false
-                            playbackFailed = false
-                            formatIndex = 0
-                            exoPlayer?.release()
-                            exoPlayer = null
-                        }
-                        onTapFullscreen()
+                        // TAP → visual pulse feedback (lightweight preview indication)
+                        showTapPulse = true
                     },
                     onLongPress = {
-                        // LONG PRESS → start inline muted preview within thumbnail
-                        when {
-                            isPlaying -> {
-                                isPlaying = false
-                                playbackFailed = false
-                                formatIndex = 0
-                                exoPlayer?.release()
-                                exoPlayer = null
-                            }
-                            playbackFailed -> {
-                                playbackFailed = false
-                                formatIndex = 0
-                                extractedVideoUrl = videoUrl
-                            }
-                            !extractedVideoUrl.isNullOrEmpty() -> {
-                                formatIndex = 0
-                                playbackFailed = false
-                                isPlaying = true
-                            }
-                            onVideoExtractionNeeded != null -> {
-                                isLoading = true
-                                scope.launch {
-                                    try {
-                                        val url = onVideoExtractionNeeded()
-                                        if (!url.isNullOrEmpty()) {
-                                            extractedVideoUrl = url
-                                            formatIndex = 0
-                                            playbackFailed = false
-                                            isPlaying = true
-                                        } else {
-                                            playbackFailed = true
-                                        }
-                                    } catch (e: Exception) {
-                                        playbackFailed = true
-                                    } finally {
-                                        isLoading = false
-                                    }
-                                }
-                            }
-                        }
+                        // LONG PRESS → open fullscreen video player with FULL video
+                        onHoldFullscreen()
                     }
                 )
             }
     ) {
-        // ── Active Player ─────────────────────────────────────────────────────
-        if (isPlaying && exoPlayer != null) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        layoutParams = FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                    }
-                },
+        // ── Thumbnail Image ───────────────────────────────────────────────
+        if (!thumbnailUrl.isNullOrEmpty()) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(thumbnailUrl)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .build(),
+                contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                update = { it.player = exoPlayer }
+                contentScale = ContentScale.Crop,
+                onError = { imageLoadFailed = true },
+                onSuccess = { imageLoadFailed = false }
             )
-            // Live badge (tap to stop)
-            Surface(
-                modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
-                shape = RoundedCornerShape(4.dp),
-                color = AccentGreen.copy(alpha = 0.88f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(10.dp))
-                    Text("LIVE", style = MaterialTheme.typography.labelSmall, color = Color.White, fontSize = 8.sp)
-                }
-            }
-        } else {
-            // ── Thumbnail ─────────────────────────────────────────────────────
-            if (!thumbnailUrl.isNullOrEmpty()) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(thumbnailUrl)
-                        .diskCachePolicy(CachePolicy.ENABLED)
-                        .memoryCachePolicy(CachePolicy.ENABLED)
-                        .build(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    onError = { imageLoadFailed = true },
-                    onSuccess = { imageLoadFailed = false }
-                )
-            }
-            // Placeholder
-            if (thumbnailUrl.isNullOrEmpty() || imageLoadFailed) {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                        .background(Brush.radialGradient(colors = listOf(DarkSurfaceVariant, DarkBackground))),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, tint = TextTertiary, modifier = Modifier.size(32.dp))
-                }
-            }
+        }
 
-            // Overlay: spinner / play / retry / extracting-for-fullscreen
+        // Placeholder when no thumbnail or load failure
+        if (thumbnailUrl.isNullOrEmpty() || imageLoadFailed) {
             Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (isExtracting) 0.55f else 0.22f)),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(DarkSurfaceVariant, DarkBackground)
+                        )
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                when {
-                    isExtracting -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(
-                            color = CyberCyan,
-                            modifier = Modifier.size(28.dp),
-                            strokeWidth = 2.5.dp
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            "Opening fullscreen…",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = CyberCyan,
-                            fontSize = 9.sp
-                        )
-                    }
-                    isLoading -> CircularProgressIndicator(
-                        color = CyberCyan, modifier = Modifier.size(28.dp), strokeWidth = 2.dp
+                Icon(
+                    Icons.Default.Image,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+
+        // ── Overlay: extracting spinner / play icon / tap pulse ───────────
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Color.Black.copy(
+                        alpha = when {
+                            isExtracting -> 0.55f
+                            pulseAlpha > 0f -> 0.1f + pulseAlpha * 0.3f
+                            else -> 0.22f
+                        }
                     )
-                    playbackFailed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = AccentOrange, modifier = Modifier.size(22.dp))
-                        Text("Tap to retry", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontSize = 9.sp)
-                    }
-                    else -> Icon(
-                        Icons.Default.PlayCircle, contentDescription = "Play",
-                        tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(36.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                isExtracting -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = CyberCyan,
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Loading video…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyan,
+                        fontSize = 9.sp
                     )
                 }
-            }
 
-            // Play hint badge – shown only when idle
-            if (!isExtracting && !isLoading && !playbackFailed) {
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomStart).padding(4.dp),
-                    shape = RoundedCornerShape(4.dp),
-                    color = CyberCyan.copy(alpha = 0.75f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            tint = DarkBackground,
-                            modifier = Modifier.size(10.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            "Watch",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = DarkBackground,
-                            fontSize = 8.sp
-                        )
-                    }
-                }
+                else -> Icon(
+                    Icons.Default.PlayCircle,
+                    contentDescription = "Hold to play",
+                    tint = Color.White.copy(alpha = 0.92f),
+                    modifier = Modifier.size(36.dp)
+                )
             }
+        }
 
-            // Duration badge
-            duration?.let { dur ->
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
-                    shape = RoundedCornerShape(4.dp),
-                    color = Color.Black.copy(alpha = 0.7f)
+        // Duration badge
+        duration?.let { dur ->
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp),
+                shape = RoundedCornerShape(4.dp),
+                color = Color.Black.copy(alpha = 0.7f)
+            ) {
+                Text(
+                    dur,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
+        }
+
+        // "Hold to watch" hint badge
+        if (!isExtracting) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(4.dp),
+                shape = RoundedCornerShape(4.dp),
+                color = CyberCyan.copy(alpha = 0.75f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(dur, style = MaterialTheme.typography.labelSmall, color = Color.White,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = DarkBackground,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        "Hold",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DarkBackground,
+                        fontSize = 8.sp
+                    )
                 }
             }
         }
@@ -760,21 +602,48 @@ fun InlineThumbnailPreview(
 }
 
 /**
- * Helper function to check if a URL is likely a streamable video URL
+ * Checks whether a URL plausibly points to an actual media stream (not an
+ * HTML page).  Used as a gate before handing URLs to ExoPlayer — this
+ * prevents the "no source / trying alternative" errors that happen when
+ * ExoPlayer tries to parse HTML as video.
+ *
+ * Returns true for common video extensions, stream keywords, CDN patterns,
+ * and known video hosting domains.
  */
-private fun isStreamableVideoUrl(url: String): Boolean {
+private fun isLikelyStreamUrl(url: String): Boolean {
+    val lowerUrl = url.lowercase()
+
+    // Obvious video file extensions
     val videoExtensions = listOf(
         ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
-        ".flv", ".wmv", ".ts", ".m4v", ".3gp"
+        ".flv", ".wmv", ".ts", ".m4v", ".3gp", ".f4v", ".ogv"
     )
-    val lowerUrl = url.lowercase()
-    return videoExtensions.any { lowerUrl.contains(it) } ||
-           lowerUrl.contains("/video/") ||
-           lowerUrl.contains("/stream/") ||
-           lowerUrl.contains("videoplayback") ||
-           lowerUrl.contains("manifest") ||
-           lowerUrl.contains("/hls/") ||
-           lowerUrl.contains("/dash/")
+    if (videoExtensions.any { lowerUrl.contains(it) }) return true
+
+    // Stream path keywords
+    val streamKeywords = listOf(
+        "/video/", "/stream/", "/hls/", "/dash/", "/manifest",
+        "videoplayback", "/get_video", "/dl/", "/embed/",
+        "/media/", "/cdn-cgi/", "googlevideo.com",
+        "akamaized.net", "cloudfront.net", "/file/",
+        "cdn.streamtape", "dood.", "filemoon.", "streamwish.",
+        "mixdrop.", "voe.sx"
+    )
+    if (streamKeywords.any { lowerUrl.contains(it) }) return true
+
+    // Reject URLs that look like normal web pages (HTML content)
+    val htmlPageIndicators = listOf(
+        "text/html", "/search?", "/category/", "/tag/",
+        "/login", "/register", "/user/", "/forum/"
+    )
+    if (htmlPageIndicators.any { lowerUrl.contains(it) }) return false
+
+    // If it has query-heavy structure with no video indicators, likely HTML
+    val hasVideoQueryParam = lowerUrl.contains("video_id=") ||
+        lowerUrl.contains("stream=") || lowerUrl.contains("file=") ||
+        lowerUrl.contains("source=")
+
+    return hasVideoQueryParam
 }
 
 /**
@@ -802,65 +671,69 @@ fun SearchResultCard(
     var fullscreenVideoHeaders by remember { mutableStateOf<Map<String, String>?>(null) }
     var isExtractingForFullscreen by remember { mutableStateOf(false) }
     var showExtractionError by remember { mutableStateOf(false) }
-    
-    // Reusable fullscreen extraction & launch — ALWAYS opens the player.
-    // If extraction finds a stream URL, great; otherwise we hand the raw
-    // result URL to the player and let ExoPlayer attempt it.  The player's
-    // own error UI gives the user Retry / Open-in-Browser options.
+    var extractionErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    /**
+     * Launches full video extraction then opens the fullscreen player.
+     *
+     * KEY DESIGN RULE: we NEVER pass a raw HTML page URL to ExoPlayer.
+     * Only URLs that look like actual media streams (contain common
+     * video extensions, stream keywords, or known CDN patterns) are
+     * sent to the player.  If extraction completely fails we show an
+     * error snackbar and offer "Open in Browser" instead of letting
+     * ExoPlayer choke on HTML.
+     */
     val openFullscreenPlayer: () -> Unit = {
         if (!result.url.isNullOrEmpty() && !isExtractingForFullscreen) {
-            val hasExtractor = onExtractVideoForPreview != null || onExtractVideoUrl != null
-            if (hasExtractor) {
-                isExtractingForFullscreen = true
-                scope.launch {
-                    try {
-                        var resolved = false
+            isExtractingForFullscreen = true
+            scope.launch {
+                try {
+                    var resolvedUrl: String? = null
+                    var resolvedHeaders: Map<String, String>? = null
 
-                        // Attempt 1: full extraction chain (6-step) with headers
-                        if (!resolved && onExtractVideoForPreview != null) {
-                            val previewResult = onExtractVideoForPreview(result.url)
-                            if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
-                                fullscreenVideoUrl = previewResult.videoUrl
-                                fullscreenVideoHeaders = previewResult.headers
-                                resolved = true
-                            }
+                    // Attempt 1: full extraction chain (7-step) with headers
+                    if (resolvedUrl == null && onExtractVideoForPreview != null) {
+                        val previewResult = onExtractVideoForPreview(result.url)
+                        if (previewResult != null && previewResult.videoUrl.isNotEmpty()
+                            && isLikelyStreamUrl(previewResult.videoUrl)
+                        ) {
+                            resolvedUrl = previewResult.videoUrl
+                            resolvedHeaders = previewResult.headers
                         }
-
-                        // Attempt 2: simple URL extraction
-                        if (!resolved && onExtractVideoUrl != null) {
-                            val extractedUrl = onExtractVideoUrl(result.url)
-                            if (!extractedUrl.isNullOrEmpty()) {
-                                fullscreenVideoUrl = extractedUrl
-                                fullscreenVideoHeaders = null
-                                resolved = true
-                            }
-                        }
-
-                        // Attempt 3: use the raw result URL directly — let the
-                        // player try it; many CDN links work without extraction.
-                        if (!resolved) {
-                            fullscreenVideoUrl = result.url
-                            fullscreenVideoHeaders = null
-                        }
-
-                        showFullscreenPlayer = true
-                        showExtractionError = false
-                    } catch (e: Exception) {
-                        // Even on error, open the player with the raw URL so the
-                        // user can tap Retry or Open-in-Browser from the player UI.
-                        fullscreenVideoUrl = result.url
-                        fullscreenVideoHeaders = null
-                        showFullscreenPlayer = true
-                        showExtractionError = false
-                    } finally {
-                        isExtractingForFullscreen = false
                     }
+
+                    // Attempt 2: simple URL extraction
+                    if (resolvedUrl == null && onExtractVideoUrl != null) {
+                        val extractedUrl = onExtractVideoUrl(result.url)
+                        if (!extractedUrl.isNullOrEmpty() && isLikelyStreamUrl(extractedUrl)) {
+                            resolvedUrl = extractedUrl
+                            resolvedHeaders = null
+                        }
+                    }
+
+                    // Attempt 3: raw URL ONLY if it itself looks like a media stream
+                    if (resolvedUrl == null && isLikelyStreamUrl(result.url)) {
+                        resolvedUrl = result.url
+                        resolvedHeaders = null
+                    }
+
+                    if (resolvedUrl != null) {
+                        fullscreenVideoUrl = resolvedUrl
+                        fullscreenVideoHeaders = resolvedHeaders
+                        showFullscreenPlayer = true
+                        showExtractionError = false
+                        extractionErrorMessage = null
+                    } else {
+                        // Extraction failed — do NOT hand garbage to ExoPlayer
+                        showExtractionError = true
+                        extractionErrorMessage = "Could not find a playable video stream. Try \"Browser\" to open the page directly."
+                    }
+                } catch (e: Exception) {
+                    showExtractionError = true
+                    extractionErrorMessage = "Video extraction failed: ${e.message?.take(80) ?: "unknown error"}"
+                } finally {
+                    isExtractingForFullscreen = false
                 }
-            } else {
-                // No extractors available — open the player with the raw URL
-                fullscreenVideoUrl = result.url
-                fullscreenVideoHeaders = null
-                showFullscreenPlayer = true
             }
         }
     }
@@ -890,17 +763,13 @@ fun SearchResultCard(
                     .fillMaxWidth()
                     .padding(12.dp)
             ) {
-                // Inline Thumbnail Preview with video playback - Larger thumbnails for better visibility
+                // Thumbnail with gesture: TAP = visual preview pulse, HOLD = fullscreen video
                 InlineThumbnailPreview(
                     thumbnailUrl = result.thumbnailUrl,
-                    videoUrl = null, // Will be extracted on tap
                     duration = result.duration,
                     isExtracting = isExtractingForFullscreen,
                     modifier = Modifier.size(140.dp),
-                    onTapFullscreen = openFullscreenPlayer,
-                    onVideoExtractionNeeded = if (!result.url.isNullOrEmpty() && onExtractVideoUrl != null) {
-                        { onExtractVideoUrl(result.url) }
-                    } else null
+                    onHoldFullscreen = openFullscreenPlayer
                 )
                 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -974,7 +843,7 @@ fun SearchResultCard(
                 }
             }
             
-            // Fullscreen player dialog (on long press) - placed at Column level for correct composable scoping
+            // Fullscreen player dialog — HOLD thumbnail or Watch button
             if (showFullscreenPlayer && !fullscreenVideoUrl.isNullOrEmpty()) {
                 VideoPlayerDialog(
                     videoUrl = fullscreenVideoUrl!!,
@@ -990,6 +859,62 @@ fun SearchResultCard(
                         fullscreenVideoUrl = null
                         fullscreenVideoHeaders = null
                         onOpenExternal()
+                    }
+                )
+            }
+
+            // Extraction error dialog — shown when we couldn't find a playable stream
+            if (showExtractionError) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showExtractionError = false
+                        extractionErrorMessage = null
+                    },
+                    containerColor = DarkCard,
+                    titleContentColor = TextPrimary,
+                    textContentColor = TextSecondary,
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.ErrorOutline,
+                                contentDescription = null,
+                                tint = AccentOrange,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Video Unavailable", style = MaterialTheme.typography.titleMedium)
+                        }
+                    },
+                    text = {
+                        Text(
+                            extractionErrorMessage ?: "Could not extract a playable video stream.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showExtractionError = false
+                                extractionErrorMessage = null
+                                onOpenExternal()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CyberCyan,
+                                contentColor = DarkBackground
+                            )
+                        ) {
+                            Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Open in Browser")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            showExtractionError = false
+                            extractionErrorMessage = null
+                        }) {
+                            Text("Close", color = TextSecondary)
+                        }
                     }
                 )
             }
