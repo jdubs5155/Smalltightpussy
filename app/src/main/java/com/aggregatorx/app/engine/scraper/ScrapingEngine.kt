@@ -811,7 +811,39 @@ class ScrapingEngine @Inject constructor(
             }
 
             // Step 2.5: Try advanced endpoint discovery (hidden APIs, CMS endpoints)
+            // Uses learned endpoints first, then probes new ones + headless interception
             try {
+                val domain = extractDomain(provider.baseUrl)
+                // Prefer any previously-learned endpoints for this domain
+                val learnedEndpoints = endpointDiscoveryEngine.getRankedEndpoints(domain)
+                var foundViaEndpoint = false
+
+                for (endpoint in learnedEndpoints.take(3)) {
+                    val url = endpoint
+                        .replace("{query}", java.net.URLEncoder.encode(effectiveQuery, "UTF-8"))
+                        .let { if (it.startsWith("http")) it else "${provider.baseUrl.trimEnd('/')}$it" }
+                    try {
+                        val apiDoc = fetchDocument(url)
+                        val apiResults = extractResultsWithThumbnails(apiDoc, provider, query)
+                        if (apiResults.isNotEmpty()) {
+                            endpointDiscoveryEngine.learnWorkingEndpoint(domain, endpoint, apiResults.size)
+                            aiDecisionEngine.learnEndpoint(domain, endpoint, ScrapingStrategy.API_BASED, apiResults.size)
+                            updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                            return ProviderSearchResults(
+                                provider = provider,
+                                results = apiResults,
+                                searchTime = System.currentTimeMillis() - startTime,
+                                success = true
+                            )
+                        } else {
+                            endpointDiscoveryEngine.learnFailedEndpoint(domain, endpoint)
+                        }
+                    } catch (_: Exception) {
+                        endpointDiscoveryEngine.learnFailedEndpoint(domain, endpoint)
+                    }
+                }
+
+                // If no learned endpoint worked, try standard discovery
                 val apiSearchUrl = endpointDiscoveryEngine.getBestSearchEndpoint(provider.baseUrl, effectiveQuery)
                 if (apiSearchUrl != null) {
                     val apiDoc = fetchDocument(apiSearchUrl)
@@ -819,7 +851,7 @@ class ScrapingEngine @Inject constructor(
                     if (apiResults.isNotEmpty()) {
                         updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
                         aiDecisionEngine.learnFromSuccess(
-                            domain = extractDomain(provider.baseUrl),
+                            domain = domain,
                             strategy = ScrapingStrategy.API_BASED,
                             resultSelector = null,
                             titleSelector = null,
@@ -2102,7 +2134,7 @@ class ScrapingEngine @Inject constructor(
         
         try {
             val document = Jsoup.connect(searchUrl)
-                .userAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15")
+                .userAgent(EngineUtils.getRandomUserAgent())
                 .timeout(DEFAULT_TIMEOUT)
                 .get()
             extractResultsGeneric(document, provider, query)

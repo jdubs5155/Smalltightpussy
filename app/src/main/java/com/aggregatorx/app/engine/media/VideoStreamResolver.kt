@@ -6,6 +6,7 @@ import com.aggregatorx.app.engine.network.ProxyVPNEngine
 import com.aggregatorx.app.engine.network.ProxyConfig
 import com.aggregatorx.app.engine.network.ProxyType
 import com.aggregatorx.app.engine.scraper.HeadlessBrowserHelper
+import com.aggregatorx.app.engine.util.EngineUtils
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.jsoup.Jsoup
@@ -36,7 +37,7 @@ class VideoStreamResolver @Inject constructor(
 ) {
     
     companion object {
-        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        private val USER_AGENT = EngineUtils.DEFAULT_USER_AGENT
         
         // Stream types that need special handling
         private val STREAM_EXTENSIONS = listOf(".m3u8", ".mpd", ".ts")
@@ -273,7 +274,8 @@ class VideoStreamResolver @Inject constructor(
             { extractFromFilemoon(pageUrl) },
             { extractFromDoodstream(pageUrl) },
             { extractFromMixdrop(pageUrl) },
-            { extractFromStreamwish(pageUrl) }
+            { extractFromStreamwish(pageUrl) },
+            { extractFromIframeChain(pageUrl) }
         )
         
         for (extractor in embedExtractors) {
@@ -347,7 +349,9 @@ class VideoStreamResolver @Inject constructor(
     }
     
     /**
-     * Validate a stream URL is actually playable
+     * Validate a stream URL is actually playable.
+     * Uses a lenient approach: if HEAD request fails or returns unexpected content-type,
+     * still assume playable (CDNs often block HEAD or return generic types).
      */
     private suspend fun validateStreamUrl(url: String, headers: Map<String, String>?): ValidationResult = withContext(Dispatchers.IO) {
         try {
@@ -364,7 +368,7 @@ class VideoStreamResolver @Inject constructor(
             
             val response = client.newCall(requestBuilder.build()).execute()
             
-            if (response.isSuccessful || response.code == 206) {
+            if (response.isSuccessful || response.code == 206 || response.code == 302 || response.code == 301) {
                 val contentType = response.header("Content-Type") ?: ""
                 val contentLength = response.header("Content-Length")?.toLongOrNull() ?: 0
                 
@@ -373,7 +377,14 @@ class VideoStreamResolver @Inject constructor(
                     contentType.contains("mpegurl") -> true // HLS
                     contentType.contains("dash+xml") -> true // DASH
                     contentType.contains("octet-stream") -> true
+                    contentType.contains("binary") -> true
+                    contentType.contains("application/vnd") -> true
                     url.contains(".m3u8") || url.contains(".mpd") -> true
+                    url.contains(".mp4") || url.contains(".webm") -> true
+                    // CDNs often return text/plain for m3u8 playlists
+                    contentType.contains("text/plain") && (url.contains(".m3u8") || url.contains("manifest")) -> true
+                    // If content-type is empty but URL looks like video, assume valid
+                    contentType.isEmpty() -> true
                     else -> false
                 }
                 
@@ -382,11 +393,14 @@ class VideoStreamResolver @Inject constructor(
                     contentType = contentType,
                     bitrate = estimateBitrate(contentLength)
                 )
+            } else if (response.code == 403 || response.code == 405) {
+                // Many CDNs block HEAD requests but allow GET — assume valid
+                ValidationResult(isValid = true)
             } else {
                 ValidationResult(isValid = false, errorCode = response.code)
             }
         } catch (e: Exception) {
-            // If validation fails, assume it might still work
+            // If validation fails, assume it might still work (lenient)
             ValidationResult(isValid = true)
         }
     }
@@ -443,6 +457,54 @@ class VideoStreamResolver @Inject constructor(
             doc.select("script").html().let { scripts ->
                 Regex("""sources:\s*\[\s*\{\s*file:\s*['"]([^'"]+\.m3u8[^'"]*)['"]""").find(scripts)?.groupValues?.get(1)
             }
+        } catch (e: Exception) { null }
+    }
+
+    /**
+     * Follow iframe chains up to 3 levels deep to find embedded video players.
+     * Many sites nest the actual player inside 1-2 iframe hops.
+     */
+    private suspend fun extractFromIframeChain(pageUrl: String, depth: Int = 0): String? = withContext(Dispatchers.IO) {
+        if (depth > 3) return@withContext null
+        try {
+            val doc = Jsoup.connect(pageUrl)
+                .userAgent(USER_AGENT)
+                .timeout(12000)
+                .ignoreHttpErrors(true)
+                .get()
+
+            // First try direct video extraction from this page
+            val directVideo = extractVideoFromDocument(doc, pageUrl)
+            if (directVideo != null) return@withContext directVideo
+
+            // Then follow each iframe
+            val iframes = doc.select("iframe[src]")
+            for (iframe in iframes) {
+                val src = iframe.attr("src").let { s ->
+                    when {
+                        s.startsWith("http") -> s
+                        s.startsWith("//") -> "https:$s"
+                        s.startsWith("/") -> {
+                            val base = Uri.parse(pageUrl)
+                            "${base.scheme}://${base.host}$s"
+                        }
+                        else -> null
+                    }
+                } ?: continue
+
+                // Skip known non-video iframes
+                val lowerSrc = src.lowercase()
+                if (lowerSrc.contains("google.com/recaptcha") ||
+                    lowerSrc.contains("facebook.com/plugins") ||
+                    lowerSrc.contains("twitter.com/widgets") ||
+                    lowerSrc.contains("ads.") ||
+                    lowerSrc.contains("doubleclick.net")) continue
+
+                // Recursively try extraction from iframe URL
+                val result = extractFromIframeChain(src, depth + 1)
+                if (result != null) return@withContext result
+            }
+            null
         } catch (e: Exception) { null }
     }
     

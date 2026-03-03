@@ -187,8 +187,10 @@ class SearchViewModel @Inject constructor(
      * Extract video URL from a page URL using the FULL resolution chain:
      *   1) Cache hit
      *   2) VideoExtractorEngine fast (JSoup, no browser)
-     *   3) VideoStreamResolver (direct → proxy → headless → site-specific extractors)
-     *   4) Fallback: return the page URL itself for embeddable sites
+     *   3) VideoExtractorEngine full (known host extractors + iframe + headless)
+     *   4) VideoStreamResolver (direct → proxy → headless → site-specific extractors)
+     *   5) Direct URL probe: if pageUrl itself looks playable, try it directly
+     *   6) Fallback: return the page URL itself for embeddable sites
      *
      * Returns [VideoPreviewResult] with both the playable URL and the HTTP
      * headers (Referer / Origin / UA) that the CDN usually requires.
@@ -209,7 +211,18 @@ class SearchViewModel @Inject constructor(
                 return result
             }
 
-            // 3. Full resolution chain (proxy → headless → site-specific)
+            // 3. Full extraction (known host extractors + standard HTML + headless)
+            val fullExtraction = videoExtractor.extractVideoUrl(pageUrl)
+            if (fullExtraction.success && !fullExtraction.videoUrl.isNullOrEmpty()) {
+                val result = VideoPreviewResult(
+                    videoUrl = fullExtraction.videoUrl,
+                    headers = buildPlaybackHeaders(pageUrl)
+                )
+                videoPreviewCache[pageUrl] = result
+                return result
+            }
+
+            // 4. Full resolution chain (proxy → headless → site-specific)
             val resolved = videoStreamResolver.resolveVideoStream(pageUrl)
             if (resolved.success && !resolved.streamUrl.isNullOrEmpty()) {
                 val result = VideoPreviewResult(
@@ -220,10 +233,23 @@ class SearchViewModel @Inject constructor(
                 return result
             }
 
-            // 4. Embeddable sites – just hand the page URL to the player
-            val lower = pageUrl.lowercase()
-            if (lower.contains("youtube.com") || lower.contains("youtu.be") ||
-                lower.contains("vimeo.com") || lower.contains("dailymotion.com")) {
+            // 5. Direct URL probe – if the page URL itself looks like a video, try it
+            val lowerUrl = pageUrl.lowercase()
+            val videoExtensions = listOf(".mp4", ".m3u8", ".webm", ".mpd", ".mkv", ".mov", ".ts")
+            if (videoExtensions.any { lowerUrl.contains(it) }) {
+                val result = VideoPreviewResult(
+                    videoUrl = pageUrl,
+                    headers = buildPlaybackHeaders(pageUrl)
+                )
+                videoPreviewCache[pageUrl] = result
+                return result
+            }
+
+            // 6. Embeddable sites – just hand the page URL to the player
+            if (lowerUrl.contains("youtube.com") || lowerUrl.contains("youtu.be") ||
+                lowerUrl.contains("vimeo.com") || lowerUrl.contains("dailymotion.com") ||
+                lowerUrl.contains("rumble.com") || lowerUrl.contains("bitchute.com") ||
+                lowerUrl.contains("odysee.com")) {
                 val result = VideoPreviewResult(
                     videoUrl = pageUrl,
                     headers = buildPlaybackHeaders(pageUrl)

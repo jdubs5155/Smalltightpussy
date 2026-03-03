@@ -2,6 +2,7 @@ package com.aggregatorx.app.di
 
 import android.content.Context
 import com.aggregatorx.app.engine.UnifiedContentEngine
+import com.aggregatorx.app.engine.ai.AICodeInjectionEngine
 import com.aggregatorx.app.engine.ai.AIDecisionEngine
 import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
 import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
@@ -97,6 +98,12 @@ object EngineModule {
     @Singleton
     fun provideNaturalLanguageQueryProcessor(): NaturalLanguageQueryProcessor {
         return NaturalLanguageQueryProcessor()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideAICodeInjectionEngine(): AICodeInjectionEngine {
+        return AICodeInjectionEngine()
     }
 
     @Provides

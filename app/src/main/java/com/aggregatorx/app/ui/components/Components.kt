@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import com.aggregatorx.app.engine.util.EngineUtils
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -487,7 +488,7 @@ fun InlineThumbnailPreview(
             } catch (e: Exception) { "" }
 
             val dsFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36")
+                .setUserAgent(EngineUtils.DEFAULT_USER_AGENT)
                 .setConnectTimeoutMs(10_000)
                 .setReadTimeoutMs(20_000)
                 .setAllowCrossProtocolRedirects(true)

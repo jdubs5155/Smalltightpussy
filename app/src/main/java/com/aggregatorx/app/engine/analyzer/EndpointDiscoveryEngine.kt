@@ -2,6 +2,8 @@ package com.aggregatorx.app.engine.analyzer
 
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.engine.network.CloudflareBypassEngine
+import com.aggregatorx.app.engine.scraper.HeadlessBrowserHelper
+import com.aggregatorx.app.engine.util.EngineUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,6 +26,7 @@ import javax.inject.Singleton
  * 5. OpenAPI/Swagger spec detection
  * 6. Pattern-based endpoint deduction from visible URLs
  * 7. Headless network interception (Playwright request capture)
+ * 8. Learning from past successes — avoids re-probing known-dead endpoints
  *
  * All discovered endpoints are cached per domain and shared with
  * ScrapingEngine and AIDecisionEngine for smarter scraping.
@@ -36,7 +39,7 @@ class EndpointDiscoveryEngine @Inject constructor(
     companion object {
         private const val DISCOVERY_TIMEOUT = 20000
         private const val CACHE_TTL_MS = 2 * 60 * 60 * 1000L  // 2 hours
-        private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+        private val UA = EngineUtils.DEFAULT_USER_AGENT
 
         // Known CMS API path templates (base → paths to probe)
         private val CMS_API_PATHS = listOf(
@@ -204,6 +207,8 @@ class EndpointDiscoveryEngine @Inject constructor(
                     val body = response.body()
                     // Valid if it's not empty and not a challenge page
                     if (body.length > 500 && !body.contains("Checking your browser")) {
+                        // Learn this endpoint for the domain
+                        learnWorkingEndpoint(extractDomain(baseUrl), endpoint, body.length)
                         return url
                     }
                 }
@@ -211,6 +216,150 @@ class EndpointDiscoveryEngine @Inject constructor(
         }
 
         return null
+    }
+
+    // ─── Learning System ──────────────────────────────────────────
+
+    /** Per-domain memory of endpoints that worked and how well. */
+    private val endpointEffectiveness = ConcurrentHashMap<String, MutableList<EndpointScore>>()
+
+    /** Record that an endpoint worked for a domain. Boosts its priority in future. */
+    fun learnWorkingEndpoint(domain: String, endpoint: String, resultSize: Int) {
+        val scores = endpointEffectiveness.getOrPut(domain) { mutableListOf() }
+        val existing = scores.find { it.endpoint == endpoint }
+        if (existing != null) {
+            scores.remove(existing)
+            scores.add(existing.copy(
+                successCount = existing.successCount + 1,
+                lastResultSize = resultSize,
+                lastUsed = System.currentTimeMillis()
+            ))
+        } else {
+            scores.add(EndpointScore(endpoint, 1, resultSize))
+        }
+    }
+
+    /** Record that an endpoint failed for a domain so it drops in priority. */
+    fun learnFailedEndpoint(domain: String, endpoint: String) {
+        val scores = endpointEffectiveness.getOrPut(domain) { mutableListOf() }
+        val existing = scores.find { it.endpoint == endpoint }
+        if (existing != null) {
+            scores.remove(existing)
+            scores.add(existing.copy(failureCount = existing.failureCount + 1))
+        } else {
+            scores.add(EndpointScore(endpoint, 0, 0, 1))
+        }
+    }
+
+    /** Get ranked endpoints for a domain based on learned effectiveness. */
+    fun getRankedEndpoints(domain: String): List<String> {
+        return endpointEffectiveness[domain]
+            ?.filter { it.successCount > it.failureCount }
+            ?.sortedByDescending { it.successCount * it.lastResultSize }
+            ?.map { it.endpoint }
+            ?: emptyList()
+    }
+
+    // ─── Headless Network Interception ────────────────────────────
+
+    /**
+     * Use a headless browser to navigate to a page and capture all
+     * XHR/Fetch requests made by the client-side JavaScript. This
+     * reveals hidden API endpoints that cannot be found via static
+     * HTML/JS analysis alone (e.g. dynamically constructed URLs,
+     * WebSocket upgrades, etc.).
+     */
+    suspend fun discoverEndpointsViaHeadless(
+        baseUrl: String,
+        sampleQuery: String = "test"
+    ): List<String> = withContext(Dispatchers.IO) {
+        val discovered = mutableListOf<String>()
+        try {
+            val page = HeadlessBrowserHelper.createAntiDetectionPage()
+            val capturedUrls = mutableListOf<String>()
+
+            // Intercept all outgoing requests
+            page.onRequest { request ->
+                val reqUrl = request.url()
+                val resourceType = request.resourceType()
+                if (resourceType in listOf("xhr", "fetch") ||
+                    reqUrl.contains("/api/") ||
+                    reqUrl.contains("/ajax/") ||
+                    reqUrl.contains("/graphql") ||
+                    reqUrl.contains("search") ||
+                    reqUrl.contains(".json")) {
+                    capturedUrls.add(reqUrl)
+                }
+            }
+
+            // Navigate and let JS execute
+            page.navigate(baseUrl, com.microsoft.playwright.Page.NavigateOptions().setTimeout(DISCOVERY_TIMEOUT.toDouble()))
+            page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE,
+                com.microsoft.playwright.Page.WaitForLoadStateOptions().setTimeout(DISCOVERY_TIMEOUT.toDouble()))
+
+            // Try typing into search input if one exists
+            try {
+                val searchInputSelectors = listOf(
+                    "input[type='search']", "input[name='q']", "input[name='query']",
+                    "input[name='search']", "input[placeholder*='search' i]",
+                    "input[placeholder*='Search' i]", "#search", ".search-input"
+                )
+                for (sel in searchInputSelectors) {
+                    val el = page.querySelector(sel)
+                    if (el != null && el.isVisible) {
+                        el.fill(sampleQuery)
+                        Thread.sleep(500) // wait for autosuggest/AJAX
+                        // Try pressing Enter
+                        try { el.press("Enter") } catch (_: Exception) {}
+                        Thread.sleep(1500) // wait for results AJAX
+                        break
+                    }
+                }
+            } catch (_: Exception) {}
+
+            page.close()
+
+            // Deduplicate and filter noise
+            discovered.addAll(
+                capturedUrls.distinct().filter { url ->
+                    !url.contains("analytics") && !url.contains("tracking") &&
+                    !url.contains("pixel") && !url.contains("ads.") &&
+                    !url.contains("doubleclick") && !url.contains("googlesyndication") &&
+                    !url.contains("favicon") && !url.contains(".css") &&
+                    !url.contains(".png") && !url.contains(".jpg")
+                }
+            )
+        } catch (_: Exception) {}
+        discovered
+    }
+
+    /**
+     * Full discovery combining all methods including headless interception.
+     * Use this for important providers where thorough discovery matters.
+     */
+    suspend fun deepDiscoverEndpoints(
+        baseUrl: String,
+        sampleQuery: String = "test"
+    ): DiscoveredEndpoints = withContext(Dispatchers.IO) {
+        val basic = discoverEndpoints(baseUrl, sampleQuery)
+        val headlessEndpoints = try { discoverEndpointsViaHeadless(baseUrl, sampleQuery) } catch (_: Exception) { emptyList() }
+
+        // Merge headless-discovered endpoints into the result
+        val allSearch = (basic.searchEndpoints + headlessEndpoints.filter {
+            it.contains("search") || it.contains("query") || it.contains("q=")
+        }).distinct()
+        val allApi = (basic.apiEndpoints + headlessEndpoints.filter {
+            it.contains("api") || it.contains("ajax") || it.contains("json") || it.contains("graphql")
+        }).distinct()
+
+        // Also merge with any previously-learned endpoints for this domain
+        val domain = extractDomain(baseUrl)
+        val learned = getRankedEndpoints(domain)
+
+        basic.copy(
+            searchEndpoints = (learned + allSearch).distinct(),
+            apiEndpoints = (allApi).distinct()
+        )
     }
 
     // ─── Discovery Strategies ─────────────────────────────────────────
@@ -410,3 +559,12 @@ private data class CachedDiscovery(
     fun isExpired(): Boolean =
         System.currentTimeMillis() - timestamp > 2 * 60 * 60 * 1000L
 }
+
+/** Tracks how effective an endpoint is for a particular domain. */
+data class EndpointScore(
+    val endpoint: String,
+    val successCount: Int = 0,
+    val lastResultSize: Int = 0,
+    val failureCount: Int = 0,
+    val lastUsed: Long = System.currentTimeMillis()
+)

@@ -1,5 +1,6 @@
 package com.aggregatorx.app.engine.scraper
 
+import com.aggregatorx.app.engine.util.EngineUtils
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.Browser
@@ -104,7 +105,7 @@ object HeadlessBrowserHelper {
         
         // Set user agent + Chrome 132 full fingerprint headers
         page.setExtraHTTPHeaders(mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+            "User-Agent" to EngineUtils.DEFAULT_USER_AGENT,
             "Accept-Language" to "en-US,en;q=0.9",
             "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Encoding" to "gzip, deflate, br",

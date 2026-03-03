@@ -2,7 +2,10 @@ package com.aggregatorx.app.engine.media
 
 import android.content.Context
 import android.os.Environment
+import com.aggregatorx.app.engine.ai.AICodeInjectionEngine
+import com.aggregatorx.app.engine.ai.PageContext
 import com.aggregatorx.app.engine.scraper.HeadlessBrowserHelper
+import com.aggregatorx.app.engine.util.EngineUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -42,13 +45,8 @@ class VideoExtractorEngine @Inject constructor() {
     companion object {
         private val USER_AGENT = com.aggregatorx.app.engine.util.EngineUtils.DEFAULT_USER_AGENT
         
-        // Alternate user agents for fallback (2026)
-        private val ALTERNATE_USER_AGENTS = listOf(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36"
-        )
+        // Alternate user agents for fallback — delegates to shared pool
+        private val ALTERNATE_USER_AGENTS = EngineUtils.USER_AGENTS
         
         // Video file extensions
         private val VIDEO_EXTENSIONS = listOf(
@@ -265,31 +263,79 @@ class VideoExtractorEngine @Inject constructor() {
     
     /**
      * Extract video using headless browser with auto-click ad bypass
+     * AND AI code injection for advanced extraction.
      * This handles JavaScript-heavy sites and automatically clicks through ads/popups
      */
     private suspend fun extractWithHeadlessBrowser(pageUrl: String): VideoExtractionResult? = withContext(Dispatchers.IO) {
         try {
-            // Use HeadlessBrowserHelper with shadow DOM support and ad skipper
+            val domain = try { URL(pageUrl).host } catch (_: Exception) { "" }
+
+            // ── AI Code Injection phase ──────────────────────────────
+            // Get a domain-aware injection plan and run it before extraction
+            val injectionEngine = AICodeInjectionEngine()
+            val injectionPlan = injectionEngine.getInjectionPlan(domain, PageContext.VIDEO_PLAYER)
+
+            // First pass: fetch with shadow DOM + ad skip (standard)
             val pageContent = HeadlessBrowserHelper.fetchPageContentWithShadowAndAdSkip(
                 url = pageUrl,
                 waitSelector = "video, source, [data-video-url], iframe[src*='player']",
                 timeout = 20000
             )
-            
+
             if (pageContent.isNullOrEmpty()) {
                 return@withContext null
             }
-            
+
             val document = Jsoup.parse(pageContent, pageUrl)
             val allVideos = mutableListOf<VideoUrlInfo>()
-            
-            // Extract from the JS-rendered content
+
+            // Standard extraction from rendered content
             extractFromVideoTag(document, pageUrl)?.let { allVideos.add(it) }
             extractFromSourceTag(document, pageUrl)?.let { allVideos.add(it) }
             extractFromScripts(document, pageUrl)?.let { allVideos.add(it) }
             extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
-            
-            // Also try to extract directly from headless browser video detection
+
+            // ── AI-injected extraction via headless page ─────────────
+            // Open a new page and run the injection scripts to reveal
+            // obfuscated/lazy-loaded video sources
+            try {
+                val page = HeadlessBrowserHelper.createAntiDetectionPage()
+                page.navigate(pageUrl, com.microsoft.playwright.Page.NavigateOptions().setTimeout(20000.0))
+                page.waitForLoadState(com.microsoft.playwright.options.LoadState.DOMCONTENTLOADED,
+                    com.microsoft.playwright.Page.WaitForLoadStateOptions().setTimeout(15000.0))
+
+                // Execute each injection step from the AI plan
+                for (step in injectionPlan.steps) {
+                    try {
+                        val jsCode = injectionEngine.getTemplateCode(step.templateId) ?: step.code.ifEmpty { null } ?: continue
+                        val result = page.evaluate(jsCode)
+
+                        // Parse extracted URLs from the injection result
+                        val urls = parseInjectionResult(result)
+                        urls.forEach { url ->
+                            if (url.isNotEmpty() && VIDEO_EXTENSIONS.any { ext -> url.contains(ext, ignoreCase = true) }) {
+                                allVideos.add(VideoUrlInfo(
+                                    url = url,
+                                    quality = detectQuality(url),
+                                    format = detectFormat(url),
+                                    isStream = url.contains(".m3u8") || url.contains(".mpd")
+                                ))
+                            }
+                        }
+
+                        // Learn from success/failure
+                        if (urls.isNotEmpty()) {
+                            injectionEngine.recordSuccess(domain, step.templateId, urls.size)
+                        }
+                    } catch (e: Exception) {
+                        injectionEngine.recordFailure(domain, step.templateId, e.message ?: "execution error")
+                    }
+                }
+
+                page.close()
+            } catch (_: Exception) { /* AI injection is best-effort */ }
+
+            // Also try dedicated headless video URL extraction
             val headlessBrowserVideos = HeadlessBrowserHelper.extractVideoUrls(pageUrl)
             headlessBrowserVideos.forEach { url ->
                 allVideos.add(VideoUrlInfo(
@@ -314,6 +360,31 @@ class VideoExtractorEngine @Inject constructor() {
             )
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** Parse the result returned by an injected JS snippet into a list of URLs. */
+    private fun parseInjectionResult(result: Any?): List<String> {
+        if (result == null) return emptyList()
+        return when (result) {
+            is String -> if (result.isNotBlank()) listOf(result) else emptyList()
+            is List<*> -> result.filterIsInstance<String>().filter { it.isNotBlank() }
+            is Map<*, *> -> {
+                // Handle { urls: [...] } or { src: "..." } shaped objects
+                val urls = mutableListOf<String>()
+                result.values.forEach { v ->
+                    when (v) {
+                        is String -> if (v.isNotBlank()) urls.add(v)
+                        is List<*> -> urls.addAll(v.filterIsInstance<String>())
+                    }
+                }
+                urls
+            }
+            else -> {
+                val str = result.toString()
+                if (str.startsWith("http") || str.contains(".m3u8") || str.contains(".mp4")) listOf(str)
+                else emptyList()
+            }
         }
     }
     

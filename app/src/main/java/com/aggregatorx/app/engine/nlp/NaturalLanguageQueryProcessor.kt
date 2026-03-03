@@ -1395,6 +1395,172 @@ class NaturalLanguageQueryProcessor @Inject constructor() {
             "nature" to listOf("wild", "nature", "wildlife", "animal", "forest", "jungle", "safari")
         )
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  QUERY-LEVEL LEARNING  
+    //  Learns which query generation strategies produce the best results
+    //  for specific types of queries. Feeds back into future query
+    //  generation to prioritize high-performing strategies.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** Maps a simplified intent+concept fingerprint → strategy effectiveness scores. */
+    private val queryFeedback = java.util.concurrent.ConcurrentHashMap<String, QueryFeedbackRecord>()
+
+    /** Global strategy effectiveness across all domains. */
+    private val strategyScores = java.util.concurrent.ConcurrentHashMap<String, Float>()
+
+    /** Successful query patterns: stores query → result count for future reference. */
+    private val successfulPatterns = java.util.concurrent.ConcurrentHashMap<String, SuccessfulQueryPattern>()
+
+    /**
+     * Record that a processed query produced results.
+     * [effectiveQuery] is the specific search string from [ProcessedQuery.searchQueries]
+     * that actually returned results. [resultCount] is how many results it found.
+     * [likedByUser] indicates whether the user liked any result from this query.
+     */
+    fun recordQuerySuccess(
+        processedQuery: ProcessedQuery,
+        effectiveQuery: String,
+        resultCount: Int,
+        likedByUser: Boolean = false
+    ) {
+        val fingerprint = buildFingerprint(processedQuery)
+        val existing = queryFeedback[fingerprint] ?: QueryFeedbackRecord(fingerprint)
+
+        // Determine which strategy produced this specific effective query
+        val strategyTag = identifyStrategy(effectiveQuery, processedQuery)
+
+        val likeBoost = if (likedByUser) 2f else 1f
+        val score = (resultCount.coerceAtMost(50).toFloat() / 50f) * likeBoost
+
+        val updatedStrategies = existing.strategyScores.toMutableMap()
+        val oldScore = updatedStrategies[strategyTag] ?: 0.5f
+        updatedStrategies[strategyTag] = (oldScore * 0.7f + score * 0.3f).coerceIn(0f, 1f)
+
+        queryFeedback[fingerprint] = existing.copy(
+            strategyScores = updatedStrategies,
+            totalSuccesses = existing.totalSuccesses + 1,
+            lastUsed = System.currentTimeMillis()
+        )
+
+        // Update global strategy score
+        val globalOld = strategyScores[strategyTag] ?: 0.5f
+        strategyScores[strategyTag] = (globalOld * 0.8f + score * 0.2f).coerceIn(0f, 1f)
+
+        // Store successful pattern
+        successfulPatterns[effectiveQuery] = SuccessfulQueryPattern(
+            query = effectiveQuery,
+            intent = processedQuery.intent,
+            resultCount = resultCount,
+            likedByUser = likedByUser,
+            timestamp = System.currentTimeMillis()
+        )
+    }
+
+    /**
+     * Record that a processed query entirely failed to produce results.
+     * This penalizes the strategies used and helps avoid them in the future.
+     */
+    fun recordQueryFailure(processedQuery: ProcessedQuery) {
+        val fingerprint = buildFingerprint(processedQuery)
+        val existing = queryFeedback[fingerprint] ?: QueryFeedbackRecord(fingerprint)
+
+        val updatedStrategies = existing.strategyScores.toMutableMap()
+        processedQuery.searchQueries.take(5).forEach { query ->
+            val tag = identifyStrategy(query, processedQuery)
+            val old = updatedStrategies[tag] ?: 0.5f
+            updatedStrategies[tag] = (old * 0.8f).coerceIn(0f, 1f)
+        }
+
+        queryFeedback[fingerprint] = existing.copy(
+            strategyScores = updatedStrategies,
+            totalFailures = existing.totalFailures + 1,
+            lastUsed = System.currentTimeMillis()
+        )
+    }
+
+    /**
+     * Get the best-performing query strategies for queries similar to the
+     * given fingerprint, used to re-order generated queries.
+     */
+    fun getBestStrategiesFor(processedQuery: ProcessedQuery): List<Pair<String, Float>> {
+        val fingerprint = buildFingerprint(processedQuery)
+        val record = queryFeedback[fingerprint]
+        return if (record != null) {
+            record.strategyScores.entries
+                .sortedByDescending { it.value }
+                .map { it.key to it.value }
+        } else {
+            // Fall back to global strategy scores
+            strategyScores.entries
+                .sortedByDescending { it.value }
+                .map { it.key to it.value }
+        }
+    }
+
+    /**
+     * Get successful query patterns that match the intent of the current query.
+     * Useful for suggesting "did you mean..." or reusing effective past queries.
+     */
+    fun getSimilarSuccessfulQueries(intent: QueryIntent, limit: Int = 5): List<SuccessfulQueryPattern> {
+        return successfulPatterns.values
+            .filter { it.intent == intent }
+            .sortedByDescending { it.resultCount * (if (it.likedByUser) 2 else 1) }
+            .take(limit)
+    }
+
+    /**
+     * Get NLP learning statistics.
+     */
+    fun getLearningStats(): NLPLearningStats {
+        return NLPLearningStats(
+            totalFeedbackRecords = queryFeedback.size,
+            totalSuccessfulPatterns = successfulPatterns.size,
+            totalStrategiesTracked = strategyScores.size,
+            topStrategies = strategyScores.entries
+                .sortedByDescending { it.value }
+                .take(5)
+                .map { it.key to it.value }
+        )
+    }
+
+    /** Build a simplified fingerprint from intent + top concepts for grouping similar queries. */
+    private fun buildFingerprint(pq: ProcessedQuery): String {
+        val intent = pq.intent.name
+        val subjects = pq.concepts.subjects.sorted().take(3).joinToString(",")
+        val actions = pq.concepts.actions.sorted().take(2).joinToString(",")
+        return "$intent|$subjects|$actions"
+    }
+
+    /** Identify which generation strategy likely produced a given query string. */
+    private fun identifyStrategy(query: String, pq: ProcessedQuery): String {
+        val q = query.lowercase()
+        val subjects = pq.concepts.subjects
+        val actions = pq.concepts.actions
+        val emotions = pq.concepts.emotions
+        val compounds = pq.concepts.compoundConcepts
+
+        return when {
+            // Compound concept match
+            compounds.any { q.contains(it) } -> "compound"
+            // Emotion-driven
+            emotions.any { emotion ->
+                val terms = EMOTION_SEARCH_TERMS[emotion] ?: emptyList()
+                terms.any { q.contains(it) }
+            } -> "emotion"
+            // Cause-effect pattern
+            pq.concepts.causeEffects.any { ce -> q.contains(ce.cause) && q.contains(ce.effect) } -> "cause_effect"
+            // Subject + action core
+            subjects.any { q.contains(it) } && actions.any { q.contains(it) } -> "core_concept"
+            // Synonym expanded
+            subjects.any { s -> getConceptSynonyms(s).any { q.contains(it) } } -> "synonym"
+            // Intent-specific
+            q.contains("compilation") || q.contains("moments") || q.contains("reaction") ||
+            q.contains("download") || q.contains("torrent") || q.contains("guide") -> "intent"
+            // Broad / fallback
+            else -> "broad"
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1444,3 +1610,29 @@ enum class QueryIntent {
     IMAGE,
     GENERAL
 }
+
+/** Tracks strategy effectiveness for a query fingerprint. */
+data class QueryFeedbackRecord(
+    val fingerprint: String,
+    val strategyScores: Map<String, Float> = emptyMap(),
+    val totalSuccesses: Int = 0,
+    val totalFailures: Int = 0,
+    val lastUsed: Long = System.currentTimeMillis()
+)
+
+/** A query pattern that previously produced good results. */
+data class SuccessfulQueryPattern(
+    val query: String,
+    val intent: QueryIntent,
+    val resultCount: Int,
+    val likedByUser: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+/** NLP learning statistics for display. */
+data class NLPLearningStats(
+    val totalFeedbackRecords: Int,
+    val totalSuccessfulPatterns: Int,
+    val totalStrategiesTracked: Int,
+    val topStrategies: List<Pair<String, Float>>
+)

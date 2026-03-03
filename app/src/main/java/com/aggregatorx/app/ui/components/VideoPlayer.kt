@@ -28,6 +28,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import com.aggregatorx.app.engine.util.EngineUtils
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -71,7 +72,8 @@ private fun isLikelyVideoUrl(url: String): Boolean {
 }
 
 /**
- * Detect the media type from URL for appropriate source handling
+ * Detect the media type from URL for appropriate source handling.
+ * Checks URL paths, query params, and common CDN patterns.
  */
 private fun detectMediaType(url: String): MediaType {
     val lowerUrl = url.lowercase()
@@ -81,8 +83,12 @@ private fun detectMediaType(url: String): MediaType {
         lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") || 
         lowerUrl.contains(".mkv") || lowerUrl.contains(".avi") ||
         lowerUrl.contains(".mov") || lowerUrl.contains(".m4v") -> MediaType.PROGRESSIVE
-        lowerUrl.contains("/hls/") || lowerUrl.contains("manifest") -> MediaType.HLS
-        lowerUrl.contains("/dash/") -> MediaType.DASH
+        lowerUrl.contains("/hls/") || lowerUrl.contains("manifest") ||
+        lowerUrl.contains("index.m3u8") || lowerUrl.contains("master.m3u8") -> MediaType.HLS
+        lowerUrl.contains("/dash/") || lowerUrl.contains("manifest.mpd") -> MediaType.DASH
+        // CDN paths that typically serve progressive video
+        lowerUrl.contains("/video/") || lowerUrl.contains("videoplayback") ||
+        lowerUrl.contains("/get_video") || lowerUrl.contains("/dl/") -> MediaType.PROGRESSIVE
         else -> MediaType.UNKNOWN
     }
 }
@@ -127,7 +133,7 @@ fun VideoPlayerDialog(
     // Create HTTP data source with optimized settings for faster loading
     val httpDataSourceFactory = remember(videoUrl, headers) {
         val ua = headers?.get("User-Agent")
-            ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36"
+            ?: EngineUtils.DEFAULT_USER_AGENT
         DefaultHttpDataSource.Factory()
             .setUserAgent(ua)
             .setConnectTimeoutMs(15000)

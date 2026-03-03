@@ -267,7 +267,7 @@ data class ScrapingConfig(
     val cookies: String = "{}", // JSON object of cookies
     val postData: String? = null, // For POST requests
     val encoding: String = "UTF-8",
-    val userAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    val userAgent: String = com.aggregatorx.app.engine.util.EngineUtils.DEFAULT_USER_AGENT,
     val timeout: Int = 30000,
     val retryCount: Int = 3,
     val retryDelay: Long = 1000,
