@@ -96,6 +96,6 @@ jobs:
           ### Download
           Download the APK file below and install on your Android device.
         draft: false
-        prerelease: false
+        prerelease: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
