@@ -114,6 +114,13 @@ class AggregatorRepository @Inject constructor(
         // The cache is cleared before each search anyway, so this ensures no stale results
         return scrapingEngine.searchAllProviders(query, false)
     }
+
+    suspend fun searchProviderPage(providerId: String, query: String, page: Int): ProviderSearchResults {
+        val provider = providerDao.getProviderById(providerId)
+            ?: throw IllegalArgumentException("Provider not found: $providerId")
+
+        return scrapingEngine.searchProviderPage(provider, query, page)
+    }
     
     suspend fun aggregateSearchResults(
         query: String,

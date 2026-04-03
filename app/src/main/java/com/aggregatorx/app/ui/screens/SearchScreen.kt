@@ -48,6 +48,8 @@ fun SearchScreen(
     val uiState by viewModel.uiState.collectAsState()
     val providerResults by viewModel.providerResults.collectAsState()
     val likedUrls by viewModel.likedUrls.collectAsState()
+    val providerPageIndex by viewModel.providerPageIndex.collectAsState()
+    val providerActionLoading by viewModel.providerActionLoading.collectAsState()
     val context = LocalContext.current
     
     val listState = rememberLazyListState()
@@ -175,6 +177,17 @@ fun SearchScreen(
                         onExtractVideoForPreview = { url ->
                             viewModel.extractVideoForPreview(url)
                         },
+                        onRefreshProvider = { providerId ->
+                            viewModel.refreshProviderResults(providerId)
+                        },
+                        onNextPage = { providerId ->
+                            viewModel.loadProviderNextPage(providerId)
+                        },
+                        onPreviousPage = { providerId ->
+                            viewModel.loadProviderPreviousPage(providerId)
+                        },
+                        providerPageIndex = providerPageIndex,
+                        providerActionLoading = providerActionLoading,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -305,6 +318,11 @@ fun ProviderResultsList(
     likedUrls: Set<String> = emptySet(),
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
+    onRefreshProvider: (String) -> Unit = {},
+    onNextPage: (String) -> Unit = {},
+    onPreviousPage: (String) -> Unit = {},
+    providerPageIndex: Map<String, Int> = emptyMap(),
+    providerActionLoading: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     // Separate successful and failed providers (failed go to bottom)
@@ -436,7 +454,12 @@ fun ProviderResultsList(
                         resultCount = providerResult.results.size,
                         searchTime = providerResult.searchTime,
                         success = true,
-                        errorMessage = null
+                        errorMessage = null,
+                        onRefresh = { onRefreshProvider(providerResult.provider.id) },
+                        onNextPage = { onNextPage(providerResult.provider.id) },
+                        onPreviousPage = { onPreviousPage(providerResult.provider.id) },
+                        isActionLoading = providerResult.provider.id in providerActionLoading,
+                        currentPage = providerPageIndex[providerResult.provider.id] ?: 1
                     )
                 }
                 

@@ -541,77 +541,9 @@ class ScrapingEngine @Inject constructor(
     private fun extractDomain(url: String): String =
         EngineUtils.extractDomain(url)
     
-    /**
-     * Validate and filter results to ensure they are actual content, not category pages
-     * ENHANCED: Also matches against descriptions and collects related content
-     */
     private fun validateAndFilterResults(results: List<SearchResult>, query: String): List<SearchResult> {
-        val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
-        val processed = currentProcessedQuery
-
-        return results.filter { result ->
-            val titleLower = result.title.lowercase()
-            val urlLower = result.url.lowercase()
-
-            // Must have a meaningful title
-            if (result.title.trim().length < 3) return@filter false
-
-            // Must have a meaningful URL (not just the base URL itself)
-            val path = try { java.net.URL(result.url).path } catch (_: Exception) { result.url }
-            if (path.length <= 1) return@filter false  // root / or empty
-
-            // Filter out category/navigation links
-            val isCategoryLink = CATEGORY_URL_PATTERNS.any { urlLower.contains(it) }
-            if (isCategoryLink) return@filter false
-
-            // Filter out generic category names only if they have no description AND no thumbnail
-            val isTooGeneric = titleLower.trim() in GENERIC_CATEGORY_NAMES &&
-                              result.description.isNullOrEmpty() &&
-                              result.thumbnailUrl.isNullOrEmpty()
-            if (isTooGeneric) return@filter false
-
-            // Exclude common non-content file types
-            val isExcludedExtension = urlLower.matches(Regex(".*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)(\\?.*)?$"))
-            if (isExcludedExtension) return@filter false
-
-            // ── RELEVANCE GATE (NLP-ENHANCED) ───────────────────────────────
-            // Accept results that match EITHER:
-            //  1. At least one raw query keyword, OR
-            //  2. Any concept term from NLP processing (subjects, actions, synonyms)
-            //  3. A semantic relevance score ≥ 15 from the NLP processor
-            if (queryWords.isNotEmpty() || processed != null) {
-                val descLower = result.description?.lowercase() ?: ""
-                val urlPath = try {
-                    java.net.URL(result.url).path.lowercase().replace("-", " ").replace("_", " ")
-                } catch (_: Exception) { urlLower }
-                val combined = "$titleLower $descLower $urlPath"
-
-                // Check 1: raw keyword match (original behaviour)
-                val hasAnyKeyword = queryWords.any { combined.contains(it) }
-                if (hasAnyKeyword) return@filter true
-
-                // Check 2: NLP concept term match
-                if (processed != null) {
-                    val hasConceptMatch = processed.conceptTerms.any { term ->
-                        combined.contains(term)
-                    }
-                    if (hasConceptMatch) return@filter true
-
-                    // Check 3: semantic relevance scoring
-                    val semanticScore = nlpProcessor.calculateSemanticRelevance(
-                        result.title,
-                        result.description,
-                        processed.concepts
-                    )
-                    if (semanticScore >= 15f) return@filter true
-                }
-
-                // None of the checks passed — reject this result
-                return@filter false
-            }
-
-            true
-        }
+        // No filtering at this stage to preserve provider-native result sets.
+        return results
     }
     
     /**
@@ -963,10 +895,7 @@ class ScrapingEngine @Inject constructor(
             )
 
             allExtracted.add(result)
-
-            if (matchesQueryEnhanced(result, query)) {
-                results.add(result)
-            }
+            results.add(result) // Keep provider's full scraped items, no strict query gating
         }
 
         // Also try generic extraction if not enough results
@@ -1084,7 +1013,43 @@ class ScrapingEngine @Inject constructor(
             tryFallbackScraping(provider, query, startTime, e)
         }
     }
-    
+
+    /**
+     * Search one provider by page index (next/back pagination support)
+     */
+    suspend fun searchProviderPage(provider: Provider, query: String, page: Int): ProviderSearchResults {
+        val startTime = System.currentTimeMillis()
+        return try {
+            enforceRateLimit(provider.id)
+            providerDao.incrementSearchCount(provider.id)
+
+            val config = scrapingConfigDao.getConfigForProvider(provider.id)
+            val analysis = siteAnalysisDao.getLatestAnalysis(provider.id)
+
+            val results = when {
+                config != null -> scrapeWithConfigPage(provider, query, config, page)
+                analysis != null -> scrapeWithAnalysisPage(provider, query, analysis, page)
+                else -> scrapeGenericPage(provider, query, page)
+            }
+
+            updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+
+            // Try to detect extra page links to know if more pages exist
+            val hasMore = results.size >= 1 // best-effort allow next-page behavior
+
+            ProviderSearchResults(
+                provider = provider,
+                results = results,
+                searchTime = System.currentTimeMillis() - startTime,
+                success = true,
+                hasMore = hasMore,
+                nextPageUrl = if (hasMore) "" else null
+            )
+        } catch (e: Exception) {
+            tryFallbackScraping(provider, query, startTime, e)
+        }
+    }
+
     /**
      * Scrape using stored configuration
      */
@@ -1101,6 +1066,77 @@ class ScrapingEngine @Inject constructor(
         
         val document = fetchDocument(searchUrl, config)
         extractResultsWithConfig(document, provider, query, config)
+    }
+
+    private suspend fun scrapeWithConfigPage(
+        provider: Provider,
+        query: String,
+        config: ScrapingConfig,
+        page: Int
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
+        val encodedQuery = URLEncoder.encode(query, config.encoding)
+        var searchUrl = config.searchUrlTemplate
+            .replace("{baseUrl}", provider.baseUrl)
+            .replace("{query}", encodedQuery)
+
+        searchUrl = if (searchUrl.contains("{page}")) {
+            searchUrl.replace("{page}", page.toString())
+        } else if (page > 1) {
+            if (searchUrl.contains("?")) "$searchUrl&page=$page" else "$searchUrl?page=$page"
+        } else searchUrl
+
+        val document = fetchDocument(searchUrl, config)
+        extractResultsWithConfig(document, provider, query, config)
+    }
+
+    private suspend fun scrapeWithAnalysisPage(
+        provider: Provider,
+        query: String,
+        analysis: SiteAnalysis,
+        page: Int
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
+        val searchUrl = buildSearchUrl(provider, query, analysis).let { baseUrl ->
+            if (page <= 1) return@let baseUrl
+            if (baseUrl.contains("{page}")) baseUrl.replace("{page}", page.toString())
+            else if (baseUrl.contains("?")) "$baseUrl&page=$page" else "$baseUrl?page=$page"
+        }
+
+        val document = fetchDocument(searchUrl)
+        extractResultsWithAnalysis(document, provider, query, analysis)
+    }
+
+    private suspend fun scrapeGenericPage(
+        provider: Provider,
+        query: String,
+        page: Int
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
+        if (page <= 1) {
+            return@withContext scrapeGeneric(provider, query)
+        }
+
+        val enc = URLEncoder.encode(query, "UTF-8")
+        val base = provider.baseUrl.trimEnd('/')
+        val candidateUrls = listOf(
+            "$base/search?q=$enc&page=$page",
+            "$base/?s=$enc&page=$page",
+            "$base/search?query=$enc&page=$page",
+            "$base/?q=$enc&page=$page",
+            "$base/search?search_query=$enc&page=$page",
+            "$base/search/$enc/page/$page",
+            "$base/search/$enc?page=$page"
+        )
+
+        for (url in candidateUrls) {
+            try {
+                val document = fetchDocument(url)
+                val results = extractResultsGeneric(document, provider, query)
+                if (results.isNotEmpty()) return@withContext results
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        emptyList()
     }
     
     /**
@@ -1623,13 +1659,9 @@ class ScrapingEngine @Inject constructor(
                         thumbnailUrl = thumbnail,
                         relevanceScore = calculateRelevanceScore(title, query, description, url)
                     )
-                    
+
                     allResults.add(result)
-                    
-                    // Check if matches query (title, description, or URL)
-                    if (matchesQueryEnhanced(result, query)) {
-                        results.add(result)
-                    }
+                    results.add(result) // keep all scraped results for provider fidelity
                 }
             } catch (e: Exception) {
                 // Skip malformed items
