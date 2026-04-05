@@ -1026,7 +1026,7 @@ class ScrapingEngine @Inject constructor(
             val config = scrapingConfigDao.getConfigForProvider(provider.id)
             val analysis = siteAnalysisDao.getLatestAnalysis(provider.id)
 
-            val results = when {
+            val (results, hasMorePages, nextPageUrl) = when {
                 config != null -> scrapeWithConfigPage(provider, query, config, page)
                 analysis != null -> scrapeWithAnalysisPage(provider, query, analysis, page)
                 else -> scrapeGenericPage(provider, query, page)
@@ -1034,16 +1034,13 @@ class ScrapingEngine @Inject constructor(
 
             updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
 
-            // Try to detect extra page links to know if more pages exist
-            val hasMore = results.size >= 1 // best-effort allow next-page behavior
-
             ProviderSearchResults(
                 provider = provider,
                 results = results,
                 searchTime = System.currentTimeMillis() - startTime,
                 success = true,
-                hasMore = hasMore,
-                nextPageUrl = if (hasMore) "" else null
+                hasMore = hasMorePages,
+                nextPageUrl = nextPageUrl
             )
         } catch (e: Exception) {
             tryFallbackScraping(provider, query, startTime, e)
@@ -1073,7 +1070,7 @@ class ScrapingEngine @Inject constructor(
         query: String,
         config: ScrapingConfig,
         page: Int
-    ): List<SearchResult> = withContext(Dispatchers.IO) {
+    ): Triple<List<SearchResult>, Boolean, String?> = withContext(Dispatchers.IO) {
         val encodedQuery = URLEncoder.encode(query, config.encoding)
         var searchUrl = config.searchUrlTemplate
             .replace("{baseUrl}", provider.baseUrl)
@@ -1086,7 +1083,25 @@ class ScrapingEngine @Inject constructor(
         } else searchUrl
 
         val document = fetchDocument(searchUrl, config)
-        extractResultsWithConfig(document, provider, query, config)
+        val results = extractResultsWithConfig(document, provider, query, config)
+
+        // Detect pagination links - with fallback logic
+        var hasMorePages = detectPaginationLinks(document, provider, page)
+        
+        // Heuristic: if we got a good number of results on page 1, assume pagination exists
+        // This helps for sites that don't have obvious pagination UI
+        if (!hasMorePages && page == 1 && results.size >= 10) {
+            hasMorePages = true
+        }
+        
+        // If page > 1 and we got results, assume there might be more
+        if (!hasMorePages && page > 1 && results.isNotEmpty()) {
+            hasMorePages = true
+        }
+        
+        val nextPageUrl = if (hasMorePages && page >= 1) constructNextPageUrl(searchUrl, page) else null
+
+        Triple(results, hasMorePages, nextPageUrl)
     }
 
     private suspend fun scrapeWithAnalysisPage(
@@ -1094,7 +1109,7 @@ class ScrapingEngine @Inject constructor(
         query: String,
         analysis: SiteAnalysis,
         page: Int
-    ): List<SearchResult> = withContext(Dispatchers.IO) {
+    ): Triple<List<SearchResult>, Boolean, String?> = withContext(Dispatchers.IO) {
         val searchUrl = buildSearchUrl(provider, query, analysis).let { baseUrl ->
             if (page <= 1) return@let baseUrl
             if (baseUrl.contains("{page}")) baseUrl.replace("{page}", page.toString())
@@ -1102,16 +1117,34 @@ class ScrapingEngine @Inject constructor(
         }
 
         val document = fetchDocument(searchUrl)
-        extractResultsWithAnalysis(document, provider, query, analysis)
+        val results = extractResultsWithAnalysis(document, provider, query, analysis)
+
+        // Detect pagination links - with fallback logic
+        var hasMorePages = detectPaginationLinks(document, provider, page)
+        
+        // Heuristic: if we got a good number of results on page 1, assume pagination exists
+        if (!hasMorePages && page == 1 && results.size >= 10) {
+            hasMorePages = true
+        }
+        
+        // If page > 1 and we got results, assume there might be more
+        if (!hasMorePages && page > 1 && results.isNotEmpty()) {
+            hasMorePages = true
+        }
+        
+        val nextPageUrl = if (hasMorePages && page >= 1) constructNextPageUrl(searchUrl, page) else null
+
+        Triple(results, hasMorePages, nextPageUrl)
     }
 
     private suspend fun scrapeGenericPage(
         provider: Provider,
         query: String,
         page: Int
-    ): List<SearchResult> = withContext(Dispatchers.IO) {
+    ): Triple<List<SearchResult>, Boolean, String?> = withContext(Dispatchers.IO) {
         if (page <= 1) {
-            return@withContext scrapeGeneric(provider, query)
+            val results = scrapeGeneric(provider, query)
+            return@withContext Triple(results, results.size >= 10, null) // Assume has more if we got 10+ results
         }
 
         val enc = URLEncoder.encode(query, "UTF-8")
@@ -1130,13 +1163,18 @@ class ScrapingEngine @Inject constructor(
             try {
                 val document = fetchDocument(url)
                 val results = extractResultsGeneric(document, provider, query)
-                if (results.isNotEmpty()) return@withContext results
+                if (results.isNotEmpty()) {
+                    // Detect pagination links
+                    val hasMorePages = detectPaginationLinks(document, provider, page)
+                    val nextPageUrl = if (hasMorePages && page >= 1) constructNextPageUrl(url, page) else null
+                    return@withContext Triple(results, hasMorePages, nextPageUrl)
+                }
             } catch (e: Exception) {
                 continue
             }
         }
 
-        emptyList()
+        Triple(emptyList(), false, null)
     }
     
     /**
@@ -2235,4 +2273,123 @@ class ScrapingEngine @Inject constructor(
         val lastSuccess: Long = 0,
         val lastFailure: Long = 0
     )
+
+    /**
+     * Detect if a page has pagination links and more pages exist
+     */
+    private fun detectPaginationLinks(document: Document, provider: Provider, currentPage: Int): Boolean {
+        // Common pagination selectors for major site types
+        val paginationSelectors = listOf(
+            ".pagination", ".pager", ".page-nav", ".page-navigation",
+            ".paging", ".pages", "[class*='pagination']",
+            "[class*='pager']", "[class*='page']",
+            ".nav-links", ".page-links", ".wp-pagenavi",
+            ".pagination-links", ".page-numbers",
+            ".footer-pagination", ".bottom-pagination",
+            "[role='navigation']", ".nav-pagination",
+            "nav[aria-label*='pagination']"
+        )
+
+        // Look for pagination elements
+        for (selector in paginationSelectors) {
+            val pagination = document.select(selector)
+            if (pagination.isNotEmpty()) {
+                // Check for next page links with multiple patterns
+                val nextLinks = pagination.select("a[href]").filter { element ->
+                    val text = element.text().lowercase().trim()
+                    val href = element.attr("href").lowercase()
+                    val pageAttr = element.attr("data-page").lowercase()
+                    
+                    // Match various next page indicators
+                    text.contains("next") || text.contains(">") || text.contains("»") || text.contains("→") ||
+                    href.contains("page=${currentPage + 1}") ||
+                    href.contains("&page=${currentPage + 1}") ||
+                    href.contains("?page=${currentPage + 1}") ||
+                    href.contains("p=${currentPage + 1}") ||
+                    href.contains("&p=${currentPage + 1}") ||
+                    pageAttr.contains("${currentPage + 1}") ||
+                    href.matches(Regex(".*[?&]page=${currentPage + 1}.*")) ||
+                    href.matches(Regex(".*page/?${currentPage + 1}.*")) ||
+                    try { href.substring(href.lastIndexOf("=") + 1).toIntOrNull() ?: 0 > currentPage } catch (e: Exception) { false }
+                }
+                if (nextLinks.isNotEmpty()) return true
+
+                // Check for numbered page links beyond current page
+                val pageLinks = pagination.select("a[href]").filter { element ->
+                    try {
+                        val text = element.text().trim()
+                        val pageNum = text.toIntOrNull()
+                        pageNum != null && pageNum > currentPage
+                    } catch (e: Exception) { false }
+                }
+                if (pageLinks.isNotEmpty()) return true
+                
+                // Check for rel='next' attribute (semantic HTML)
+                if (pagination.select("a[rel='next']").isNotEmpty()) return true
+            }
+        }
+
+        // Look for "Load More" or "Show More" buttons
+        val loadMoreSelectors = listOf(
+            ".load-more", ".show-more", ".more-results",
+            "[class*='load-more']", "[class*='show-more']",
+            "[data-action*='load']",
+            "button[class*='load']",
+            "a[href*='load']"
+        )
+
+        for (selector in loadMoreSelectors) {
+            val elements = document.select(selector)
+            if (elements.isNotEmpty()) {
+                // Additional check to ensure it's actually a load more button
+                val hasLoadMoreText = elements.any { 
+                    val text = it.text().lowercase()
+                    text.contains("load") || text.contains("more") || text.contains("show")
+                }
+                if (hasLoadMoreText) return true
+            }
+        }
+
+        // Check if results section exists and could have more pages
+        val resultSelectors = listOf(
+            ".results", "[class*='results']",
+            ".items", "[class*='item']",
+            ".entries", "article", ".entry",
+            "[class*='content']"
+        )
+        
+        // If we have results and page > 1, assume more pages might exist
+        val hasResults = resultSelectors.any { document.select(it).isNotEmpty() }
+        if (currentPage > 1 && hasResults) {
+            return true
+        }
+
+        // Last check: if current page is 1, slightly more lenient about assuming next exists
+        if (currentPage == 1) {
+            return document.select("a[href]").isNotEmpty()
+        }
+
+        return false
+    }
+
+    /**
+     * Construct the next page URL based on current page URL
+     */
+    private fun constructNextPageUrl(currentUrl: String, currentPage: Int): String {
+        val nextPage = currentPage + 1
+
+        // Handle different pagination URL patterns
+        return when {
+            currentUrl.contains("page=$currentPage") ->
+                currentUrl.replace("page=$currentPage", "page=$nextPage")
+            currentUrl.contains("p=$currentPage") ->
+                currentUrl.replace("p=$currentPage", "p=$nextPage")
+            currentUrl.matches(Regex("(.*/page/)$currentPage(/.*)?")) ->
+                currentUrl.replace(Regex("(.*/page/)$currentPage(/.*)?"), "$1$nextPage$2")
+            currentUrl.contains("?") ->
+                "$currentUrl&page=$nextPage"
+            else ->
+                "$currentUrl?page=$nextPage"
+        }
+    }
 }
