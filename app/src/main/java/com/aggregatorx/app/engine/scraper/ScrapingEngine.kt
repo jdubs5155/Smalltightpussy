@@ -892,7 +892,16 @@ class ScrapingEngine @Inject constructor(
 
         if (page <= 1) {
             val results = extractResultsWithThumbnails(activeDoc, provider, query)
-            val hasMorePages = paginationUrls.isNotEmpty() || detectPaginationLinks(activeDoc, provider, 1)
+            var hasMorePages = paginationUrls.isNotEmpty() || detectPaginationLinks(activeDoc, provider, 1)
+            if (!hasMorePages && results.size >= 5) {
+                hasMorePages = true
+            }
+            if (!hasMorePages && results.isNotEmpty()) {
+                val pageDocText = activeDoc.text().lowercase()
+                if (pageDocText.contains("page 2") || pageDocText.contains("next") || pageDocText.contains("more results") || pageDocText.contains("load more")) {
+                    hasMorePages = true
+                }
+            }
             val nextPageUrl = paginationUrls.firstOrNull()
             return@withContext Triple(results, hasMorePages, nextPageUrl)
         }
@@ -1126,6 +1135,20 @@ class ScrapingEngine @Inject constructor(
         if (!hasMorePages && results.size >= 5) {
             hasMorePages = true
         }
+
+        // Fallback: explicitly test page 2 when page 1 has results but no pagination UI
+        if (!hasMorePages && page == 1 && results.isNotEmpty()) {
+            try {
+                val nextPageCandidate = constructNextPageUrl(searchUrl, page)
+                val nextDoc = fetchDocument(nextPageCandidate, config)
+                val nextResults = extractResultsWithConfig(nextDoc, provider, query, config)
+                if (nextResults.isNotEmpty()) {
+                    hasMorePages = true
+                }
+            } catch (_: Exception) {
+                // ignore fallback failure
+            }
+        }
         
         // If page > 1 and we got results, assume there might be more
         if (!hasMorePages && page > 1 && results.isNotEmpty()) {
@@ -1158,6 +1181,20 @@ class ScrapingEngine @Inject constructor(
         // Heuristic: if we got results, assume pagination exists (most sites have it)
         if (!hasMorePages && results.size >= 5) {
             hasMorePages = true
+        }
+
+        // Fallback: explicitly test page 2 when page 1 has results but no pagination UI
+        if (!hasMorePages && page == 1 && results.isNotEmpty()) {
+            try {
+                val nextPageCandidate = constructNextPageUrl(searchUrl, page)
+                val nextDoc = fetchDocument(nextPageCandidate)
+                val nextResults = extractResultsWithAnalysis(nextDoc, provider, query, analysis)
+                if (nextResults.isNotEmpty()) {
+                    hasMorePages = true
+                }
+            } catch (_: Exception) {
+                // ignore fallback failure
+            }
         }
         
         // If page > 1 and we got results, assume there might be more
