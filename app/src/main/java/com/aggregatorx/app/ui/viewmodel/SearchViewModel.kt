@@ -113,8 +113,9 @@ class SearchViewModel @Inject constructor(
                     error = null
                 ) 
             }
-            // Clear provider results immediately
+            // Clear provider results and reset page indices for new search
             _providerResults.value = emptyList()
+            _providerPageIndex.value = emptyMap()
             
             val results = mutableListOf<ProviderSearchResults>()
             

@@ -717,6 +717,10 @@ class ScrapingEngine @Inject constructor(
             val smartSearchUrl = smartNavigationEngine.findSearchUrl(provider.baseUrl, effectiveQuery)
 
             if (smartSearchUrl != null) {
+                val smartDoc = fetchDocument(smartSearchUrl)
+                val hasMoreSmart = detectPaginationLinks(smartDoc, provider, 1) ||
+                    smartNavigationEngine.getPaginationLinks(smartDoc, provider.baseUrl).isNotEmpty()
+
                 val results = scrapeWithSmartNavigation(provider, query, smartSearchUrl)
                 if (results.isNotEmpty()) {
                     updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
@@ -724,7 +728,8 @@ class ScrapingEngine @Inject constructor(
                         provider = provider,
                         results = results,
                         searchTime = System.currentTimeMillis() - startTime,
-                        success = true
+                        success = true,
+                        hasMore = hasMoreSmart
                     )
                 }
             }
@@ -820,7 +825,7 @@ class ScrapingEngine @Inject constructor(
         val document = fetchDocument(searchUrl)
 
         // If we landed on a category page, navigate past it first
-        val (activeUrl, activeDoc) = if (smartNavigationEngine.isCategoryPage(searchUrl, document)) {
+        val (_activeUrl, activeDoc) = if (smartNavigationEngine.isCategoryPage(searchUrl, document)) {
             val nav = smartNavigationEngine.navigatePastCategory(provider.baseUrl, document, query)
             nav ?: (searchUrl to document)
         } else {
@@ -853,6 +858,63 @@ class ScrapingEngine @Inject constructor(
         }
 
         pageOneResults
+    }
+
+    private suspend fun scrapeSmartPage(
+        provider: Provider,
+        query: String,
+        page: Int
+    ): Triple<List<SearchResult>, Boolean, String?> = withContext(Dispatchers.IO) {
+        val processed = currentProcessedQuery
+        val effectiveQuery = if (processed != null &&
+            processed.isNaturalLanguage &&
+            processed.searchQueries.isNotEmpty() &&
+            query == processed.originalQuery
+        ) {
+            processed.searchQueries.first()
+        } else {
+            query
+        }
+
+        val smartSearchUrl = smartNavigationEngine.findSearchUrl(provider.baseUrl, effectiveQuery)
+        if (smartSearchUrl == null) {
+            return@withContext scrapeGenericPage(provider, query, page)
+        }
+
+        val document = fetchDocument(smartSearchUrl)
+        val (_activeUrl, activeDoc) = if (smartNavigationEngine.isCategoryPage(smartSearchUrl, document)) {
+            smartNavigationEngine.navigatePastCategory(provider.baseUrl, document, query) ?: (smartSearchUrl to document)
+        } else {
+            smartSearchUrl to document
+        }
+
+        val paginationUrls = smartNavigationEngine.getPaginationLinks(activeDoc, provider.baseUrl, maxPages = max(page + 1, 5))
+
+        if (page <= 1) {
+            val results = extractResultsWithThumbnails(activeDoc, provider, query)
+            val hasMorePages = paginationUrls.isNotEmpty() || detectPaginationLinks(activeDoc, provider, 1)
+            val nextPageUrl = paginationUrls.firstOrNull()
+            return@withContext Triple(results, hasMorePages, nextPageUrl)
+        }
+
+        val targetPageUrl = paginationUrls.filter { link ->
+            link.contains("page=$page") ||
+            link.contains("/page/$page") ||
+            link.contains("p=$page") ||
+            link.contains("/p/$page") ||
+            link.endsWith("/$page")
+        }.firstOrNull() ?: paginationUrls.getOrNull(page - 1)
+
+        if (targetPageUrl != null) {
+            val pageDoc = fetchDocument(targetPageUrl)
+            val results = extractResultsWithThumbnails(pageDoc, provider, query)
+            var hasMorePages = detectPaginationLinks(pageDoc, provider, page)
+            if (!hasMorePages && results.isNotEmpty()) hasMorePages = true
+            val nextPageUrl = if (hasMorePages) paginationUrls.getOrNull(page) ?: constructNextPageUrl(targetPageUrl, page) else null
+            return@withContext Triple(results, hasMorePages, nextPageUrl)
+        }
+
+        scrapeGenericPage(provider, query, page)
     }
     
     /**
@@ -998,7 +1060,10 @@ class ScrapingEngine @Inject constructor(
             val (results, hasMorePages, nextPageUrl) = when {
                 config != null -> scrapeWithConfigPage(provider, query, config, page)
                 analysis != null -> scrapeWithAnalysisPage(provider, query, analysis, page)
-                else -> scrapeGenericPage(provider, query, page)
+                else -> {
+                    val smartPage = scrapeSmartPage(provider, query, page)
+                    if (smartPage.first.isNotEmpty()) smartPage else scrapeGenericPage(provider, query, page)
+                }
             }
 
             updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
@@ -1057,9 +1122,8 @@ class ScrapingEngine @Inject constructor(
         // Detect pagination links - with fallback logic
         var hasMorePages = detectPaginationLinks(document, provider, page)
         
-        // Heuristic: if we got a good number of results on page 1, assume pagination exists
-        // This helps for sites that don't have obvious pagination UI
-        if (!hasMorePages && page == 1 && results.size >= 10) {
+        // Heuristic: if we got results, assume pagination exists (most sites have it)
+        if (!hasMorePages && results.size >= 5) {
             hasMorePages = true
         }
         
@@ -1091,8 +1155,8 @@ class ScrapingEngine @Inject constructor(
         // Detect pagination links - with fallback logic
         var hasMorePages = detectPaginationLinks(document, provider, page)
         
-        // Heuristic: if we got a good number of results on page 1, assume pagination exists
-        if (!hasMorePages && page == 1 && results.size >= 10) {
+        // Heuristic: if we got results, assume pagination exists (most sites have it)
+        if (!hasMorePages && results.size >= 5) {
             hasMorePages = true
         }
         
@@ -1113,41 +1177,9 @@ class ScrapingEngine @Inject constructor(
     ): Triple<List<SearchResult>, Boolean, String?> = withContext(Dispatchers.IO) {
         if (page <= 1) {
             val results = scrapeGeneric(provider, query)
-            // More aggressive pagination detection for page 1
-            val hasMore = if (results.isNotEmpty()) {
-                // Try to fetch page 1 document to check for pagination
-                try {
-                    val enc = URLEncoder.encode(query, "UTF-8")
-                    val base = provider.baseUrl.trimEnd('/')
-                    val candidateUrls = listOf(
-                        "$base/search?q=$enc",
-                        "$base/?s=$enc",
-                        "$base/search?query=$enc",
-                        "$base/?q=$enc",
-                        "$base/search?search_query=$enc"
-                    )
-
-                    for (url in candidateUrls) {
-                        try {
-                            val document = fetchDocument(url)
-                            val paginationDetected = detectPaginationLinks(document, provider, 1)
-                            if (paginationDetected) {
-                                return@withContext Triple(results, true, constructNextPageUrl(url, 1))
-                            }
-                        } catch (e: Exception) {
-                            continue
-                        }
-                    }
-
-                    // Fallback: assume pagination if we have 5+ results
-                    results.size >= 5
-                } catch (e: Exception) {
-                    // If we can't check pagination, assume it exists if we have results
-                    true
-                }
-            } else {
-                false
-            }
+            // For generic providers, assume pagination exists if we have results
+            // Most search sites have pagination, and this is safer than complex detection
+            val hasMore = results.isNotEmpty()
             return@withContext Triple(results, hasMore, null)
         }
 
@@ -1168,15 +1200,9 @@ class ScrapingEngine @Inject constructor(
                 val document = fetchDocument(url)
                 val results = extractResultsGeneric(document, provider, query)
                 if (results.isNotEmpty()) {
-                    // Detect pagination links - with fallback logic
-                    var hasMorePages = detectPaginationLinks(document, provider, page)
-
-                    // Heuristic: if page > 1 and we got results, assume there might be more pages
-                    if (!hasMorePages && page > 1 && results.isNotEmpty()) {
-                        hasMorePages = true
-                    }
-
-                    val nextPageUrl = if (hasMorePages && page >= 1) constructNextPageUrl(url, page) else null
+                    // For subsequent pages, assume there might be more pages
+                    val hasMorePages = true
+                    val nextPageUrl = constructNextPageUrl(url, page)
                     return@withContext Triple(results, hasMorePages, nextPageUrl)
                 }
             } catch (e: Exception) {
@@ -1184,7 +1210,7 @@ class ScrapingEngine @Inject constructor(
             }
         }
 
-        Triple(emptyList(), false, null)
+        return@withContext Triple(emptyList(), false, null)
     }
     
     /**
