@@ -979,39 +979,8 @@ class ScrapingEngine @Inject constructor(
      * Search a single provider with full error handling and fallback
      */
     suspend fun searchProvider(provider: Provider, query: String): ProviderSearchResults {
-        val startTime = System.currentTimeMillis()
-        
-        return try {
-            // Rate limiting
-            enforceRateLimit(provider.id)
-            
-            // Update search count
-            providerDao.incrementSearchCount(provider.id)
-            
-            // Get scraping config or use analysis
-            val config = scrapingConfigDao.getConfigForProvider(provider.id)
-            val analysis = siteAnalysisDao.getLatestAnalysis(provider.id)
-            
-            // Try primary scraping method
-            val results = when {
-                config != null -> scrapeWithConfig(provider, query, config)
-                analysis != null -> scrapeWithAnalysis(provider, query, analysis)
-                else -> scrapeGeneric(provider, query)
-            }
-            
-            // Update provider health on success
-            updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
-            
-            ProviderSearchResults(
-                provider = provider,
-                results = results,
-                searchTime = System.currentTimeMillis() - startTime,
-                success = true
-            )
-        } catch (e: Exception) {
-            // Try fallback methods
-            tryFallbackScraping(provider, query, startTime, e)
-        }
+        // For initial search, use page 1 to get pagination detection
+        return searchProviderPage(provider, query, 1)
     }
 
     /**
