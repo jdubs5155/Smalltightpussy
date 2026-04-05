@@ -1144,7 +1144,42 @@ class ScrapingEngine @Inject constructor(
     ): Triple<List<SearchResult>, Boolean, String?> = withContext(Dispatchers.IO) {
         if (page <= 1) {
             val results = scrapeGeneric(provider, query)
-            return@withContext Triple(results, results.size >= 10, null) // Assume has more if we got 10+ results
+            // More aggressive pagination detection for page 1
+            val hasMore = if (results.isNotEmpty()) {
+                // Try to fetch page 1 document to check for pagination
+                try {
+                    val enc = URLEncoder.encode(query, "UTF-8")
+                    val base = provider.baseUrl.trimEnd('/')
+                    val candidateUrls = listOf(
+                        "$base/search?q=$enc",
+                        "$base/?s=$enc",
+                        "$base/search?query=$enc",
+                        "$base/?q=$enc",
+                        "$base/search?search_query=$enc"
+                    )
+
+                    for (url in candidateUrls) {
+                        try {
+                            val document = fetchDocument(url)
+                            val paginationDetected = detectPaginationLinks(document, provider, 1)
+                            if (paginationDetected) {
+                                return@withContext Triple(results, true, constructNextPageUrl(url, 1))
+                            }
+                        } catch (e: Exception) {
+                            continue
+                        }
+                    }
+
+                    // Fallback: assume pagination if we have 5+ results
+                    results.size >= 5
+                } catch (e: Exception) {
+                    // If we can't check pagination, assume it exists if we have results
+                    true
+                }
+            } else {
+                false
+            }
+            return@withContext Triple(results, hasMore, null)
         }
 
         val enc = URLEncoder.encode(query, "UTF-8")
@@ -1164,8 +1199,14 @@ class ScrapingEngine @Inject constructor(
                 val document = fetchDocument(url)
                 val results = extractResultsGeneric(document, provider, query)
                 if (results.isNotEmpty()) {
-                    // Detect pagination links
-                    val hasMorePages = detectPaginationLinks(document, provider, page)
+                    // Detect pagination links - with fallback logic
+                    var hasMorePages = detectPaginationLinks(document, provider, page)
+
+                    // Heuristic: if page > 1 and we got results, assume there might be more pages
+                    if (!hasMorePages && page > 1 && results.isNotEmpty()) {
+                        hasMorePages = true
+                    }
+
                     val nextPageUrl = if (hasMorePages && page >= 1) constructNextPageUrl(url, page) else null
                     return@withContext Triple(results, hasMorePages, nextPageUrl)
                 }
@@ -2364,9 +2405,45 @@ class ScrapingEngine @Inject constructor(
             return true
         }
 
-        // Last check: if current page is 1, slightly more lenient about assuming next exists
+        // For page 1: Look for indicators that suggest pagination/multiple pages likely exist
         if (currentPage == 1) {
-            return document.select("a[href]").isNotEmpty()
+            // Check for multiple result containers (suggests more pages to come)
+            val resultContainers = document.select(".results, [class*='results'], .items, article, .entry")
+            if (resultContainers.size > 3) {
+                // If we have multiple results shown, pagination likely exists
+                return true
+            }
+
+            // Check for any links that look like pagination
+            val allLinks = document.select("a[href]")
+            val paginationLikeLinks = allLinks.filter { element ->
+                val href = element.attr("href").lowercase()
+                val text = element.text().lowercase().trim()
+
+                // Look for page-like patterns in URLs or text
+                href.contains("page=2") || href.contains("&page=2") || href.contains("?page=2") ||
+                href.contains("p=2") || href.contains("&p=2") ||
+                href.matches(Regex(".*[?&]page=2.*")) ||
+                href.matches(Regex(".*page/?2.*")) ||
+                text == "2" || text == "next" || text.contains("more") ||
+                href.contains("offset=") || href.contains("start=")
+            }
+            if (paginationLikeLinks.isNotEmpty()) {
+                return true
+            }
+
+            // Check for next/more indicators anywhere on page
+            val pageDoc = document.text().lowercase()
+            if (pageDoc.contains("next") || pageDoc.contains("load more") || pageDoc.contains("show more") ||
+                pageDoc.contains("page 2") || pageDoc.contains("more results")) {
+                return true
+            }
+
+            // If we have a lot of results (10+), assume pagination exists
+            val resultCount = resultContainers.size
+            if (resultCount >= 10) {
+                return true
+            }
         }
 
         return false
