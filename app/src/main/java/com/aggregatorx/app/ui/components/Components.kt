@@ -1284,15 +1284,16 @@ fun ProviderResultsHeader(
                     }
 
                     onNextPage?.let {
+                        val nextEnabled = !isActionLoading
                         IconButton(
                             onClick = it,
-                            enabled = !isActionLoading && hasNextPage,
+                            enabled = nextEnabled,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = "Next provider page",
-                                tint = if (!isActionLoading && hasNextPage) CyberCyan else TextTertiary.copy(alpha = 0.5f),
+                                tint = if (nextEnabled) CyberCyan else TextTertiary.copy(alpha = 0.5f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }

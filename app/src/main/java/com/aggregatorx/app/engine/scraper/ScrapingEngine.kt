@@ -1148,6 +1148,12 @@ class ScrapingEngine @Inject constructor(
             } catch (_: Exception) {
                 // ignore fallback failure
             }
+
+            // When the initial page has results but pagination UI is absent,
+            // still allow the app to attempt the next page so arrow navigation works.
+            if (!hasMorePages) {
+                hasMorePages = true
+            }
         }
         
         // If page > 1 and we got results, assume there might be more
@@ -1194,6 +1200,12 @@ class ScrapingEngine @Inject constructor(
                 }
             } catch (_: Exception) {
                 // ignore fallback failure
+            }
+
+            // When the initial page has results but pagination UI is absent,
+            // still allow the app to attempt the next page so arrow navigation works.
+            if (!hasMorePages) {
+                hasMorePages = true
             }
         }
         
