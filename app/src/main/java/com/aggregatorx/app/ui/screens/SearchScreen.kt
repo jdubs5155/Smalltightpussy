@@ -459,7 +459,8 @@ fun ProviderResultsList(
                         onNextPage = { onNextPage(providerResult.provider.id) },
                         onPreviousPage = { onPreviousPage(providerResult.provider.id) },
                         isActionLoading = providerResult.provider.id in providerActionLoading,
-                        currentPage = providerPageIndex[providerResult.provider.id] ?: 1
+                        currentPage = providerPageIndex[providerResult.provider.id] ?: 1,
+                        hasNextPage = providerResult.hasMore
                     )
                 }
                 

@@ -406,7 +406,7 @@ class SearchViewModel @Inject constructor(
      * Load next page for a provider
      */
     fun loadProviderNextPage(providerId: String) {
-        val currentQuery = _uiState.value.query
+        val currentQuery = _uiState.value.currentSearchQuery
         if (currentQuery.isEmpty()) return
 
         viewModelScope.launch {
@@ -418,106 +418,12 @@ class SearchViewModel @Inject constructor(
 
                 if (nextPageResults.success && nextPageResults.results.isNotEmpty()) {
                     _providerPageIndex.update { it + (providerId to (currentPage + 1)) }
-                    // Update provider results list with new page
-                    val updatedResults = _providerResults.value.map {
-                        if (it.provider.id == providerId) {
-                            it.copy(results = nextPageResults.results, hasMore = nextPageResults.hasMore)
-                        } else it
-                    }
-                    _providerResults.value = updatedResults
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(error = "Failed to load next page: ${e.message}")
-                }
-            } finally {
-                _providerActionLoading.update { it - providerId }
-            }
-        }
-    }
 
-    /**
-     * Load previous page for a provider
-     */
-    fun loadProviderPreviousPage(providerId: String) {
-        val currentQuery = _uiState.value.query
-        if (currentQuery.isEmpty()) return
-
-        viewModelScope.launch {
-            _providerActionLoading.update { it + providerId }
-
-            try {
-                val currentPage = _providerPageIndex.value[providerId] ?: 1
-                if (currentPage <= 1) {
-                    _providerActionLoading.update { it - providerId }
-                    return@launch // Already on first page
-                }
-
-                val prevPageResults = repository.searchProviderPage(providerId, currentQuery, currentPage - 1)
-
-                if (prevPageResults.success && prevPageResults.results.isNotEmpty()) {
-                    _providerPageIndex.update { it + (providerId to (currentPage - 1)) }
-                    // Update provider results list with previous page
-                    val updatedResults = _providerResults.value.map {
-                        if (it.provider.id == providerId) {
-                            it.copy(results = prevPageResults.results, hasMore = prevPageResults.hasMore)
-                        } else it
-                    }
-                    _providerResults.value = updatedResults
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(error = "Failed to load previous page: ${e.message}")
-                }
-            } finally {
-                _providerActionLoading.update { it - providerId }
-            }
-        }
-    }
-
-    /**
-     * Refresh current page for a provider
-     */
-    fun refreshProviderResults(providerId: String) {
-        val currentQuery = _uiState.value.query
-        if (currentQuery.isEmpty()) return
-
-        viewModelScope.launch {
-            _providerActionLoading.update { it + providerId }
-
-            try {
-                val currentPage = _providerPageIndex.value[providerId] ?: 1
-                val refreshedResults = repository.searchProviderPage(providerId, currentQuery, currentPage)
-
-                if (refreshedResults.success && refreshedResults.results.isNotEmpty()) {
-                    // Update provider results list with refreshed content
-                    val updatedResults = _providerResults.value.map {
-                        if (it.provider.id == providerId) {
-                            it.copy(results = refreshedResults.results, hasMore = refreshedResults.hasMore)
-                        } else it
-                    }
-                    _providerResults.value = updatedResults
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(error = "Failed to refresh results: ${e.message}")
-                }
-            } finally {
-                _providerActionLoading.update { it - providerId }
-            }
-        }
-    }
-
-
-                    // Merge with existing results for this provider
                     val updatedResults = _providerResults.value.toMutableList()
                     val providerIndex = updatedResults.indexOfFirst { it.provider.id == providerId }
 
                     if (providerIndex >= 0) {
-                        val existing = updatedResults[providerIndex]
-                        updatedResults[providerIndex] = existing.copy(
-                            results = (existing.results + nextPageResults.results).distinctBy { it.url }
-                        )
+                        updatedResults[providerIndex] = nextPageResults
                         _providerResults.value = updatedResults
                     }
 
@@ -525,7 +431,7 @@ class SearchViewModel @Inject constructor(
                         state.copy(totalResults = updatedResults.sumOf { it.results.size })
                     }
                 } else {
-                    _uiState.update { it.copy(error = "No more results from ${nextPageResults.provider.name}") }
+                    _uiState.update { it.copy(error = "No additional results available") }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Failed to load next page: ${e.message}") }
@@ -539,9 +445,11 @@ class SearchViewModel @Inject constructor(
      * Load previous page for a provider
      */
     fun loadProviderPreviousPage(providerId: String) {
+        val currentQuery = _uiState.value.currentSearchQuery
+        if (currentQuery.isEmpty()) return
+
         viewModelScope.launch {
             val currentPage = _providerPageIndex.value[providerId] ?: 1
-
             if (currentPage <= 1) {
                 _uiState.update { it.copy(error = "Already on first page") }
                 return@launch
@@ -550,12 +458,11 @@ class SearchViewModel @Inject constructor(
             _providerActionLoading.update { it + providerId }
 
             try {
-                val previousPageResults = repository.searchProviderPage(providerId, _uiState.value.query, currentPage - 1)
+                val previousPageResults = repository.searchProviderPage(providerId, currentQuery, currentPage - 1)
 
                 if (previousPageResults.success && previousPageResults.results.isNotEmpty()) {
                     _providerPageIndex.update { it + (providerId to (currentPage - 1)) }
 
-                    // Replace results for this provider with previous page
                     val updatedResults = _providerResults.value.toMutableList()
                     val providerIndex = updatedResults.indexOfFirst { it.provider.id == providerId }
 
@@ -579,21 +486,21 @@ class SearchViewModel @Inject constructor(
     }
 
     /**
-     * Refresh results for provider with current query
+     * Refresh current page for a provider
      */
     fun refreshProviderResults(providerId: String) {
-        val currentQuery = _uiState.value.query
+        val currentQuery = _uiState.value.currentSearchQuery
         if (currentQuery.isEmpty()) return
 
         viewModelScope.launch {
             _providerActionLoading.update { it + providerId }
 
             try {
-                // Always reset to page 1 on refresh
-                val refreshedResults = repository.searchProviderPage(providerId, currentQuery, 1)
+                val currentPage = _providerPageIndex.value[providerId] ?: 1
+                val refreshedResults = repository.searchProviderPage(providerId, currentQuery, currentPage)
 
                 if (refreshedResults.success) {
-                    _providerPageIndex.update { it + (providerId to 1) }
+                    _providerPageIndex.update { it + (providerId to currentPage) }
 
                     val updatedResults = _providerResults.value.toMutableList()
                     val providerIndex = updatedResults.indexOfFirst { it.provider.id == providerId }
@@ -607,7 +514,7 @@ class SearchViewModel @Inject constructor(
                         state.copy(totalResults = updatedResults.sumOf { it.results.size })
                     }
                 } else {
-                    _uiState.update { it.copy(error = "Refresh failed: ${refreshedResults.errorMessage}") }
+                    _uiState.update { it.copy(error = "Refresh failed: ${refreshedResults.errorMessage ?: "unknown error"}") }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Refresh error: ${e.message}") }

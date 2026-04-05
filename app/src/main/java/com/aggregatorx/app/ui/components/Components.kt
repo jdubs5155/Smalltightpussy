@@ -1191,6 +1191,7 @@ fun ProviderResultsHeader(
     onPreviousPage: (() -> Unit)? = null,
     isActionLoading: Boolean = false,
     currentPage: Int = 1,
+    hasNextPage: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val categoryColor = CyberCyan
@@ -1222,12 +1223,21 @@ fun ProviderResultsHeader(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text(
-                        text = providerName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = providerName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Page $currentPage",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                     if (!success && errorMessage != null) {
                         Text(
                             text = errorMessage,
@@ -1237,111 +1247,78 @@ fun ProviderResultsHeader(
                     }
                 }
             }
-            
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (success) {
-                    Text(
-                        text = "$resultCount",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                        fontWeight = FontWeight.Bold
-                    )
+
+            if (success && (onRefresh != null || onPreviousPage != null || onNextPage != null)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    onRefresh?.let {
+                        IconButton(
+                            onClick = it,
+                            enabled = !isActionLoading,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh provider results",
+                                tint = if (!isActionLoading) CyberCyan else TextTertiary.copy(alpha = 0.5f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    onPreviousPage?.let {
+                        IconButton(
+                            onClick = it,
+                            enabled = !isActionLoading && currentPage > 1,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Previous provider page",
+                                tint = if (!isActionLoading && currentPage > 1) CyberCyan else TextTertiary.copy(alpha = 0.5f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    onNextPage?.let {
+                        IconButton(
+                            onClick = it,
+                            enabled = !isActionLoading && hasNextPage,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Next provider page",
+                                tint = if (!isActionLoading && hasNextPage) CyberCyan else TextTertiary.copy(alpha = 0.5f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 }
-                Text(
-                    text = "${searchTime}ms",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary
-                )
             }
         }
 
-        if (success && (onRefresh != null || onNextPage != null || onPreviousPage != null)) {
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(32.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Refresh button
-                onRefresh?.let {
-                    Button(
-                        onClick = it,
-                        enabled = !isActionLoading,
-                        modifier = Modifier.height(32.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = CyberCyan,
-                            contentColor = DarkBackground,
-                            disabledContainerColor = TextTertiary.copy(alpha = 0.3f)
-                        ),
-                        shape = RoundedCornerShape(6.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        if (isActionLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                color = DarkBackground,
-                                strokeWidth = 1.5.dp
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh",
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Refresh", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+        Spacer(modifier = Modifier.height(8.dp))
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Previous page button
-                onPreviousPage?.let {
-                    IconButton(
-                        onClick = it,
-                        enabled = !isActionLoading && currentPage > 1,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Previous page",
-                            tint = if (!isActionLoading && currentPage > 1) CyberCyan else TextTertiary.copy(alpha = 0.5f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                // Page indicator
-                Text(
-                    text = "Page $currentPage",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextTertiary,
-                    fontSize = 9.sp
-                )
-
-                // Next page button
-                onNextPage?.let {
-                    IconButton(
-                        onClick = it,
-                        enabled = !isActionLoading,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = "Next page",
-                            tint = if (!isActionLoading) CyberCyan else TextTertiary.copy(alpha = 0.5f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "$resultCount results",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "${searchTime}ms",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextTertiary
+            )
         }
     }
 }
