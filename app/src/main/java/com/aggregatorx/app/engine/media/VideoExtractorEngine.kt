@@ -37,8 +37,8 @@ import javax.inject.Singleton
 class VideoExtractorEngine @Inject constructor() {
     
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)  // Reduced for faster connection attempts
+        .readTimeout(30, TimeUnit.SECONDS)     // Reduced for faster fallback to alternatives
         .followRedirects(true)
         .build()
     
@@ -134,7 +134,7 @@ class VideoExtractorEngine @Inject constructor() {
         try {
             val document = Jsoup.connect(pageUrl)
                 .userAgent(USER_AGENT)
-                .timeout(8000)
+                .timeout(5000)  // Faster fast extraction
                 .followRedirects(true)
                 .ignoreHttpErrors(true)
                 .get()
@@ -175,7 +175,7 @@ class VideoExtractorEngine @Inject constructor() {
             // First try standard HTML parsing
             val document = Jsoup.connect(pageUrl)
                 .userAgent(USER_AGENT)
-                .timeout(15000)
+                .timeout(10000)  // Reduced timeout for faster extraction
                 .followRedirects(true)
                 .get()
             

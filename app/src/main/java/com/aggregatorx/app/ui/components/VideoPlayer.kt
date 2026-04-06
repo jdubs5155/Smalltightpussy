@@ -62,13 +62,29 @@ import kotlinx.coroutines.launch
  * Helper function to detect if URL is likely a playable video stream
  */
 private fun isLikelyVideoUrl(url: String): Boolean {
-    val videoIndicators = listOf(
-        ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
-        ".flv", ".wmv", ".ts", ".m4v", ".3gp", "/hls/", "/dash/",
-        "/video/", "/stream/", "videoplayback", "manifest"
-    )
+    if (url.isBlank()) return false
     val lowerUrl = url.lowercase()
-    return videoIndicators.any { lowerUrl.contains(it) }
+    
+    // Strong positive indicators - return true immediately
+    val positiveIndicators = listOf(
+        ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
+        ".flv", ".wmv", ".ts", ".m4v", ".3gp", ".f4v", ".ogv",
+        "/hls/", "/dash/", "/video/", "/stream/", "/manifest",
+        "videoplayback", "youtube", "vimeo", "dailymotion",
+        "blob:", "data:video", "akamai", "cloudflare", "cloudfront"
+    )
+    if (positiveIndicators.any { lowerUrl.contains(it) }) return true
+    
+    // Definite negative indicators - return false immediately
+    val negativeIndicators = listOf(
+        ".html", ".htm", "text/html", "/search?", "/category/",
+        "/login", "/register", "?page=", "?sort="
+    )
+    if (negativeIndicators.any { lowerUrl.contains(it) }) return false
+    
+    // Default to true - trust ExoPlayer's auto-detection
+    // It can handle more formats than we can validate here
+    return true
 }
 
 /**
@@ -78,17 +94,40 @@ private fun isLikelyVideoUrl(url: String): Boolean {
 private fun detectMediaType(url: String): MediaType {
     val lowerUrl = url.lowercase()
     return when {
-        lowerUrl.contains(".m3u8") -> MediaType.HLS
-        lowerUrl.contains(".mpd") -> MediaType.DASH
-        lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") || 
+        // HLS (HTTP Live Streaming) - m3u8 playlists
+        lowerUrl.contains(".m3u8") || lowerUrl.contains("/hls/") ||
+        lowerUrl.contains("index.m3u8") || lowerUrl.contains("master.m3u8") ||
+        lowerUrl.contains("variant.m3u8") -> MediaType.HLS
+        
+        // DASH (Dynamic Adaptive Streaming over HTTP) - mpd manifests
+        lowerUrl.contains(".mpd") || lowerUrl.contains("/dash/") ||
+        lowerUrl.contains("manifest.mpd") -> MediaType.DASH
+        
+        // Progressive/Simple HTTP video files
+        lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") ||
         lowerUrl.contains(".mkv") || lowerUrl.contains(".avi") ||
-        lowerUrl.contains(".mov") || lowerUrl.contains(".m4v") -> MediaType.PROGRESSIVE
-        lowerUrl.contains("/hls/") || lowerUrl.contains("manifest") ||
-        lowerUrl.contains("index.m3u8") || lowerUrl.contains("master.m3u8") -> MediaType.HLS
-        lowerUrl.contains("/dash/") || lowerUrl.contains("manifest.mpd") -> MediaType.DASH
-        // CDN paths that typically serve progressive video
+        lowerUrl.contains(".mov") || lowerUrl.contains(".m4v") ||
+        lowerUrl.contains(".flv") || lowerUrl.contains(".wmv") ||
+        lowerUrl.contains(".3gp") || lowerUrl.contains(".ogv") ||
+        lowerUrl.contains(".f4v") -> MediaType.PROGRESSIVE
+        
+        // MPEG-2 Transport Stream (often used in live TV)
+        lowerUrl.contains(".ts") || lowerUrl.contains("segment") -> MediaType.PROGRESSIVE
+        
+        // CDN path patterns that typically serve HTTP-progressive video
         lowerUrl.contains("/video/") || lowerUrl.contains("videoplayback") ||
-        lowerUrl.contains("/get_video") || lowerUrl.contains("/dl/") -> MediaType.PROGRESSIVE
+        lowerUrl.contains("/get_video") || lowerUrl.contains("/dl/") ||
+        lowerUrl.contains("/media/") || lowerUrl.contains("/cdn-cgi/") ||
+        lowerUrl.contains("/asset/") || lowerUrl.contains("/file/") ||
+        lowerUrl.contains("/stream-") || lowerUrl.contains("/vod/") ||
+        lowerUrl.contains("/play") || lowerUrl.contains("/content/") -> MediaType.PROGRESSIVE
+        
+        // Known streaming service CDNs (usually progressive)
+        lowerUrl.contains("googlevideo") || lowerUrl.contains("dailymotion") ||
+        lowerUrl.contains("vimeo") || lowerUrl.contains("cloudfront") ||
+        lowerUrl.contains("akamai") || lowerUrl.contains("fastly") -> MediaType.PROGRESSIVE
+        
+        // For anything else, let ExoPlayer auto-detect
         else -> MediaType.UNKNOWN
     }
 }
@@ -137,8 +176,8 @@ fun VideoPlayerDialog(
             ?: EngineUtils.DEFAULT_USER_AGENT
         DefaultHttpDataSource.Factory()
             .setUserAgent(ua)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(30000)
+            .setConnectTimeoutMs(10000)   // Faster connection timeout
+            .setReadTimeoutMs(20000)      // Faster read timeout
             .setAllowCrossProtocolRedirects(true)
             .apply {
                 headers?.let { hdrs ->
@@ -151,13 +190,13 @@ fun VideoPlayerDialog(
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                1500,   // Min buffer before playback starts (1.5s — fast fast-forward on modern connections)
-                60000,  // Max buffer size (60s ahead)
-                600,    // Buffer for resuming from stall (very responsive)
-                1500    // Buffer for rebuffering
+                800,    // Min buffer before playback starts (800ms — ultra-fast on modern connections)
+                45000,  // Max buffer size (45s ahead)
+                300,    // Buffer for resuming from stall (very responsive)
+                800     // Buffer for rebuffering
             )
             .setPrioritizeTimeOverSizeThresholds(true)  // Always prioritize faster start
-            .setTargetBufferBytes(8 * 1024 * 1024)      // 8 MB target buffer
+            .setTargetBufferBytes(4 * 1024 * 1024)      // 4 MB target buffer (reduced for faster loading)
             .build()
     }
     
@@ -181,8 +220,15 @@ fun VideoPlayerDialog(
                         DashMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
                     }
-                    MediaType.PROGRESSIVE, MediaType.UNKNOWN -> {
-                        // Progressive (MP4, WebM, etc.) or try as progressive for unknown
+                    MediaType.PROGRESSIVE -> {
+                        // Progressive (MP4, WebM, etc.) - HTTP-delivered files
+                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    }
+                    MediaType.UNKNOWN -> {
+                        // For unknown formats, let ExoPlayer auto-detect
+                        // This uses DefaultMediaSourceFactory which supports many more formats
+                        // and can re-try with different source types intelligently
                         ProgressiveMediaSource.Factory(httpDataSourceFactory)
                             .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
                     }

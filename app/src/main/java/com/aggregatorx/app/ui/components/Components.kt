@@ -611,39 +611,120 @@ fun InlineThumbnailPreview(
  * and known video hosting domains.
  */
 private fun isLikelyStreamUrl(url: String): Boolean {
+    if (url.isBlank()) return false
     val lowerUrl = url.lowercase()
 
-    // Obvious video file extensions
+    // === DEFINITE VIDEO INDICATORS (Return true immediately) ===
+    
+    // Obvious video file extensions (very reliable)
     val videoExtensions = listOf(
         ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
-        ".flv", ".wmv", ".ts", ".m4v", ".3gp", ".f4v", ".ogv"
+        ".flv", ".wmv", ".ts", ".m4v", ".3gp", ".f4v", ".ogv",
+        ".opus", ".vtt", ".srt", ".json"  // Playlist/subtitle formats
     )
     if (videoExtensions.any { lowerUrl.contains(it) }) return true
 
-    // Stream path keywords
+    // Known streaming service CDNs (very high confidence)
+    val knownStreamingCdns = listOf(
+        // Major CDNs
+        "akamai", "cloudflare", "cloudfront", "fastly", "bunny",
+        "cdn77", "cdnjs", "stackpath",
+        
+        // Video hosting services
+        "youtube", "youtu.be", "vimeo", "dailymotion", "twitch",
+        "facebook.com/video", "instagram", "tiktok", "telegram",
+        "udemy", "skillshare", "coursera",
+        
+        // Streaming providers
+        "netflix", "amazon", "hulu", "disney", "hbo", "peacock",
+        "paramount", "appletv",
+        
+        // Video CDN services
+        "brightcove", "kaltura", "ooyala", "wistia", "mux",
+        "jwplayer", "theoplayer", "bitmovin",
+        
+        // Adult/streaming sites (common requests)
+        "pornhub", "xvideos", "xnxx", "redtube", "youporn",
+        
+        // Torrent/P2P streaming
+        "webtorrent", "ipfs", "magnet:",
+        
+        // Generic but strong indicators
+        "blob:", "data:video", "stream", "video", "media",
+        "playback", "content-deliver", "dash.akamai"
+    )
+    if (knownStreamingCdns.any { lowerUrl.contains(it) }) return true
+
+    // Stream path keywords (strong indicators)
     val streamKeywords = listOf(
         "/video/", "/stream/", "/hls/", "/dash/", "/manifest",
-        "videoplayback", "/get_video", "/dl/", "/embed/",
-        "/media/", "/cdn-cgi/", "googlevideo.com",
-        "akamaized.net", "cloudfront.net", "/file/",
-        "cdn.streamtape", "dood.", "filemoon.", "streamwish.",
-        "mixdrop.", "voe.sx"
+        "/m3u8", "/mpd", "videoplayback", "/get_video", "/dl/",
+        "/embed/", "/media/", "/cdn-cgi/", "/file/", "/play",
+        "/vodplay", "/live/", "/master.", "/index.m3u",
+        "segment", "playlist", "track", "/source/", "/blob/",
+        "/content/", "/asset/", "delivery", "progressive_download",
+        "chunklist", "resolution="
     )
     if (streamKeywords.any { lowerUrl.contains(it) }) return true
 
-    // Reject URLs that look like normal web pages (HTML content)
-    val htmlPageIndicators = listOf(
-        "text/html", "/search?", "/category/", "/tag/",
-        "/login", "/register", "/user/", "/forum/"
+    // Dynamic stream URLs with query parameters
+    val videoQueryParams = setOf(
+        "video_id", "videoid", "stream", "file", "source",
+        "url", "src", "video", "content", "media", "m3u8",
+        "mpd", "vod", "hls", "dash", "playback", "videofile",
+        "videourl", "streamurl", "playlisturl", "token", "key",
+        "sig", "signature", "auth"
     )
-    if (htmlPageIndicators.any { lowerUrl.contains(it) }) return false
+    val queryPairs = lowerUrl.split("?").getOrNull(1)?.split("&") ?: emptyList()
+    if (queryPairs.any { param ->
+        videoQueryParams.any { paramName ->
+            param.contains(paramName + "=") || param.startsWith(paramName)
+        }
+    }) return true
 
-    // If it has query-heavy structure with no video indicators, likely HTML
-    val hasVideoQueryParam = lowerUrl.contains("video_id=") ||
-        lowerUrl.contains("stream=") || lowerUrl.contains("file=") ||
-        lowerUrl.contains("source=")
+    // === DEFINITE NOT-VIDEO INDICATORS (Return false immediately) ===
+    
+    val notVideoIndicators = listOf(
+        "/search?", "/category/", "/tag/", "/login", "/register",
+        "/user/", "/forum/", "/browse", "/home", "/homepage",
+        "/page/", "/post/", "/product/", "/cart", "text/html",
+        ".html", ".asp", ".php", ".jsp", "?page=", "?sort=",
+        "?filter=", "/api/", "/graphql", ".xml", ".json"
+    )
+    if (notVideoIndicators.any { lowerUrl.contains(it) && !lowerUrl.contains("video") }) {
+        return false
+    }
 
-    return hasVideoQueryParam
+    // === HEURISTICS (Less certain, but still good indicators) ===
+    
+    // If it has a blob: URL, it's almost always a media stream from JS extraction
+    if (lowerUrl.startsWith("blob:")) return true
+    
+    // Base64-encoded video data
+    if (lowerUrl.startsWith("data:") && (lowerUrl.contains("video") || 
+        lowerUrl.contains("base64") || lowerUrl.contains("mp4"))) return true
+    
+    // URLs with token/signature parameters (common for protected streams)
+    if ((lowerUrl.contains("?") || lowerUrl.contains("&")) &&
+        (lowerUrl.contains("token") || lowerUrl.contains("sig") || 
+         lowerUrl.contains("key") || lowerUrl.contains("auth") ||
+         lowerUrl.contains("expires"))) return true
+    
+    // Long numeric or alphanumeric paths (common for CDN streamed content)
+    val pathPart = lowerUrl.split("?")[0].split("/").last()
+    if (pathPart.length > 20 && !lowerUrl.contains(".html") && 
+        !lowerUrl.contains("text/")) {
+        return true
+    }
+    
+    // If URL structure looks like it could be a stream (has ? params, no obvious HTML indicators)
+    if (lowerUrl.contains("?") && !notVideoIndicators.any { lowerUrl.contains(it) }) {
+        return true
+    }
+
+    // DEFAULT: Trust extraction engines - they found this URL for a reason
+    // ExoPlayer can auto-detect format, so don't be too strict
+    return true
 }
 
 /**
@@ -692,29 +773,57 @@ fun SearchResultCard(
                     var resolvedHeaders: Map<String, String>? = null
 
                     // Attempt 1: full extraction chain (7-step) with headers
+                    // ENHANCED: Try to use ANY extracted URL, not just those matching strict patterns
                     if (resolvedUrl == null && onExtractVideoForPreview != null) {
-                        val previewResult = onExtractVideoForPreview(result.url)
-                        if (previewResult != null && previewResult.videoUrl.isNotEmpty()
-                            && isLikelyStreamUrl(previewResult.videoUrl)
-                        ) {
-                            resolvedUrl = previewResult.videoUrl
-                            resolvedHeaders = previewResult.headers
+                        try {
+                            val previewResult = onExtractVideoForPreview(result.url)
+                            if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
+                                // Trust extraction engine - if it found a URL, try to play it
+                                // Let ExoPlayer's format detection handle edge cases
+                                resolvedUrl = previewResult.videoUrl
+                                resolvedHeaders = previewResult.headers
+                            }
+                        } catch (e: Exception) {
+                            // Extraction failed, continue to next method
                         }
                     }
 
                     // Attempt 2: simple URL extraction
                     if (resolvedUrl == null && onExtractVideoUrl != null) {
-                        val extractedUrl = onExtractVideoUrl(result.url)
-                        if (!extractedUrl.isNullOrEmpty() && isLikelyStreamUrl(extractedUrl)) {
-                            resolvedUrl = extractedUrl
+                        try {
+                            val extractedUrl = onExtractVideoUrl(result.url)
+                            if (!extractedUrl.isNullOrEmpty()) {
+                                // Trust the simplistic extractor too
+                                resolvedUrl = extractedUrl
+                                resolvedHeaders = null
+                            }
+                        } catch (e: Exception) {
+                            // Continue to next method
+                        }
+                    }
+
+                    // Attempt 3: raw URL if it looks promising
+                    if (resolvedUrl == null) {
+                        if (!result.url.isNullOrEmpty() && isLikelyStreamUrl(result.url)) {
+                            resolvedUrl = result.url
                             resolvedHeaders = null
                         }
                     }
 
-                    // Attempt 3: raw URL ONLY if it itself looks like a media stream
-                    if (resolvedUrl == null && isLikelyStreamUrl(result.url)) {
-                        resolvedUrl = result.url
-                        resolvedHeaders = null
+                    // Attempt 4: FALLBACK - Try raw URL even if validation uncertain
+                    // ExoPlayer can auto-detect, so don't reject valid extraction
+                    if (resolvedUrl == null && !result.url.isNullOrEmpty()) {
+                        // Only reject obvious HTML pages
+                        val lowerUrl = result.url.lowercase()
+                        val isDefinitelyHtml = lowerUrl.contains(".html") || 
+                                            lowerUrl.contains("text/html") ||
+                                            lowerUrl.contains("?page=") ||
+                                            lowerUrl.contains("?sort=")
+                        
+                        if (!isDefinitelyHtml) {
+                            resolvedUrl = result.url
+                            resolvedHeaders = null
+                        }
                     }
 
                     if (resolvedUrl != null) {
