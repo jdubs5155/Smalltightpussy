@@ -28,15 +28,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.aggregatorx.app.engine.util.EngineUtils
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.hls.HlsMediaSource
-import androidx.media3.exoplayer.dash.DashMediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.engine.media.RecoveryStrategy
@@ -201,39 +199,15 @@ fun VideoPlayerDialog(
     }
     
     // Create appropriate media source based on URL — always attempt playback
-    val exoPlayer = remember(videoUrl, retryCount, activeMediaType) {
+    val exoPlayer = remember(videoUrl, retryCount, activeMediaType, headers) {
         if (hasError && triedFormats.size >= 3) null
         else ExoPlayer.Builder(context)
             .setLoadControl(loadControl)  // Use optimized load control
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(httpDataSourceFactory))
             .build().apply {
-                val mediaSource = when (activeMediaType) {
-                    MediaType.HLS -> {
-                        // HLS Stream
-                        HlsMediaSource.Factory(httpDataSourceFactory)
-                            .setAllowChunklessPreparation(true)
-                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
-                    }
-                    MediaType.DASH -> {
-                        // DASH Stream
-                        DashMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
-                    }
-                    MediaType.PROGRESSIVE -> {
-                        // Progressive (MP4, WebM, etc.) - HTTP-delivered files
-                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
-                    }
-                    MediaType.UNKNOWN -> {
-                        // For unknown formats, let ExoPlayer auto-detect
-                        // This uses DefaultMediaSourceFactory which supports many more formats
-                        // and can re-try with different source types intelligently
-                        ProgressiveMediaSource.Factory(httpDataSourceFactory)
-                            .createMediaSource(MediaItem.fromUri(Uri.parse(videoUrl)))
-                    }
-                }
-                setMediaSource(mediaSource)
+                setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
                 prepare()
                 playWhenReady = true
             }

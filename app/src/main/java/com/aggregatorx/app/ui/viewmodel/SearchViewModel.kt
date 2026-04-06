@@ -6,6 +6,7 @@ import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.data.repository.AggregatorRepository
 import com.aggregatorx.app.engine.media.DownloadManager
 import com.aggregatorx.app.engine.media.DownloadState
+import com.aggregatorx.app.engine.media.RecoveryStrategy
 import com.aggregatorx.app.engine.media.VideoExtractorEngine
 import com.aggregatorx.app.engine.media.VideoExtractionResult
 import com.aggregatorx.app.engine.media.VideoStreamResolver
@@ -130,10 +131,14 @@ class SearchViewModel @Inject constructor(
                 }
                 .collect { providerResult ->
                     results.add(providerResult)
-                    _providerResults.value = results.toList()
-                    
-                    // Update aggregated results — wrap in try-catch so aggregation
-                    // failure never kills the collection loop
+                _providerPageIndex.update { currentMap ->
+                    if (currentMap.containsKey(providerResult.provider.id)) currentMap
+                    else currentMap + (providerResult.provider.id to 1)
+                }
+                _providerResults.value = results.toList()
+                
+                // Update aggregated results — wrap in try-catch so aggregation
+                // failure never kills the collection loop
                     try {
                         val aggregated = repository.aggregateSearchResults(query, results)
                         _uiState.update { 
@@ -298,15 +303,51 @@ class SearchViewModel @Inject constructor(
      */
     private fun isLikelyMediaUrl(url: String): Boolean {
         val lowerUrl = url.lowercase()
-        val videoIndicators = listOf(
+        val positiveIndicators = listOf(
             ".mp4", ".m3u8", ".mpd", ".webm", ".mkv", ".avi", ".mov",
             ".flv", ".wmv", ".ts", ".m4v", ".3gp", ".f4v", ".ogv",
             "/hls/", "/dash/", "/video/", "/stream/", "videoplayback",
             "/get_video", "/dl/", "/media/", "/embed/",
             "googlevideo.com", "akamaized.net", "cdn.streamtape",
-            "dood.", "filemoon.", "streamwish.", "mixdrop.", "voe.sx"
+            "dood.", "filemoon.", "streamwish.", "mixdrop.", "voe.sx",
+            "blob:", "data:video", "data:audio",
+            "token=", "sig=", "signature=", "expires=", "sessionid=", "mt="
         )
-        return videoIndicators.any { lowerUrl.contains(it) }
+        val negativeIndicators = listOf(
+            ".html", ".htm", "text/html", "/search?", "/category/",
+            "/login", "/register", "?page=", "?sort="
+        )
+        if (negativeIndicators.any { lowerUrl.contains(it) }) return false
+        if (positiveIndicators.any { lowerUrl.contains(it) }) return true
+
+        val pathPart = lowerUrl.split("?")[0].split("/").lastOrNull() ?: ""
+        if (pathPart.length > 20 && !lowerUrl.contains(".html") && !lowerUrl.contains("text/")) {
+            return true
+        }
+
+        return lowerUrl.contains("?") && !negativeIndicators.any { lowerUrl.contains(it) }
+    }
+
+    suspend fun resolveVideoForPlayback(pageUrl: String, recoveryStrategy: RecoveryStrategy? = null): VideoPreviewResult? {
+        videoPreviewCache[pageUrl]?.let { cached ->
+            if (isLikelyMediaUrl(cached.videoUrl)) return cached
+            else videoPreviewCache.remove(pageUrl)
+        }
+
+        return try {
+            val resolved = videoStreamResolver.resolveVideoStream(pageUrl, recoveryStrategy = recoveryStrategy)
+            if (resolved.success && !resolved.streamUrl.isNullOrBlank() && isLikelyMediaUrl(resolved.streamUrl)) {
+                val result = VideoPreviewResult(
+                    videoUrl = resolved.streamUrl,
+                    headers = resolved.headers ?: buildPlaybackHeaders(pageUrl)
+                )
+                videoPreviewCache[pageUrl] = result
+                return result
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** Convenience wrapper that keeps the old String?-returning signature for callers that don't need headers. */
@@ -324,7 +365,9 @@ class SearchViewModel @Inject constructor(
             "User-Agent" to EngineUtils.DEFAULT_USER_AGENT,
             "Referer" to "$origin/",
             "Origin" to origin,
-            "Accept" to "*/*"
+            "Accept" to "*/*",
+            "Accept-Language" to "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Connection" to "keep-alive"
         )
     }
     

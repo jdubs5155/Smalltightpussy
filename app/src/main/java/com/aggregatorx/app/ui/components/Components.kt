@@ -41,6 +41,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.CachePolicy
 import com.aggregatorx.app.data.model.*
+import com.aggregatorx.app.engine.media.RecoveryStrategy
 import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.ui.viewmodel.VideoPreviewResult
 import kotlinx.coroutines.Dispatchers
@@ -741,6 +742,7 @@ fun SearchResultCard(
     showControls: Boolean = true,
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
+    onResolveVideoStream: (suspend (String, RecoveryStrategy?) -> VideoPreviewResult?)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -802,7 +804,20 @@ fun SearchResultCard(
                         }
                     }
 
-                    // Attempt 3: raw URL if it looks promising
+                    // Attempt 3: resolver fallback for proxy/headless recovery
+                    if (resolvedUrl == null && onResolveVideoStream != null) {
+                        try {
+                            val resolverResult = onResolveVideoStream(result.url, null)
+                            if (resolverResult != null && resolverResult.videoUrl.isNotEmpty()) {
+                                resolvedUrl = resolverResult.videoUrl
+                                resolvedHeaders = resolverResult.headers
+                            }
+                        } catch (e: Exception) {
+                            // Continue to next method
+                        }
+                    }
+
+                    // Attempt 4: raw URL if it looks promising
                     if (resolvedUrl == null) {
                         if (!result.url.isNullOrEmpty() && isLikelyStreamUrl(result.url)) {
                             resolvedUrl = result.url
@@ -958,6 +973,21 @@ fun SearchResultCard(
                     videoUrl = fullscreenVideoUrl!!,
                     title = result.title,
                     headers = fullscreenVideoHeaders,
+                    onStreamError = { _, recovery ->
+                        scope.launch {
+                            if (onResolveVideoStream != null) {
+                                try {
+                                    val fallback = onResolveVideoStream(result.url, recovery)
+                                    if (fallback != null && fallback.videoUrl.isNotEmpty()) {
+                                        fullscreenVideoUrl = fallback.videoUrl
+                                        fullscreenVideoHeaders = fallback.headers
+                                    }
+                                } catch (_: Exception) {
+                                    // best-effort recovery only
+                                }
+                            }
+                        }
+                    },
                     onDismiss = {
                         showFullscreenPlayer = false
                         fullscreenVideoUrl = null

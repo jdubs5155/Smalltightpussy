@@ -73,7 +73,8 @@ class VideoStreamResolver @Inject constructor(
     suspend fun resolveVideoStream(
         pageUrl: String,
         useProxy: Boolean = true,
-        preferHighQuality: Boolean = true
+        preferHighQuality: Boolean = true,
+        recoveryStrategy: RecoveryStrategy? = null
     ): VideoStreamResult = withContext(Dispatchers.IO) {
         
         // Initialize proxy if needed
@@ -83,13 +84,40 @@ class VideoStreamResolver @Inject constructor(
             } catch (e: Exception) { /* Continue without proxy */ }
         }
         
-        // Chain of resolution methods - use suspend lambdas
-        val resolutionChain: List<suspend () -> VideoStreamResult> = listOf(
-            { resolveDirectExtraction(pageUrl) },
-            { resolveWithProxy(pageUrl) },
-            { resolveWithHeadlessBrowser(pageUrl) },
-            { resolveWithAlternateExtractors(pageUrl) }
-        )
+        // Choose resolution order based on recovery strategy
+        val resolutionChain: List<suspend () -> VideoStreamResult> = when (recoveryStrategy) {
+            RecoveryStrategy.USE_NETHERLANDS_PROXY,
+            RecoveryStrategy.TRY_PROXY -> listOf(
+                { resolveWithProxy(pageUrl) },
+                { resolveDirectExtraction(pageUrl) },
+                { resolveWithHeadlessBrowser(pageUrl) },
+                { resolveWithAlternateExtractors(pageUrl) }
+            )
+            RecoveryStrategy.TRY_HEADLESS_BROWSER -> listOf(
+                { resolveWithHeadlessBrowser(pageUrl) },
+                { resolveDirectExtraction(pageUrl) },
+                { resolveWithProxy(pageUrl) },
+                { resolveWithAlternateExtractors(pageUrl) }
+            )
+            RecoveryStrategy.TRY_ALTERNATE_SOURCE -> listOf(
+                { resolveWithAlternateExtractors(pageUrl) },
+                { resolveDirectExtraction(pageUrl) },
+                { resolveWithProxy(pageUrl) },
+                { resolveWithHeadlessBrowser(pageUrl) }
+            )
+            RecoveryStrategy.RETRY_WITH_LONGER_TIMEOUT -> listOf(
+                { resolveDirectExtraction(pageUrl) },
+                { resolveWithProxy(pageUrl) },
+                { resolveWithHeadlessBrowser(pageUrl) },
+                { resolveWithAlternateExtractors(pageUrl) }
+            )
+            else -> listOf(
+                { resolveDirectExtraction(pageUrl) },
+                { resolveWithProxy(pageUrl) },
+                { resolveWithHeadlessBrowser(pageUrl) },
+                { resolveWithAlternateExtractors(pageUrl) }
+            )
+        }
         
         var lastError: String? = null
         var bestResult: VideoStreamResult? = null

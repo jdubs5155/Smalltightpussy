@@ -36,6 +36,7 @@ import com.aggregatorx.app.ui.components.*
 import com.aggregatorx.app.ui.theme.*
 import com.aggregatorx.app.ui.viewmodel.SearchUiState
 import com.aggregatorx.app.ui.viewmodel.SearchViewModel
+import com.aggregatorx.app.engine.media.RecoveryStrategy
 import com.aggregatorx.app.ui.viewmodel.VideoPreviewResult
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -176,6 +177,9 @@ fun SearchScreen(
                         },
                         onExtractVideoForPreview = { url ->
                             viewModel.extractVideoForPreview(url)
+                        },
+                        onResolveVideoStream = { url, recovery ->
+                            viewModel.resolveVideoForPlayback(url, recovery)
                         },
                         onRefreshProvider = { providerId ->
                             viewModel.refreshProviderResults(providerId)
@@ -318,6 +322,7 @@ fun ProviderResultsList(
     likedUrls: Set<String> = emptySet(),
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
+    onResolveVideoStream: (suspend (String, RecoveryStrategy?) -> VideoPreviewResult?)? = null,
     onRefreshProvider: (String) -> Unit = {},
     onNextPage: (String) -> Unit = {},
     onPreviousPage: (String) -> Unit = {},
@@ -434,7 +439,8 @@ fun ProviderResultsList(
                         isLiked = result.url in likedUrls,
                         showControls = true,
                         onExtractVideoUrl = onExtractVideoUrl,
-                        onExtractVideoForPreview = onExtractVideoForPreview
+                        onExtractVideoForPreview = onExtractVideoForPreview,
+                        onResolveVideoStream = onResolveVideoStream
                     )
                 }
                 
@@ -478,6 +484,7 @@ fun ProviderResultsList(
                         showControls = true,
                         onExtractVideoUrl = onExtractVideoUrl,
                         onExtractVideoForPreview = onExtractVideoForPreview,
+                        onResolveVideoStream = onResolveVideoStream,
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
                 }
