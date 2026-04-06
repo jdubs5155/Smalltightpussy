@@ -146,6 +146,7 @@ class VideoExtractorEngine @Inject constructor() {
             extractFromSourceTag(document, pageUrl)?.let { allVideos.add(it) }
             extractFromScripts(document, pageUrl)?.let { allVideos.add(it) }
             extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromAllAttributes(document, pageUrl)?.let { allVideos.add(it) }
             extractFromSsrState(document, pageUrl)?.let { allVideos.add(it) }
             extractFromMetaTags(document, pageUrl)?.let { allVideos.add(it) }
             extractFromJsonLd(document, pageUrl)?.let { allVideos.add(it) }
@@ -187,6 +188,7 @@ class VideoExtractorEngine @Inject constructor() {
             extractFromIframe(document, pageUrl)?.let { allVideos.add(it) }
             extractFromScripts(document, pageUrl)?.let { allVideos.add(it) }
             extractFromDataAttributes(document, pageUrl)?.let { allVideos.add(it) }
+            extractFromAllAttributes(document, pageUrl)?.let { allVideos.add(it) }
             extractFromJsonLd(document, pageUrl)?.let { allVideos.add(it) }
             extractFromMetaTags(document, pageUrl)?.let { allVideos.add(it) }
             extractFromSsrState(document, pageUrl)?.let { allVideos.add(it) }
@@ -765,6 +767,45 @@ class VideoExtractorEngine @Inject constructor() {
         }
         
         return null
+    }
+
+    /**
+     * Scan all HTML attributes for a video URL candidate.
+     * This catches custom provider pages that store playback URLs in non-standard fields.
+     */
+    private fun extractFromAllAttributes(document: Document, baseUrl: String): VideoUrlInfo? {
+        val candidates = mutableSetOf<String>()
+        for (element in document.getAllElements()) {
+            for (attribute in element.attributes()) {
+                val value = attribute.value
+                if (value.isNullOrEmpty()) continue
+                if (VIDEO_EXTENSIONS.any { value.contains(it, ignoreCase = true) } ||
+                    value.contains("blob:", ignoreCase = true) ||
+                    value.contains("data:video", ignoreCase = true) ||
+                    value.contains("stream", ignoreCase = true) && value.contains("http", ignoreCase = true)
+                ) {
+                    candidates.add(value.trim())
+                }
+            }
+        }
+
+        val bestUrl = candidates
+            .map { it.replace("\\", "") }
+            .distinct()
+            .sortedByDescending { url ->
+                QUALITY_ORDER.indexOfFirst { q -> url.contains(q, ignoreCase = true) }
+                    .let { if (it == -1) -100 else -it }
+            }
+            .firstOrNull()
+
+        return bestUrl?.let {
+            VideoUrlInfo(
+                url = normalizeUrl(it, baseUrl),
+                quality = detectQuality(it),
+                format = detectFormat(it),
+                isStream = it.contains(".m3u8") || it.contains(".mpd")
+            )
+        }
     }
     
     /**

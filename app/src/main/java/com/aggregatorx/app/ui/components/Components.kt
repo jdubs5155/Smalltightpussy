@@ -47,6 +47,7 @@ import com.aggregatorx.app.ui.viewmodel.VideoPreviewResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
 /**
@@ -432,6 +433,8 @@ fun StatChip(
  * This component is intentionally lightweight — NO inline ExoPlayer.
  * All heavy video extraction + playback happens in the fullscreen VideoPlayerDialog.
  */
+private const val VIDEO_EXTRACTION_TIMEOUT_MS = 25_000L
+
 @Composable
 fun InlineThumbnailPreview(
     thumbnailUrl: String?,
@@ -465,11 +468,12 @@ fun InlineThumbnailPreview(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        // TAP → visual pulse feedback (lightweight preview indication)
+                        // TAP → open fullscreen player immediately with visual feedback
                         showTapPulse = true
+                        onHoldFullscreen()
                     },
                     onLongPress = {
-                        // LONG PRESS → open fullscreen video player with FULL video
+                        // LONG PRESS → also opens fullscreen video player
                         onHoldFullscreen()
                     }
                 )
@@ -545,7 +549,7 @@ fun InlineThumbnailPreview(
 
                 else -> Icon(
                     Icons.Default.PlayCircle,
-                    contentDescription = "Hold to play",
+                    contentDescription = "Tap or hold to play",
                     tint = Color.White.copy(alpha = 0.92f),
                     modifier = Modifier.size(36.dp)
                 )
@@ -771,26 +775,40 @@ fun SearchResultCard(
             isExtractingForFullscreen = true
             scope.launch {
                 try {
-                    var resolvedUrl: String? = null
-                    var resolvedHeaders: Map<String, String>? = null
+                        val extractionResult = withTimeoutOrNull(VIDEO_EXTRACTION_TIMEOUT_MS) {
+                            var resolvedUrl: String? = null
+                            var resolvedHeaders: Map<String, String>? = null
 
-                    // Attempt 1: full extraction chain (7-step) with headers
-                    // ENHANCED: Try to use ANY extracted URL, not just those matching strict patterns
-                    if (resolvedUrl == null && onExtractVideoForPreview != null) {
+                            // Attempt 1: full extraction chain (7-step) with headers
+                            // ENHANCED: Try to use ANY extracted URL, not just those matching strict patterns
+                            if (resolvedUrl == null && onExtractVideoForPreview != null) {
+                                try {
+                                    val previewResult = onExtractVideoForPreview(result.url)
+                                    if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
+                                        // Trust extraction engine - if it found a URL, try to play it
+                                        // Let ExoPlayer's format detection handle edge cases
+                                        resolvedUrl = previewResult.videoUrl
+                                        resolvedHeaders = previewResult.headers
+                                    }
+                                } catch (e: Exception) {
+                                    // Extraction failed, continue to next method
+                                }
+                            }
+
+// Attempt 2: resolver fallback for proxy/headless recovery
+                    if (resolvedUrl == null && onResolveVideoStream != null) {
                         try {
-                            val previewResult = onExtractVideoForPreview(result.url)
-                            if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
-                                // Trust extraction engine - if it found a URL, try to play it
-                                // Let ExoPlayer's format detection handle edge cases
-                                resolvedUrl = previewResult.videoUrl
-                                resolvedHeaders = previewResult.headers
+                            val resolverResult = onResolveVideoStream(result.url, null)
+                            if (resolverResult != null && resolverResult.videoUrl.isNotEmpty()) {
+                                resolvedUrl = resolverResult.videoUrl
+                                resolvedHeaders = resolverResult.headers
                             }
                         } catch (e: Exception) {
-                            // Extraction failed, continue to next method
+                            // Continue to next method
                         }
                     }
 
-                    // Attempt 2: simple URL extraction
+                    // Attempt 3: simple URL extraction
                     if (resolvedUrl == null && onExtractVideoUrl != null) {
                         try {
                             val extractedUrl = onExtractVideoUrl(result.url)
@@ -798,19 +816,6 @@ fun SearchResultCard(
                                 // Trust the simplistic extractor too
                                 resolvedUrl = extractedUrl
                                 resolvedHeaders = null
-                            }
-                        } catch (e: Exception) {
-                            // Continue to next method
-                        }
-                    }
-
-                    // Attempt 3: resolver fallback for proxy/headless recovery
-                    if (resolvedUrl == null && onResolveVideoStream != null) {
-                        try {
-                            val resolverResult = onResolveVideoStream(result.url, null)
-                            if (resolverResult != null && resolverResult.videoUrl.isNotEmpty()) {
-                                resolvedUrl = resolverResult.videoUrl
-                                resolvedHeaders = resolverResult.headers
                             }
                         } catch (e: Exception) {
                             // Continue to next method

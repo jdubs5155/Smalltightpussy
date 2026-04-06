@@ -153,6 +153,8 @@ fun VideoPlayerDialog(
     var errorMessage by remember { mutableStateOf("") }
     var showControls by remember { mutableStateOf(true) }
     var retryCount by remember { mutableStateOf(0) }
+    var bufferingStartTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    val BUFFERING_TIMEOUT_MS = 15_000L  // Timeout after 15 seconds of buffering
     var currentQuality by remember { mutableStateOf("Auto") }
     var showProxyBadge by remember { mutableStateOf(false) }
     
@@ -174,8 +176,8 @@ fun VideoPlayerDialog(
             ?: EngineUtils.DEFAULT_USER_AGENT
         DefaultHttpDataSource.Factory()
             .setUserAgent(ua)
-            .setConnectTimeoutMs(10000)   // Faster connection timeout
-            .setReadTimeoutMs(20000)      // Faster read timeout
+            .setConnectTimeoutMs(15000)   // Increased to 15s (was 10s) - give servers time to respond
+            .setReadTimeoutMs(25000)      // Increased to 25s (was 20s) - some CDNs are slow to start streaming
             .setAllowCrossProtocolRedirects(true)
             .apply {
                 headers?.let { hdrs ->
@@ -188,19 +190,19 @@ fun VideoPlayerDialog(
     val loadControl = remember {
         DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                800,    // Min buffer before playback starts (800ms — ultra-fast on modern connections)
+                600,    // Min buffer before playback starts (600ms — start ASAP)
                 45000,  // Max buffer size (45s ahead)
-                300,    // Buffer for resuming from stall (very responsive)
-                800     // Buffer for rebuffering
+                200,    // Buffer for resuming from stall (very responsive)
+                600     // Buffer for rebuffering (back to 600ms quickly)
             )
             .setPrioritizeTimeOverSizeThresholds(true)  // Always prioritize faster start
-            .setTargetBufferBytes(4 * 1024 * 1024)      // 4 MB target buffer (reduced for faster loading)
+            .setTargetBufferBytes(2 * 1024 * 1024)      // 2 MB target buffer (reduced for faster loading)
             .build()
     }
     
     // Create appropriate media source based on URL — always attempt playback
-    val exoPlayer = remember(videoUrl, retryCount, activeMediaType, headers) {
-        if (hasError && triedFormats.size >= 3) null
+    val exoPlayer = remember(videoUrl, retryCount, activeMediaType, headers, hasError) {
+        if (hasError) null
         else ExoPlayer.Builder(context)
             .setLoadControl(loadControl)  // Use optimized load control
             .setSeekBackIncrementMs(10000)
@@ -220,10 +222,25 @@ fun VideoPlayerDialog(
         } else {
             val listener = object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    isBuffering = playbackState == Player.STATE_BUFFERING
-                    if (playbackState == Player.STATE_READY) {
-                        duration = exoPlayer.duration
-                        hasError = false // Clear error on successful playback
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> {
+                            // Reset timeout when buffering starts
+                            bufferingStartTime = System.currentTimeMillis()
+                            isBuffering = true
+                        }
+                        Player.STATE_READY -> {
+                            duration = exoPlayer.duration
+                            isBuffering = false
+                            hasError = false // Clear error on successful playback
+                        }
+                        Player.STATE_ENDED -> {
+                            isBuffering = false
+                            isPlaying = false
+                        }
+                        Player.STATE_IDLE -> {
+                            // Player is idle - might indicate a problem
+                            isBuffering = false
+                        }
                     }
                 }
                 
@@ -318,6 +335,21 @@ fun VideoPlayerDialog(
         while (isPlaying && exoPlayer != null) {
             currentPosition = exoPlayer.currentPosition
             delay(500)
+        }
+    }
+    
+    // Monitor buffering timeout - crash out if stuck for too long
+    LaunchedEffect(isBuffering) {
+        if (isBuffering) {
+            bufferingStartTime = System.currentTimeMillis()
+            delay(BUFFERING_TIMEOUT_MS)
+            // If still buffering after timeout, show error
+            if (isBuffering && !hasError) {
+                hasError = true
+                errorMessage = "Buffering took too long - Stream may be unavailable or very slow. Check your connection and try again."
+                triedFormats = emptySet()
+                currentFormatOverride = null
+            }
         }
     }
     
