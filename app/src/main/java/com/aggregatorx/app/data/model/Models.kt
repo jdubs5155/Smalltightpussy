@@ -361,3 +361,13 @@ data class LearnedUserProfile(
     fun preferredCategoriesMap(): Map<String, Float> = parseWeightMap(preferredCategories)
     fun preferredQualitiesMap(): Map<String, Float> = parseWeightMap(preferredQualities)
 }
+
+/**
+ * Video Item for results feed
+ */
+@Serializable
+data class VideoItem(
+    val thumbnail: String,
+    val title: String,
+    val url: String
+)

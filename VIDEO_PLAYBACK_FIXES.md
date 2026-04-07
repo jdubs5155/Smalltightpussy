@@ -6,7 +6,7 @@
 
 ---
 
-## Key Changes Made
+, ythingreve y## Key Changes Made
 
 ### 1. **Enhanced URL Validation** (`Components.kt` - `isLikelyStreamUrl`)
 - **Old behavior:** Overly restrictive, rejected many valid streams
@@ -156,7 +156,7 @@ Extraction timeouts:
   - Blob URLs from JavaScript extraction
   - Base64-encoded video data
   - Token-protected streams
-  - Dynamic CDN URLs without extensions
+  - Dynamic CDN URLs without extensionsu
   - Geo-restricted content (with proxy support)
 
 ### 6. **Error Handling** - Multi-Path Recovery:

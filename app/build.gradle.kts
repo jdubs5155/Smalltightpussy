@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace = "com.aggregatorx.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.aggregatorx.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 7
         versionName = "4.3.0"
 
@@ -140,6 +140,10 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-common:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
+    implementation("androidx.paging:paging-compose:3.3.2")
+
+    // Dolphin 3.0 LlamaCPP for query refinement
+    // implementation("io.github.ljcamargo:llamacpp-kotlin:0.2.0")
     
     // Testing
     testImplementation("junit:junit:4.13.2")
