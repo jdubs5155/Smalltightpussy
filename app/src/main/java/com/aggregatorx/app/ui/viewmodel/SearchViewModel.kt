@@ -71,6 +71,12 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             _likedUrls.value = repository.getAllLikedUrls()
         }
+        // Load available providers
+        viewModelScope.launch {
+            repository.getEnabledProviders().collect { providers ->
+                _uiState.update { it.copy(availableProviders = providers) }
+            }
+        }
     }
 
     /** Toggle like on a search result. Updates local set immediately for snappy UI. */
@@ -120,7 +126,7 @@ class SearchViewModel @Inject constructor(
             
             val results = mutableListOf<ProviderSearchResults>()
             
-            repository.searchAllProviders(query)
+            repository.searchAllProviders(query, uiState.value.selectedProviders)
                 .catch { e ->
                     // Only set error if we have NO results at all — otherwise partial results are fine
                     if (results.isEmpty()) {
@@ -188,6 +194,21 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             repository.clearSearchHistory()
         }
+    }
+    
+    fun toggleProviderSelection(providerId: String) {
+        _uiState.update { state ->
+            val newSelected = if (state.selectedProviders.contains(providerId)) {
+                state.selectedProviders - providerId
+            } else {
+                state.selectedProviders + providerId
+            }
+            state.copy(selectedProviders = newSelected)
+        }
+    }
+    
+    fun toggleAdvancedOptions() {
+        _uiState.update { it.copy(showAdvancedOptions = !it.showAdvancedOptions) }
     }
     
     fun searchFromHistory(query: String) {
@@ -610,7 +631,10 @@ data class SearchUiState(
     val successfulProviders: Int = 0,
     val failedProviders: Int = 0,
     val recentSearches: List<SearchHistoryEntry> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val selectedProviders: Set<String> = emptySet(),
+    val availableProviders: List<Provider> = emptyList(),
+    val showAdvancedOptions: Boolean = false
 )
 
 /**

@@ -109,15 +109,21 @@ class AggregatorRepository @Inject constructor(
         return siteAnalysisDao.getLatestAnalysis(providerId)
     }
     
-    fun searchAllProviders(query: String): Flow<ProviderSearchResults> {
+    fun searchAllProviders(query: String, providerIds: Set<String> = emptySet()): Flow<ProviderSearchResults> {
         // Always pass false for cache to ensure fresh results for each unique query
         // The cache is cleared before each search anyway, so this ensures no stale results
-        return scrapingEngine.searchAllProviders(query, false)
+        return scrapingEngine.searchAllProviders(query, false, providerIds)
     }
 
     suspend fun searchProviderPage(providerId: String, query: String, page: Int): ProviderSearchResults {
         val provider = providerDao.getProviderById(providerId)
-            ?: throw IllegalArgumentException("Provider not found: $providerId")
+            ?: return ProviderSearchResults(
+                provider = Provider(id = providerId, name = "Unknown", url = "", baseUrl = ""),
+                results = emptyList(),
+                searchTime = 0L,
+                success = false,
+                errorMessage = "Provider not found: $providerId"
+            )
 
         return scrapingEngine.searchProviderPage(provider, query, page)
     }

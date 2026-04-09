@@ -12,6 +12,7 @@ import com.aggregatorx.app.engine.ai.AIDecisionEngine
 import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
 import com.aggregatorx.app.engine.nlp.ProcessedQuery
 import com.aggregatorx.app.engine.network.CloudflareBypassEngine
+import com.aggregatorx.app.engine.scraper.SmartNavigationEngine
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -136,7 +137,7 @@ class ScrapingEngine @Inject constructor(
 
     var cacheResults: Boolean = true
 
-    fun searchAllProviders(query: String, cache: Boolean = cacheResults): Flow<ProviderSearchResults> = flow {
+    fun searchAllProviders(query: String, cache: Boolean = cacheResults, providerIds: Set<String> = emptySet()): Flow<ProviderSearchResults> = flow {
         // ── NLP QUERY PROCESSING ────────────────────────────────────
         // Transform the raw query into optimised search terms using
         // natural language understanding. This enables descriptive queries
@@ -159,6 +160,14 @@ class ScrapingEngine @Inject constructor(
         var enabledProviders = providerDao.getEnabledProvidersSync()
         if (enabledProviders.isEmpty()) {
             return@flow
+        }
+
+        // Filter providers if specific IDs are requested
+        if (providerIds.isNotEmpty()) {
+            enabledProviders = enabledProviders.filter { providerIds.contains(it.id) }
+            if (enabledProviders.isEmpty()) {
+                return@flow
+            }
         }
 
         // Sort providers by success rate and avg response time (most successful first)
@@ -694,21 +703,38 @@ class ScrapingEngine @Inject constructor(
         val startTime = System.currentTimeMillis()
 
         // ── NLP QUERY SELECTION ─────────────────────────────────────────
-        // When the raw query is conversational natural language, use the
-        // first (best) NLP-generated search query for the actual provider
-        // search. This converts e.g. "scared my cat and it jumped so high"
-        // into "cat jump scare" which matches real content titles.
+        // Try multiple NLP-generated queries for better results
+        // Start with the best match, then try alternatives if no results
         val processed = currentProcessedQuery
-        val effectiveQuery = if (processed != null &&
+        val queriesToTry = if (processed != null &&
             processed.isNaturalLanguage &&
             processed.searchQueries.isNotEmpty() &&
             query == processed.originalQuery
         ) {
-            processed.searchQueries.first()
+            // Try up to 3 NLP-generated queries
+            (listOf(query) + processed.searchQueries.take(3)).distinct()
         } else {
-            query
+            listOf(query)
         }
 
+        // Try each query until we get results
+        for (effectiveQuery in queriesToTry) {
+            try {
+                val result = trySearchWithQuery(provider, effectiveQuery, startTime)
+                if (result.success && result.results.isNotEmpty()) {
+                    return result
+                }
+                // If this query failed but others remain, continue
+            } catch (e: Exception) {
+                // Continue to next query
+            }
+        }
+
+        // If all queries failed, return the result from the last attempt or a failure
+        return trySearchWithQuery(provider, queriesToTry.last(), startTime)
+    }
+
+    private suspend fun trySearchWithQuery(provider: Provider, effectiveQuery: String, startTime: Long): ProviderSearchResults {
         return try {
             enforceRateLimit(provider.id)
             providerDao.incrementSearchCount(provider.id)
@@ -721,7 +747,7 @@ class ScrapingEngine @Inject constructor(
                 val hasMoreSmart = detectPaginationLinks(smartDoc, provider, 1) ||
                     smartNavigationEngine.getPaginationLinks(smartDoc, provider.baseUrl).isNotEmpty()
 
-                val results = scrapeWithSmartNavigation(provider, query, smartSearchUrl)
+                val results = scrapeWithSmartNavigation(provider, effectiveQuery, smartSearchUrl)
                 if (results.isNotEmpty()) {
                     updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
                     return ProviderSearchResults(
@@ -761,7 +787,7 @@ class ScrapingEngine @Inject constructor(
                         .let { if (it.startsWith("http")) it else "${provider.baseUrl.trimEnd('/')}$it" }
                     try {
                         val apiDoc = fetchDocument(url)
-                        val apiResults = extractResultsWithThumbnails(apiDoc, provider, query)
+                        val apiResults = extractResultsWithThumbnails(apiDoc, provider, effectiveQuery)
                         if (apiResults.isNotEmpty()) {
                             endpointDiscoveryEngine.learnWorkingEndpoint(domain, endpoint, apiResults.size)
                             aiDecisionEngine.learnEndpoint(domain, endpoint, ScrapingStrategy.API_BASED, apiResults.size)
@@ -784,7 +810,7 @@ class ScrapingEngine @Inject constructor(
                 val apiSearchUrl = endpointDiscoveryEngine.getBestSearchEndpoint(provider.baseUrl, effectiveQuery)
                 if (apiSearchUrl != null) {
                     val apiDoc = fetchDocument(apiSearchUrl)
-                    val apiResults = extractResultsWithThumbnails(apiDoc, provider, query)
+                    val apiResults = extractResultsWithThumbnails(apiDoc, provider, effectiveQuery)
                     if (apiResults.isNotEmpty()) {
                         updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
                         aiDecisionEngine.learnFromSuccess(
@@ -806,10 +832,23 @@ class ScrapingEngine @Inject constructor(
                 }
             } catch (_: Exception) {}
 
-            // Step 3: Fall back to normal search with all its own fallbacks
-            searchProvider(provider, effectiveQuery)
+            // Step 3: Fallback to generic scraping with learned selectors
+            val fallbackResults = scrapeWithLearnedSelectors(provider, effectiveQuery)
+            if (fallbackResults.isNotEmpty()) {
+                updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+                return ProviderSearchResults(
+                    provider = provider,
+                    results = fallbackResults,
+                    searchTime = System.currentTimeMillis() - startTime,
+                    success = true
+                )
+            }
+
+            // No results found with any method - fallback to basic search
+            return searchProvider(provider, effectiveQuery)
         } catch (e: Exception) {
-            searchProvider(provider, effectiveQuery)
+            // On any error, fallback to basic search
+            return searchProvider(provider, effectiveQuery)
         }
     }
     
@@ -1063,17 +1102,20 @@ class ScrapingEngine @Inject constructor(
             enforceRateLimit(provider.id)
             providerDao.incrementSearchCount(provider.id)
 
-            val config = scrapingConfigDao.getConfigForProvider(provider.id)
-            val analysis = siteAnalysisDao.getLatestAnalysis(provider.id)
-
-            val (results, hasMorePages, nextPageUrl) = when {
-                config != null -> scrapeWithConfigPage(provider, query, config, page)
-                analysis != null -> scrapeWithAnalysisPage(provider, query, analysis, page)
-                else -> {
-                    val smartPage = scrapeSmartPage(provider, query, page)
-                    if (smartPage.first.isNotEmpty()) smartPage else scrapeGenericPage(provider, query, page)
-                }
+            // Simple pagination - adjust URL with page parameter
+            val pageParam = when {
+                provider.baseUrl.contains("?") -> "&page=$page"
+                else -> "?page=$page"
             }
+            val pageUrl = "${provider.baseUrl}$pageParam"
+            
+            val doc = try {
+                fetchDocument(pageUrl)
+            } catch (e: Exception) {
+                fetchDocument(provider.baseUrl)
+            }
+            
+            val results = extractResultsWithThumbnails(doc, provider, query)
 
             updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
 
@@ -1081,12 +1123,18 @@ class ScrapingEngine @Inject constructor(
                 provider = provider,
                 results = results,
                 searchTime = System.currentTimeMillis() - startTime,
-                success = true,
-                hasMore = hasMorePages,
-                nextPageUrl = nextPageUrl
+                success = results.isNotEmpty(),
+                hasMore = page < 10, // Assume there are more pages up to page 10
+                nextPageUrl = if (results.isNotEmpty()) pageUrl else null
             )
         } catch (e: Exception) {
-            tryFallbackScraping(provider, query, startTime, e)
+            ProviderSearchResults(
+                provider = provider,
+                results = emptyList(),
+                searchTime = System.currentTimeMillis() - startTime,
+                success = false,
+                errorMessage = "Pagination failed: ${e.message}"
+            )
         }
     }
 
@@ -2511,6 +2559,21 @@ class ScrapingEngine @Inject constructor(
                 "$currentUrl&page=$nextPage"
             else ->
                 "$currentUrl?page=$nextPage"
+        }
+    }
+
+    private suspend fun scrapeWithLearnedSelectors(provider: Provider, query: String): List<SearchResult> {
+        return try {
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val searchUrl = if (provider.baseUrl.contains("?")) {
+                "${provider.baseUrl}&q=$encodedQuery"
+            } else {
+                "${provider.baseUrl}?q=$encodedQuery"
+            }
+            val doc = fetchDocument(searchUrl)
+            extractResultsWithThumbnails(doc, provider, query)
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }

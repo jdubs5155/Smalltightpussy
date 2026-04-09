@@ -1,5 +1,7 @@
 package com.aggregatorx.app.engine.nlp
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
@@ -31,6 +33,38 @@ import kotlin.math.min
 @Singleton
 class NaturalLanguageQueryProcessor @Inject constructor() {
 
+    private var llama: Any? = null
+    private var llamaInitialized = false
+    private var llamaLoadMethod: java.lang.reflect.Method? = null
+    private var llamaPredictMethod: java.lang.reflect.Method? = null
+
+    init {
+        initializeLlama()
+    }
+
+    private fun initializeLlama() {
+        try {
+            // Try to load LlamaHelper using reflection
+            val llamaHelperClass = Class.forName("io.github.ljcamargo.llamacpp.LlamaHelper")
+            val coroutineScopeClass = CoroutineScope::class.java
+            
+            // Try to instantiate LlamaHelper(CoroutineScope(Dispatchers.IO))
+            val constructor = llamaHelperClass.getConstructor(coroutineScopeClass)
+            llama = constructor.newInstance(CoroutineScope(Dispatchers.IO))
+            
+            // Get load and predict methods
+            llamaLoadMethod = llamaHelperClass.getMethod("load", String::class.java, Int::class.javaPrimitiveType)
+            llamaPredictMethod = llamaHelperClass.getMethod("predict", String::class.java)
+            
+            // Load the model
+            llamaLoadMethod?.invoke(llama, "assets/Dolphin3.0-Llama3.1-8B-Q4_K_M.gguf", 2048)
+            llamaInitialized = true
+        } catch (e: Exception) {
+            llamaInitialized = false
+            // Log or handle error - NLP will work without Dolphin refinement
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     //  PUBLIC API
     // ═══════════════════════════════════════════════════════════════════
@@ -40,7 +74,19 @@ class NaturalLanguageQueryProcessor @Inject constructor() {
      * semantic concepts and multiple optimised search query strings.
      */
     fun processQuery(rawInput: String): ProcessedQuery {
-        val input = normalizeInput(rawInput)
+        // Refine query using Dolphin 3.0 if available
+        val refinedInput = if (llamaInitialized && llama != null && llamaPredictMethod != null) {
+            try {
+                val result = llamaPredictMethod?.invoke(llama, "Rewrite adult video query descriptively: $rawInput")
+                result?.toString() ?: rawInput
+            } catch (e: Exception) {
+                rawInput
+            }
+        } else {
+            rawInput
+        }
+        
+        val input = normalizeInput(refinedInput)
         val tokens = tokenize(input)
         val tagged = tagPartsOfSpeech(tokens)
         val concepts = extractConcepts(tagged, input)

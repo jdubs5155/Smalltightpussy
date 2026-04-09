@@ -9,6 +9,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +36,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -54,106 +58,251 @@ import kotlinx.coroutines.withContext
  * Futuristic Search Bar with glow effect
  */
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun FuturisticSearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "Search across all providers...",
-    isLoading: Boolean = false
+    isLoading: Boolean = false,
+    suggestions: List<String> = emptyList(),
+    onSuggestionClick: (String) -> Unit = {},
+    selectedProviders: Set<String> = emptySet(),
+    availableProviders: List<Provider> = emptyList(),
+    onProviderToggle: (String) -> Unit = {},
+    showAdvanced: Boolean = false,
+    onToggleAdvanced: () -> Unit = {}
 ) {
+    var showSuggestions by remember { mutableStateOf(false) }
+    var showProviderFilter by remember { mutableStateOf(false) }
+
     val glowAlpha by animateFloatAsState(
-        targetValue = if (query.isNotEmpty()) 0.6f else 0.3f,
+        targetValue = if (query.isNotEmpty() || showSuggestions || showProviderFilter) 0.6f else 0.3f,
         animationSpec = tween(300)
     )
-    
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(60.dp)
-            .drawBehind {
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                            colors = listOf(CyberCyan, CyberBlue, CyberPurple)
-                    ),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()),
-                    style = Stroke(width = 2.dp.toPx()),
-                    alpha = glowAlpha
-                )
-            }
-            .clip(RoundedCornerShape(16.dp))
-            .background(DarkCard)
-    ) {
-        Row(
+
+    Column(modifier = modifier) {
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                tint = CyberCyan,
-                modifier = Modifier.size(24.dp)
-            )
-            
-            Spacer(modifier = Modifier.width(12.dp))
-            
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                textStyle = TextStyle(
-                    color = TextPrimary,
-                    fontSize = 16.sp
-                ),
-                singleLine = true,
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        if (query.isEmpty()) {
-                            Text(
-                                text = placeholder,
-                                color = TextTertiary,
-                                fontSize = 16.sp
-                            )
-                        }
-                        innerTextField()
-                    }
-                }
-            )
-            
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = CyberCyan,
-                    strokeWidth = 2.dp
-                )
-            } else if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Clear",
-                        tint = TextTertiary
+                .fillMaxWidth()
+                .height(60.dp)
+                .drawBehind {
+                    drawRoundRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(CyberCyan, CyberBlue, CyberPurple)
+                        ),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()),
+                        style = Stroke(width = 2.dp.toPx()),
+                        alpha = glowAlpha
                     )
                 }
-            }
-            
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            GlowButton(
-                onClick = onSearch,
-                enabled = query.isNotEmpty() && !isLoading
+                .clip(RoundedCornerShape(16.dp))
+                .background(DarkCard)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = "Search",
-                    tint = DarkBackground
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = CyberCyan,
+                    modifier = Modifier.size(24.dp)
                 )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                BasicTextField(
+                    value = query,
+                    onValueChange = {
+                        onQueryChange(it)
+                        showSuggestions = it.isNotEmpty() && suggestions.isNotEmpty()
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    textStyle = TextStyle(
+                        color = TextPrimary,
+                        fontSize = 16.sp
+                    ),
+                    singleLine = true,
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = placeholder,
+                                    color = TextTertiary,
+                                    fontSize = 16.sp
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                )
+
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = CyberCyan,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    // Provider filter button
+                    IconButton(onClick = { showProviderFilter = !showProviderFilter }) {
+                        Icon(
+                            imageVector = if (selectedProviders.isNotEmpty()) Icons.Default.FilterList else Icons.Outlined.FilterList,
+                            contentDescription = "Filter providers",
+                            tint = if (selectedProviders.isNotEmpty()) CyberCyan else TextTertiary
+                        )
+                    }
+
+                    // Advanced options button
+                    IconButton(onClick = onToggleAdvanced) {
+                        Icon(
+                            imageVector = if (showAdvanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = "Advanced options",
+                            tint = TextTertiary
+                        )
+                    }
+
+                    // Search button
+                    IconButton(onClick = onSearch, enabled = query.isNotEmpty()) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Search",
+                            tint = if (query.isNotEmpty()) CyberCyan else TextTertiary
+                        )
+                    }
+                }
+            }
+        }
+
+        // Provider filter dropdown
+        AnimatedVisibility(
+            visible = showProviderFilter,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = DarkCard),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Search in providers:",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(availableProviders.size) { index ->
+                            val provider = availableProviders[index]
+                            FilterChip(
+                                selected = selectedProviders.contains(provider.id),
+                                onClick = { onProviderToggle(provider.id) },
+                                label = {
+                                    Text(
+                                        text = provider.name,
+                                        color = if (selectedProviders.contains(provider.id)) TextPrimary else TextSecondary
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = CyberCyan.copy(alpha = 0.2f),
+                                    selectedLabelColor = CyberCyan
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Search suggestions
+        AnimatedVisibility(
+            visible = showSuggestions && suggestions.isNotEmpty(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = DarkCard),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                    items(suggestions.size) { index ->
+                        val suggestion = suggestions[index]
+                        TextButton(
+                            onClick = {
+                                onSuggestionClick(suggestion)
+                                showSuggestions = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = TextTertiary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = suggestion,
+                                    color = TextPrimary,
+                                    modifier = Modifier.weight(1f),
+                                    textAlign = TextAlign.Start
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Advanced search options
+        AnimatedVisibility(
+            visible = showAdvanced,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = DarkCard),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Advanced Search Options",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "• Use natural language queries like \"funny cat videos\" or \"scary movies with jumpscares\"\n" +
+                              "• Filter by specific providers using the filter button\n" +
+                              "• Search history appears as you type\n" +
+                              "• Results are intelligently ranked by relevance",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        lineHeight = 20.sp
+                    )
+                }
             }
         }
     }
@@ -775,80 +924,88 @@ fun SearchResultCard(
             isExtractingForFullscreen = true
             scope.launch {
                 try {
-                        val extractionResult = withTimeoutOrNull(VIDEO_EXTRACTION_TIMEOUT_MS) {
-                            var resolvedUrl: String? = null
-                            var resolvedHeaders: Map<String, String>? = null
+                    val resolvedPair = withTimeoutOrNull(VIDEO_EXTRACTION_TIMEOUT_MS) {
+                        var resolvedUrl: String? = null
+                        var resolvedHeaders: Map<String, String>? = null
 
-                            // Attempt 1: full extraction chain (7-step) with headers
-                            // ENHANCED: Try to use ANY extracted URL, not just those matching strict patterns
-                            if (resolvedUrl == null && onExtractVideoForPreview != null) {
-                                try {
-                                    val previewResult = onExtractVideoForPreview(result.url)
-                                    if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
-                                        // Trust extraction engine - if it found a URL, try to play it
-                                        // Let ExoPlayer's format detection handle edge cases
-                                        resolvedUrl = previewResult.videoUrl
-                                        resolvedHeaders = previewResult.headers
-                                    }
-                                } catch (e: Exception) {
-                                    // Extraction failed, continue to next method
+                        // Attempt 1: full extraction chain (7-step) with headers
+                        // ENHANCED: Try to use ANY extracted URL, not just those matching strict patterns
+                        if (resolvedUrl == null && onExtractVideoForPreview != null) {
+                            try {
+                                val previewResult = onExtractVideoForPreview(result.url)
+                                if (previewResult != null && previewResult.videoUrl.isNotEmpty()) {
+                                    // Trust extraction engine - if it found a URL, try to play it
+                                    // Let ExoPlayer's format detection handle edge cases
+                                    resolvedUrl = previewResult.videoUrl
+                                    resolvedHeaders = previewResult.headers
                                 }
+                            } catch (e: Exception) {
+                                // Extraction failed, continue to next method
                             }
-
-// Attempt 2: resolver fallback for proxy/headless recovery
-                    if (resolvedUrl == null && onResolveVideoStream != null) {
-                        try {
-                            val resolverResult = onResolveVideoStream(result.url, null)
-                            if (resolverResult != null && resolverResult.videoUrl.isNotEmpty()) {
-                                resolvedUrl = resolverResult.videoUrl
-                                resolvedHeaders = resolverResult.headers
-                            }
-                        } catch (e: Exception) {
-                            // Continue to next method
                         }
-                    }
 
-                    // Attempt 3: simple URL extraction
-                    if (resolvedUrl == null && onExtractVideoUrl != null) {
-                        try {
-                            val extractedUrl = onExtractVideoUrl(result.url)
-                            if (!extractedUrl.isNullOrEmpty()) {
-                                // Trust the simplistic extractor too
-                                resolvedUrl = extractedUrl
+                        // Attempt 2: resolver fallback for proxy/headless recovery
+                        if (resolvedUrl == null && onResolveVideoStream != null) {
+                            try {
+                                val resolverResult = onResolveVideoStream(result.url, null)
+                                if (resolverResult != null && resolverResult.videoUrl.isNotEmpty()) {
+                                    resolvedUrl = resolverResult.videoUrl
+                                    resolvedHeaders = resolverResult.headers
+                                }
+                            } catch (e: Exception) {
+                                // Continue to next method
+                            }
+                        }
+
+                        // Attempt 3: simple URL extraction
+                        if (resolvedUrl == null && onExtractVideoUrl != null) {
+                            try {
+                                val extractedUrl = onExtractVideoUrl(result.url)
+                                if (!extractedUrl.isNullOrEmpty()) {
+                                    // Trust the simplistic extractor too
+                                    resolvedUrl = extractedUrl
+                                    resolvedHeaders = null
+                                }
+                            } catch (e: Exception) {
+                                // Continue to next method
+                            }
+                        }
+
+                        // Attempt 4: raw URL if it looks promising
+                        if (resolvedUrl == null) {
+                            if (!result.url.isNullOrEmpty() && isLikelyStreamUrl(result.url)) {
+                                resolvedUrl = result.url
                                 resolvedHeaders = null
                             }
-                        } catch (e: Exception) {
-                            // Continue to next method
+                        }
+
+                        // Attempt 4: FALLBACK - Try raw URL even if validation uncertain
+                        // ExoPlayer can auto-detect, so don't reject valid extraction
+                        if (resolvedUrl == null && !result.url.isNullOrEmpty()) {
+                            // Only reject obvious HTML pages
+                            val lowerUrl = result.url.lowercase()
+                            val isDefinitelyHtml = lowerUrl.contains(".html") || 
+                                                lowerUrl.contains("text/html") ||
+                                                lowerUrl.contains("?page=") ||
+                                                lowerUrl.contains("?sort=")
+                            
+                            if (!isDefinitelyHtml) {
+                                resolvedUrl = result.url
+                                resolvedHeaders = null
+                            }
+                        }
+
+                        // Return the resolved URL and headers as a pair
+                        if (resolvedUrl != null) {
+                            Pair(resolvedUrl, resolvedHeaders)
+                        } else {
+                            null
                         }
                     }
 
-                    // Attempt 4: raw URL if it looks promising
-                    if (resolvedUrl == null) {
-                        if (!result.url.isNullOrEmpty() && isLikelyStreamUrl(result.url)) {
-                            resolvedUrl = result.url
-                            resolvedHeaders = null
-                        }
-                    }
-
-                    // Attempt 4: FALLBACK - Try raw URL even if validation uncertain
-                    // ExoPlayer can auto-detect, so don't reject valid extraction
-                    if (resolvedUrl == null && !result.url.isNullOrEmpty()) {
-                        // Only reject obvious HTML pages
-                        val lowerUrl = result.url.lowercase()
-                        val isDefinitelyHtml = lowerUrl.contains(".html") || 
-                                            lowerUrl.contains("text/html") ||
-                                            lowerUrl.contains("?page=") ||
-                                            lowerUrl.contains("?sort=")
-                        
-                        if (!isDefinitelyHtml) {
-                            resolvedUrl = result.url
-                            resolvedHeaders = null
-                        }
-                    }
-
-                    if (resolvedUrl != null) {
-                        fullscreenVideoUrl = resolvedUrl
-                        fullscreenVideoHeaders = resolvedHeaders
+                    if (resolvedPair != null) {
+                        fullscreenVideoUrl = resolvedPair.first
+                        fullscreenVideoHeaders = resolvedPair.second
                         showFullscreenPlayer = true
                         showExtractionError = false
                         extractionErrorMessage = null

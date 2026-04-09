@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.aggregatorx.app.data.model.Provider
 import com.aggregatorx.app.data.model.ProviderSearchResults
 import com.aggregatorx.app.data.model.SearchResult
 import com.aggregatorx.app.ui.components.*
@@ -105,7 +106,14 @@ fun SearchScreen(
                         query = uiState.query,
                         onQueryChange = viewModel::updateQuery,
                         onSearch = viewModel::search,
-                        isLoading = uiState.isSearching
+                        isLoading = uiState.isSearching,
+                        suggestions = uiState.recentSearches.map { it.query }.take(5),
+                        onSuggestionClick = viewModel::searchFromHistory,
+                        selectedProviders = uiState.selectedProviders,
+                        availableProviders = uiState.availableProviders,
+                        onProviderToggle = viewModel::toggleProviderSelection,
+                        showAdvanced = uiState.showAdvancedOptions,
+                        onToggleAdvanced = viewModel::toggleAdvancedOptions
                     )
                     
                     Spacer(modifier = Modifier.height(8.dp))
@@ -331,9 +339,9 @@ fun ProviderResultsList(
     modifier: Modifier = Modifier
 ) {
     // Separate successful and failed providers (failed go to bottom)
-    val successfulProviders = providerResults.filter { it.success && it.results.isNotEmpty() }
-    val emptyProviders = providerResults.filter { it.success && it.results.isEmpty() }
-    val failedProviders = providerResults.filter { !it.success }
+    val successfulProviders: List<ProviderSearchResults> = providerResults.filter { it.success && it.results.isNotEmpty() }
+    val emptyProviders: List<ProviderSearchResults> = providerResults.filter { it.success && it.results.isEmpty() }
+    val failedProviders: List<ProviderSearchResults> = providerResults.filter { !it.success }
     
     // Provider quick-jump tabs
     var selectedProviderIndex by remember { mutableStateOf(-1) } // -1 = Top Results
@@ -453,8 +461,15 @@ fun ProviderResultsList(
             }
             
             // Provider sections - Successful providers with results first
-            successfulProviders.forEach { providerResult ->
-                item(key = "header_${providerResult.provider.id}") {
+            items(
+                count = successfulProviders.size,
+                key = { index -> "provider_${successfulProviders[index].provider.id}" },
+                contentType = { "provider_section" }
+            ) { providerIndex ->
+                val providerResult = successfulProviders[providerIndex]
+                
+                Column {
+                    // Header
                     ProviderResultsHeader(
                         providerName = providerResult.provider.name,
                         resultCount = providerResult.results.size,
@@ -468,28 +483,25 @@ fun ProviderResultsList(
                         currentPage = providerPageIndex[providerResult.provider.id] ?: 1,
                         hasNextPage = providerResult.hasMore
                     )
-                }
-                
-                items(
-                    items = providerResult.results,
-                    key = { "${providerResult.provider.id}_${it.url.hashCode()}" }
-                ) { result ->
-                    SearchResultCard(
-                        result = result,
-                        onClick = { onResultClick(result) },
-                        onDownload = { onDownload(result) },
-                        onOpenExternal = { onOpenExternal(result) },
-                        onLike = { onLike(result) },
-                        isLiked = result.url in likedUrls,
-                        showControls = true,
-                        onExtractVideoUrl = onExtractVideoUrl,
-                        onExtractVideoForPreview = onExtractVideoForPreview,
-                        onResolveVideoStream = onResolveVideoStream,
-                        modifier = Modifier.padding(horizontal = 4.dp)
-                    )
-                }
-                
-                item(key = "spacer_${providerResult.provider.id}") {
+                    
+                    // Results for this provider
+                    providerResult.results.forEachIndexed { resultIndex, result ->
+                        SearchResultCard(
+                            result = result,
+                            onClick = { onResultClick(result) },
+                            onDownload = { onDownload(result) },
+                            onOpenExternal = { onOpenExternal(result) },
+                            onLike = { onLike(result) },
+                            isLiked = result.url in likedUrls,
+                            showControls = true,
+                            onExtractVideoUrl = onExtractVideoUrl,
+                            onExtractVideoForPreview = onExtractVideoForPreview,
+                            onResolveVideoStream = onResolveVideoStream,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+                    
+                    // Spacer
                     Spacer(modifier = Modifier.height(12.dp))
                 }
             }
