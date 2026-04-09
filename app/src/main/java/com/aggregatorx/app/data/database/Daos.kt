@@ -3,9 +3,12 @@ package com.aggregatorx.app.data.database
 import androidx.room.*
 import com.aggregatorx.app.data.model.LearnedUserProfile
 import com.aggregatorx.app.data.model.LikedResult
+import com.aggregatorx.app.data.model.NavigationPattern
 import com.aggregatorx.app.data.model.Provider
+import com.aggregatorx.app.data.model.ResultViewConfig
 import com.aggregatorx.app.data.model.ScrapingConfig
 import com.aggregatorx.app.data.model.SearchHistoryEntry
+import com.aggregatorx.app.data.model.SearchQueryPattern
 import com.aggregatorx.app.data.model.SiteAnalysis
 import com.aggregatorx.app.data.model.UserPreferences
 import kotlinx.coroutines.flow.Flow
@@ -200,4 +203,79 @@ interface LearnedProfileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveProfile(profile: LearnedUserProfile)
+}
+
+/**
+ * Search Query Pattern DAO - Stores learned search patterns for each provider
+ */
+@Dao
+interface SearchQueryPatternDao {
+    @Query("SELECT * FROM search_query_patterns WHERE providerId = :providerId")
+    suspend fun getPatternForProvider(providerId: String): SearchQueryPattern?
+    
+    @Query("SELECT * FROM search_query_patterns WHERE providerId IN (:providerIds)")
+    suspend fun getPatternsForProviders(providerIds: List<String>): List<SearchQueryPattern>
+    
+    @Query("SELECT * FROM search_query_patterns ORDER BY confidence DESC")
+    fun getAllPatterns(): Flow<List<SearchQueryPattern>>
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPattern(pattern: SearchQueryPattern)
+    
+    @Update
+    suspend fun updatePattern(pattern: SearchQueryPattern)
+    
+    @Delete
+    suspend fun deletePattern(pattern: SearchQueryPattern)
+    
+    @Query("DELETE FROM search_query_patterns WHERE providerId = :providerId")
+    suspend fun deletePatternForProvider(providerId: String)
+}
+
+/**
+ * Navigation Pattern DAO - Stores discovered navigation structures
+ */
+@Dao
+interface NavigationPatternDao {
+    @Query("SELECT * FROM navigation_patterns WHERE providerId = :providerId")
+    suspend fun getPatternForProvider(providerId: String): NavigationPattern?
+    
+    @Query("SELECT * FROM navigation_patterns")
+    fun getAllPatterns(): Flow<List<NavigationPattern>>
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPattern(pattern: NavigationPattern)
+    
+    @Update
+    suspend fun updatePattern(pattern: NavigationPattern)
+    
+    @Delete
+    suspend fun deletePattern(pattern: NavigationPattern)
+    
+    @Query("DELETE FROM navigation_patterns WHERE providerId = :providerId")
+    suspend fun deletePatternForProvider(providerId: String)
+}
+
+/**
+ * Result View Config DAO - Stores in-app result viewing configurations
+ */
+@Dao
+interface ResultViewConfigDao {
+    @Query("SELECT * FROM result_view_configs WHERE providerId = :providerId")
+    suspend fun getConfigForProvider(providerId: String): ResultViewConfig?
+    
+    @Query("SELECT * FROM result_view_configs")
+    fun getAllConfigs(): Flow<List<ResultViewConfig>>
+    
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertConfig(config: ResultViewConfig)
+    
+    @Update
+    suspend fun updateConfig(config: ResultViewConfig)
+    
+    @Delete
+    suspend fun deleteConfig(config: ResultViewConfig)
+    
+    @Query("DELETE FROM result_view_configs WHERE providerId = :providerId")
+    suspend fun deleteConfigForProvider(providerId: String)
 }

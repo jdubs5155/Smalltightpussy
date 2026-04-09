@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.aggregatorx.app.data.model.Provider
 import com.aggregatorx.app.data.model.ProviderSearchResults
+import com.aggregatorx.app.data.model.ResultViewerType
 import com.aggregatorx.app.data.model.SearchResult
 import com.aggregatorx.app.ui.components.*
 import com.aggregatorx.app.ui.theme.*
@@ -55,6 +56,7 @@ fun SearchScreen(
     val context = LocalContext.current
     
     val listState = rememberLazyListState()
+    var inAppViewerResult by remember { mutableStateOf<SearchResult?>(null) }
     
     // Scroll-aware UI collapse for more result viewing space
     val isScrollingDown = remember { derivedStateOf {
@@ -178,6 +180,9 @@ fun SearchScreen(
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
                             context.startActivity(intent)
                         },
+                        onViewInApp = { result ->
+                            inAppViewerResult = result
+                        },
                         onLike = { result -> viewModel.toggleLike(result) },
                         likedUrls = likedUrls,
                         onExtractVideoUrl = { url ->
@@ -223,6 +228,20 @@ fun SearchScreen(
             }
         }
         
+        // In-app result viewer overlay
+        inAppViewerResult?.let { result ->
+            EnhancedResultViewer(
+                result = result,
+                viewerType = ResultViewerType.IN_APP_WEBVIEW,
+                onClose = { inAppViewerResult = null },
+                onOpenExternal = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
         // Error snackbar
         uiState.error?.let { error ->
             Snackbar(
@@ -334,6 +353,7 @@ fun ProviderResultsList(
     onRefreshProvider: (String) -> Unit = {},
     onNextPage: (String) -> Unit = {},
     onPreviousPage: (String) -> Unit = {},
+    onViewInApp: (SearchResult) -> Unit = {},
     providerPageIndex: Map<String, Int> = emptyMap(),
     providerActionLoading: Set<String> = emptySet(),
     modifier: Modifier = Modifier
@@ -443,6 +463,7 @@ fun ProviderResultsList(
                         onClick = { onResultClick(result) },
                         onDownload = { onDownload(result) },
                         onOpenExternal = { onOpenExternal(result) },
+                        onViewInApp = { onViewInApp(result) },
                         onLike = { onLike(result) },
                         isLiked = result.url in likedUrls,
                         showControls = true,
@@ -491,6 +512,7 @@ fun ProviderResultsList(
                             onClick = { onResultClick(result) },
                             onDownload = { onDownload(result) },
                             onOpenExternal = { onOpenExternal(result) },
+                            onViewInApp = { onViewInApp(result) },
                             onLike = { onLike(result) },
                             isLiked = result.url in likedUrls,
                             showControls = true,

@@ -1,9 +1,12 @@
 package com.aggregatorx.app.di
 
 import android.content.Context
+import com.aggregatorx.app.data.database.AggregatorDatabase
 import com.aggregatorx.app.engine.UnifiedContentEngine
 import com.aggregatorx.app.engine.ai.AICodeInjectionEngine
 import com.aggregatorx.app.engine.ai.AIDecisionEngine
+import com.aggregatorx.app.engine.analyzer.NavigationPatternAnalyzer
+import com.aggregatorx.app.engine.analyzer.SearchQueryOptimizerEngine
 import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
 import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
 import com.aggregatorx.app.engine.analyzer.UniversalFormatParser
@@ -122,5 +125,21 @@ object EngineModule {
             universalFormatParser,
             siteAnalyzerEngine
         )
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSearchQueryOptimizerEngine(
+        database: AggregatorDatabase
+    ): SearchQueryOptimizerEngine {
+        return SearchQueryOptimizerEngine(database.searchQueryPatternDao())
+    }
+    
+    @Provides
+    @Singleton
+    fun provideNavigationPatternAnalyzer(
+        database: AggregatorDatabase
+    ): NavigationPatternAnalyzer {
+        return NavigationPatternAnalyzer(database.navigationPatternDao())
     }
 }

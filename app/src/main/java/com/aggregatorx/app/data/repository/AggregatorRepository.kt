@@ -2,6 +2,8 @@ package com.aggregatorx.app.data.repository
 
 import com.aggregatorx.app.data.database.*
 import com.aggregatorx.app.data.model.*
+import com.aggregatorx.app.engine.analyzer.NavigationPatternAnalyzer
+import com.aggregatorx.app.engine.analyzer.SearchQueryOptimizerEngine
 import com.aggregatorx.app.engine.analyzer.SiteAnalyzerEngine
 import com.aggregatorx.app.engine.nlp.NaturalLanguageQueryProcessor
 import com.aggregatorx.app.engine.ranking.RankingEngine
@@ -21,6 +23,8 @@ class AggregatorRepository @Inject constructor(
     private val likedResultDao: LikedResultDao,
     private val learnedProfileDao: LearnedProfileDao,
     private val siteAnalyzerEngine: SiteAnalyzerEngine,
+    private val searchQueryOptimizerEngine: SearchQueryOptimizerEngine,
+    private val navigationPatternAnalyzer: NavigationPatternAnalyzer,
     private val scrapingEngine: ScrapingEngine,
     private val rankingEngine: RankingEngine,
     private val nlpProcessor: NaturalLanguageQueryProcessor
@@ -77,6 +81,27 @@ class AggregatorRepository @Inject constructor(
         
         val analysis = siteAnalyzerEngine.analyzeSite(provider.url, providerId)
         siteAnalysisDao.insertAnalysis(analysis)
+
+        // Learn provider-specific search patterns and navigation metadata
+        try {
+            searchQueryOptimizerEngine.analyzeSearchForm(
+                analysis.rawHtml ?: "",
+                provider.id,
+                provider.url
+            )
+        } catch (_: Exception) {
+            // Pattern learning is best-effort and should not block provider analysis
+        }
+
+        try {
+            navigationPatternAnalyzer.analyzeNavigation(
+                analysis.rawHtml ?: "",
+                provider.id,
+                provider.url
+            )
+        } catch (_: Exception) {
+            // Navigation learning is best-effort
+        }
         
         // Generate scraping config from analysis
         generateScrapingConfig(provider, analysis)

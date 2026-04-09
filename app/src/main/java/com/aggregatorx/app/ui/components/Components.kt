@@ -33,7 +33,11 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -896,11 +900,13 @@ fun SearchResultCard(
     onExtractVideoUrl: (suspend (String) -> String?)? = null,
     onExtractVideoForPreview: (suspend (String) -> VideoPreviewResult?)? = null,
     onResolveVideoStream: (suspend (String, RecoveryStrategy?) -> VideoPreviewResult?)? = null,
+    onViewInApp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scoreColor = getScoreColor(result.relevanceScore)
     val scope = rememberCoroutineScope()
+    val canViewInApp = result.url.startsWith("http://") || result.url.startsWith("https://")
     
     var showFullscreenPlayer by remember { mutableStateOf(false) }
     var fullscreenVideoUrl by remember { mutableStateOf<String?>(null) }
@@ -1303,6 +1309,33 @@ fun SearchResultCard(
                             text = "Browser",
                             style = MaterialTheme.typography.labelMedium
                         )
+                    }
+
+                    if (canViewInApp) {
+                        OutlinedButton(
+                            onClick = onViewInApp,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = CyberCyan
+                            ),
+                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(CyberCyan.copy(alpha = 0.4f), CyberBlue.copy(alpha = 0.4f))
+                                )
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "In App",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     }
 
                     // Like / thumbs-up button
@@ -1780,5 +1813,261 @@ fun SecurityScoreIndicator(
             style = MaterialTheme.typography.labelSmall,
             color = TextTertiary
         )
+    }
+}
+
+/**
+ * Provider Quick Navigation Tabs
+ * 
+ * Shows enabled providers as clickable tabs at the top of search results.
+ * Clicking a tab smoothly scrolls to that provider's results section.
+ */
+@Composable
+fun ProviderQuickTabs(
+    providers: List<Provider>,
+    selectedProvider: Provider? = null,
+    onProviderClick: (Provider) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (providers.isEmpty()) return
+    
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    
+    // Auto-scroll to selected provider's tab
+    LaunchedEffect(selectedProvider) {
+        selectedProvider?.let { provider ->
+            val index = providers.indexOfFirst { it.id == provider.id }
+            if (index >= 0) {
+                scope.launch {
+                    scrollState.animateScrollTo(index * 120)
+                }
+            }
+        }
+    }
+    
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(DarkSurface, DarkSurfaceVariant)
+                )
+            )
+            .horizontalScroll(scrollState)
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        providers.forEach { provider ->
+            val isSelected = provider.id == selectedProvider?.id
+            
+            Surface(
+                modifier = Modifier
+                    .width(110.dp)
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onProviderClick(provider) },
+                color = if (isSelected) MaterialTheme.colorScheme.primary else DarkSurfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // Provider icon if available
+                    if (!provider.iconUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = provider.iconUrl,
+                            contentDescription = provider.name,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            contentScale = ContentScale.Crop,
+                            alpha = if (isSelected) 1f else 0.7f
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
+                    
+                    // Provider name
+                    Text(
+                        text = provider.name.take(12),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) Color.White else TextSecondary,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Enhanced Result Viewer for In-App Content Display
+ * 
+ * Allows results to be shown within the app in various formats:
+ * - WebView for HTML content
+ * - Video player for media files
+ * - Image gallery for image results
+ * - Expandable detail cards
+ */
+@Composable
+fun EnhancedResultViewer(
+    result: SearchResult,
+    viewerType: ResultViewerType = ResultViewerType.EXTERNAL_LINK,
+    onClose: () -> Unit,
+    onOpenExternal: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    when (viewerType) {
+        ResultViewerType.EXTERNAL_LINK -> {
+            // Default - show external link option
+            Column(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = result.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                if (!result.description.isNullOrEmpty()) {
+                    Text(
+                        text = result.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                
+                Button(
+                    onClick = onOpenExternal,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Open in Browser")
+                }
+            }
+        }
+        
+        ResultViewerType.IN_APP_WEBVIEW -> {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(DarkBackground)
+            ) {
+                Surface(
+                    color = DarkSurface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = result.title.take(30),
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Close"
+                            )
+                        }
+                    }
+                }
+
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                            webViewClient = WebViewClient()
+                            webChromeClient = WebChromeClient()
+                            loadUrl(result.url)
+                        }
+                    },
+                    update = { webView ->
+                        if (webView.url != result.url) {
+                            webView.loadUrl(result.url)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(DarkBackground)
+                )
+            }
+        }
+        
+        ResultViewerType.IMAGE_GALLERY -> {
+            // Image gallery view
+            Column(
+                modifier = modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (!result.thumbnailUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = result.thumbnailUrl,
+                        contentDescription = result.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(400.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = result.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
+            }
+        }
+        
+        else -> {
+            // Default fallback
+            Box(
+                modifier = modifier
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Viewer type not supported",
+                    color = TextTertiary
+                )
+            }
+        }
     }
 }

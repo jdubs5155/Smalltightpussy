@@ -371,3 +371,108 @@ data class VideoItem(
     val title: String,
     val url: String
 )
+
+/**
+ * Learned Search Query Pattern - Stores how a provider expects search queries
+ * to be formatted. Built through analysis of search forms and successful searches.
+ */
+@Entity(tableName = "search_query_patterns")
+@Serializable
+data class SearchQueryPattern(
+    @PrimaryKey
+    val id: String = UUID.randomUUID().toString(),
+    val providerId: String,
+    val searchFormSelector: String? = null,
+    val searchInputName: String = "q", // Field name for query parameter
+    val searchMethod: String = "GET", // GET or POST
+    val searchUrlTemplate: String?, // e.g., "/search?q={query}"
+    val queryEncoding: String = "UTF-8",
+    val requiredParams: String = "{}", // JSON object of always-required params
+    val optionalParams: String = "{}", // JSON object of optional params with defaults
+    val categoryField: String? = null, // Field name for category selection
+    val sortField: String? = null, // Field name for sorting
+    val filterFields: String = "[]", // JSON array of available filter fields
+    val parseSuccessIndicators: String = "[]", // JSON array of indicators that search was successful
+    val paginationStrategy: PaginationStrategy = PaginationStrategy.PAGE_NUMBER, // How pagination works
+    val pageParam: String = "page", // Parameter name for page number
+    val perPageParam: String = "limit", // Parameter name for results per page
+    val defaultPerPage: Int = 20,
+    val confidence: Float = 0f, // 0.0-1.0 confidence score from analysis
+    val learnedCount: Int = 0, // Number of successful searches used to build this pattern
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val rawFormHtml: String? = null // For debugging
+)
+
+@Serializable
+enum class PaginationStrategy {
+    PAGE_NUMBER,      // page=1, page=2, etc.
+    OFFSET,           // offset=0, offset=20, etc.
+    CURSOR,           // cursor=xyz123
+    LOAD_MORE,        // Click load more button
+    INFINITE_SCROLL,  // Scroll to load more
+    NEXT_URL          // Follow next page URL
+}
+
+/**
+ * Navigation Pattern - Stores discovered navigation structure (tabs, categories, etc.)
+ * for sites that use category/tab navigation instead of search
+ */
+@Entity(tableName = "navigation_patterns")
+@Serializable
+data class NavigationPattern(
+    @PrimaryKey
+    val id: String = UUID.randomUUID().toString(),
+    val providerId: String,
+    val navigationSelector: String, // CSS selector for main navigation container
+    val tabSelector: String, // CSS selector for individual tabs/categories
+    val tabNameAttribute: String = "innerText", // What attribute contains the tab name
+    val linkSelector: String? = null, // CSS selector for the link within tab
+    val resultContainerSelector: String, // Where results appear after clicking tab
+    val categories: String = "[]", // JSON array of discovered category names
+    val selectedCategory: String? = null, // Currently selected category
+    val navigationType: NavigationType = NavigationType.TAB_CLICK,
+    val confidence: Float = 0f,
+    val lastDiscovered: Long = System.currentTimeMillis()
+)
+
+@Serializable
+enum class NavigationType {
+    TAB_CLICK,        // Click tabs to switch categories
+    DROPDOWN,         // Dropdown menu selection
+    SIDEBAR_MENU,     // Sidebar category menu
+    HORIZONTAL_MENU,  // Horizontal navigation buttons
+    FILTER_PANEL      // Expandable filter panel
+}
+
+/**
+ * In-App Result Viewer Configuration - Determines if/how a result can be viewed in-app
+ */
+@Entity(tableName = "result_view_configs")
+@Serializable
+data class ResultViewConfig(
+    @PrimaryKey
+    val id: String = UUID.randomUUID().toString(),
+    val providerId: String,
+    val viewerType: ResultViewerType = ResultViewerType.EXTERNAL_LINK,
+    val webViewWhitelist: String = "[]", // JSON array of URL patterns that can be viewed in WebView
+    val webViewBlacklist: String = "[]", // JSON array of URL patterns to block in WebView
+    val enableInlineVideo: Boolean = true,
+    val enableImageGallery: Boolean = false,
+    val enableFullScreenPreview: Boolean = true,
+    val customCSS: String? = null, // CSS to apply for in-app viewing
+    val injectJavaScript: String? = null, // JS to inject for in-app enhancements
+    val blockExternalLinks: Boolean = false,
+    val allowDownloads: Boolean = true,
+    val confidence: Float = 1f,
+    val lastUpdated: Long = System.currentTimeMillis()
+)
+
+@Serializable
+enum class ResultViewerType {
+    EXTERNAL_LINK,    // Open in external browser
+    IN_APP_WEBVIEW,   // Open in embedded WebView
+    IN_APP_CUSTOM,    // Custom in-app viewer
+    VIDEO_PLAYER,     // Open in video player
+    IMAGE_GALLERY,    // Open in image gallery
+    MEDIA_PLAYER      // Native media player
+}

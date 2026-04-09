@@ -5,6 +5,8 @@ import com.aggregatorx.app.data.database.ScrapingConfigDao
 import com.aggregatorx.app.data.database.SiteAnalysisDao
 import com.aggregatorx.app.data.model.*
 import com.aggregatorx.app.engine.analyzer.SmartContentClassifier
+import com.aggregatorx.app.engine.analyzer.SearchQueryOptimizerEngine
+import com.aggregatorx.app.engine.analyzer.NavigationPatternAnalyzer
 import com.aggregatorx.app.engine.analyzer.PageType
 import com.aggregatorx.app.engine.analyzer.ContainerType
 import com.aggregatorx.app.engine.analyzer.EndpointDiscoveryEngine
@@ -52,6 +54,8 @@ class ScrapingEngine @Inject constructor(
     private val siteAnalysisDao: SiteAnalysisDao,
     private val smartNavigationEngine: SmartNavigationEngine,
     private val smartContentClassifier: SmartContentClassifier,
+    private val searchQueryOptimizer: SearchQueryOptimizerEngine,
+    private val navigationPatternAnalyzer: NavigationPatternAnalyzer,
     private val aiDecisionEngine: AIDecisionEngine,
     private val cloudflareBypassEngine: CloudflareBypassEngine,
     private val endpointDiscoveryEngine: EndpointDiscoveryEngine,
@@ -554,12 +558,91 @@ class ScrapingEngine @Inject constructor(
         // No filtering at this stage to preserve provider-native result sets.
         return results
     }
+
+    private suspend fun navigatePastCategoryIfNeeded(
+        provider: Provider,
+        currentUrl: String,
+        document: Document,
+        query: String
+    ): Pair<String, Document> {
+        if (smartNavigationEngine.isCategoryPage(currentUrl, document)) {
+            val nav = smartNavigationEngine.navigatePastCategory(provider.baseUrl, document, query)
+            if (nav != null) return nav
+        }
+
+        return try {
+            val classification = smartContentClassifier.classifyPageContent(document)
+            if (classification.pageType == PageType.CATEGORY_LISTING ||
+                classification.pageType == PageType.HOME_PAGE ||
+                classification.pageType == PageType.UNKNOWN
+            ) {
+                smartNavigationEngine.navigatePastCategory(provider.baseUrl, document, query)
+                    ?: (currentUrl to document)
+            } else {
+                currentUrl to document
+            }
+        } catch (_: Exception) {
+            currentUrl to document
+        }
+    }
+
+    private fun filterCategoryResults(results: List<SearchResult>): List<SearchResult> {
+        if (results.isEmpty()) return results
+        return results.filterNot { isLikelyCategoryResult(it) }
+    }
+
+    private fun isLikelyCategoryResult(result: SearchResult): Boolean {
+        val lowerUrl = result.url.lowercase()
+        val lowerTitle = result.title.lowercase()
+
+        val categoryIndicators = listOf(
+            "/genre/", "/category/", "/categories/", "/browse/", "/filter/",
+            "/tags/", "/tag/", "/list/", "/playlist/", "/collection/",
+            "/topics/", "/genres/", "/sections/", "/series/"
+        )
+
+        val categoryWords = listOf(
+            "action", "comedy", "drama", "horror", "thriller", "romance",
+            "documentary", "popular", "trending", "latest", "new releases",
+            "top rated", "most viewed", "recommended", "categories", "genres",
+            "browse", "filter", "search results"
+        )
+
+        if (categoryIndicators.any { lowerUrl.contains(it) }) return true
+        if (categoryWords.any { lowerTitle.contains(it) && lowerUrl.contains(it) }) return true
+        if (lowerUrl.endsWith("/") && lowerTitle.length < 25 && categoryWords.any { lowerTitle.contains(it) }) return true
+        return false
+    }
+
+    private suspend fun annotateResultsWithPageType(
+        document: Document,
+        results: List<SearchResult>
+    ): List<SearchResult> {
+        return try {
+            val classification = smartContentClassifier.classifyPageContent(document)
+            val pageTypeLabel = classification.pageType.name
+            val isCategoryPage = classification.pageType == PageType.CATEGORY_LISTING ||
+                classification.pageType == PageType.HOME_PAGE ||
+                classification.pageType == PageType.UNKNOWN
+
+            results.map { result ->
+                result.copy(
+                    metadata = result.metadata + mapOf(
+                        "pageType" to pageTypeLabel,
+                        "isCategoryPage" to isCategoryPage.toString()
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            results
+        }
+    }
     
     /**
      * Enhanced matching that searches in titles, descriptions, and URLs.
      * Now also checks NLP concept terms and semantic synonyms.
      * Returns true if any part of the content matches the query.
-     */
+    */
     private fun matchesQueryEnhanced(result: SearchResult, query: String): Boolean {
         val queryWords = query.lowercase().split(Regex("\\s+")).filter { it.length > 2 }
         
@@ -717,6 +800,82 @@ class ScrapingEngine @Inject constructor(
             listOf(query)
         }
 
+        // Try learned provider-specific search patterns first, when available.
+        val siteAnalysis = try {
+            siteAnalysisDao.getLatestAnalysis(provider.id)
+        } catch (_: Exception) {
+            null
+        }
+
+        val providerPattern = try {
+            searchQueryOptimizer.getOptimalPattern(
+                provider.id,
+                providerHtml = siteAnalysis?.rawHtml,
+                providerUrl = provider.baseUrl
+            )
+        } catch (_: Exception) {
+            null
+        }
+
+        if (providerPattern != null && !providerPattern.searchUrlTemplate.isNullOrBlank() &&
+            !providerPattern.searchUrlTemplate.startsWith("POST:", ignoreCase = true)
+        ) {
+            for (effectiveQuery in queriesToTry) {
+                try {
+                    val patternResult = trySearchWithPattern(provider, effectiveQuery, providerPattern, startTime)
+                    if (patternResult.success && patternResult.results.isNotEmpty()) {
+                        return patternResult
+                    }
+                } catch (_: Exception) {
+                    // Continue to generic search if pattern lookup fails
+                }
+            }
+        }
+
+        // If the provider has an explicit scraping configuration, use it next.
+        val savedConfig = try {
+            scrapingConfigDao.getConfigForProvider(provider.id)
+        } catch (_: Exception) {
+            null
+        }
+
+        if (savedConfig != null) {
+            for (effectiveQuery in queriesToTry) {
+                try {
+                    val configResults = scrapeWithConfig(provider, effectiveQuery, savedConfig)
+                    if (configResults.isNotEmpty()) {
+                        return ProviderSearchResults(
+                            provider = provider,
+                            results = configResults,
+                            searchTime = System.currentTimeMillis() - startTime,
+                            success = true
+                        )
+                    }
+                } catch (_: Exception) {
+                    // Continue to alternatives if config search fails
+                }
+            }
+        }
+
+        // If site analysis is available, try a second pass with the learned site structure.
+        if (siteAnalysis != null) {
+            for (effectiveQuery in queriesToTry) {
+                try {
+                    val analysisResults = scrapeWithAnalysis(provider, effectiveQuery, siteAnalysis)
+                    if (analysisResults.isNotEmpty()) {
+                        return ProviderSearchResults(
+                            provider = provider,
+                            results = analysisResults,
+                            searchTime = System.currentTimeMillis() - startTime,
+                            success = true
+                        )
+                    }
+                } catch (_: Exception) {
+                    // Continue to generic search if analysis-based fetch fails
+                }
+            }
+        }
+
         // Try each query until we get results
         for (effectiveQuery in queriesToTry) {
             try {
@@ -851,6 +1010,56 @@ class ScrapingEngine @Inject constructor(
             return searchProvider(provider, effectiveQuery)
         }
     }
+
+    private suspend fun trySearchWithPattern(
+        provider: Provider,
+        query: String,
+        pattern: SearchQueryPattern,
+        startTime: Long
+    ): ProviderSearchResults = withContext(Dispatchers.IO) {
+        val formattedUrl = searchQueryOptimizer.formatSearchQuery(query, provider.id, pattern, 1)
+        val resolvedUrl = if (formattedUrl.startsWith("http")) {
+            formattedUrl
+        } else {
+            EngineUtils.normalizeUrl(formattedUrl, provider.baseUrl)
+        }
+
+        val document = fetchDocument(resolvedUrl)
+        val (activeUrl, activeDoc) = navigatePastCategoryIfNeeded(provider, resolvedUrl, document, query)
+        val results = extractResultsWithThumbnails(activeDoc, provider, query)
+
+        if (results.isNotEmpty()) {
+            try {
+                searchQueryOptimizer.learnFromSuccess(provider.id, query, pattern, results.size)
+            } catch (_: Exception) {
+                // best-effort learning only
+            }
+
+            updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
+            return@withContext ProviderSearchResults(
+                provider = provider,
+                results = results,
+                searchTime = System.currentTimeMillis() - startTime,
+                success = true,
+                hasMore = detectPaginationLinks(activeDoc, provider, 1) ||
+                    smartNavigationEngine.getPaginationLinks(activeDoc, provider.baseUrl).isNotEmpty()
+            )
+        }
+
+        try {
+            searchQueryOptimizer.learnFromFailure(provider.id, query, pattern)
+        } catch (_: Exception) {
+            // best-effort learning only
+        }
+
+        return@withContext ProviderSearchResults(
+            provider = provider,
+            results = emptyList(),
+            searchTime = System.currentTimeMillis() - startTime,
+            success = false,
+            errorMessage = "Pattern-based search produced no results"
+        )
+    }
     
     /**
      * Scrape using smart navigation with pagination support
@@ -970,7 +1179,7 @@ class ScrapingEngine @Inject constructor(
      * v3: Fixes ContentLink destructuring bug (was using title as thumbnailUrl),
      * uses all ContentLink fields directly, falls back gracefully to full content dump.
      */
-    private fun extractResultsWithThumbnails(
+    private suspend fun extractResultsWithThumbnails(
         document: Document,
         provider: Provider,
         query: String
@@ -1015,7 +1224,7 @@ class ScrapingEngine @Inject constructor(
         }
 
         val uniqueResults = results.distinctBy { it.url }
-        if (uniqueResults.size < 10) {
+        val finalResults = if (uniqueResults.size < 10) {
             val related = findRelatedContent(allExtracted, query, uniqueResults)
             val combined = (uniqueResults + related).distinctBy { it.url }
 
@@ -1025,13 +1234,16 @@ class ScrapingEngine @Inject constructor(
                 val remaining = validateAndFilterResults(
                     allExtracted.filter { it.url !in existingUrls }, query
                 ).sortedByDescending { it.relevanceScore }.take(15)
-                return (combined + remaining).distinctBy { it.url }
+                (combined + remaining).distinctBy { it.url }
+            } else {
+                combined
             }
-
-            return combined
+        } else {
+            uniqueResults
         }
 
-        return uniqueResults
+        val filtered = filterCategoryResults(finalResults.distinctBy { it.url })
+        return annotateResultsWithPageType(document, if (filtered.isNotEmpty()) filtered else finalResults.distinctBy { it.url })
     }
     
     /**
@@ -1102,20 +1314,35 @@ class ScrapingEngine @Inject constructor(
             enforceRateLimit(provider.id)
             providerDao.incrementSearchCount(provider.id)
 
-            // Simple pagination - adjust URL with page parameter
-            val pageParam = when {
-                provider.baseUrl.contains("?") -> "&page=$page"
-                else -> "?page=$page"
+            val providerPattern = try {
+                searchQueryOptimizer.getOptimalPattern(provider.id, providerUrl = provider.baseUrl)
+            } catch (_: Exception) {
+                null
             }
-            val pageUrl = "${provider.baseUrl}$pageParam"
-            
+
+            val pageUrl = if (providerPattern != null && !providerPattern.searchUrlTemplate.isNullOrBlank() &&
+                !providerPattern.searchUrlTemplate.startsWith("POST:", ignoreCase = true)
+            ) {
+                val formatted = searchQueryOptimizer.formatSearchQuery(query, provider.id, providerPattern, page)
+                if (formatted.startsWith("http")) formatted
+                else EngineUtils.normalizeUrl(formatted, provider.baseUrl)
+            } else {
+                // Simple pagination - adjust URL with page parameter
+                val pageParam = when {
+                    provider.baseUrl.contains("?") -> "&page=$page"
+                    else -> "?page=$page"
+                }
+                "${provider.baseUrl}$pageParam"
+            }
+
             val doc = try {
                 fetchDocument(pageUrl)
             } catch (e: Exception) {
                 fetchDocument(provider.baseUrl)
             }
             
-            val results = extractResultsWithThumbnails(doc, provider, query)
+            val (activeUrl, activeDoc) = navigatePastCategoryIfNeeded(provider, pageUrl, doc, query)
+            val results = extractResultsWithThumbnails(activeDoc, provider, query)
 
             updateProviderHealth(provider.id, true, System.currentTimeMillis() - startTime)
 
@@ -1124,7 +1351,7 @@ class ScrapingEngine @Inject constructor(
                 results = results,
                 searchTime = System.currentTimeMillis() - startTime,
                 success = results.isNotEmpty(),
-                hasMore = page < 10, // Assume there are more pages up to page 10
+                hasMore = page < 10 || results.isNotEmpty(),
                 nextPageUrl = if (results.isNotEmpty()) pageUrl else null
             )
         } catch (e: Exception) {

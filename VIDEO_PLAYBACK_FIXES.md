@@ -6,7 +6,7 @@
 
 ---
 
-, ythingreve y## Key Changes Made
+r, ythingreve y## Key Changes Made
 
 ### 1. **Enhanced URL Validation** (`Components.kt` - `isLikelyStreamUrl`)
 - **Old behavior:** Overly restrictive, rejected many valid streams
