@@ -7,6 +7,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -153,11 +154,10 @@ fun SearchScreen(
                     ProviderResultsList(
                         providerResults = providerResults,
                         topResults = uiState.aggregatedResults?.topResults ?: emptyList(),
+                        relatedResults = uiState.aggregatedResults?.relatedResults ?: emptyList(),
                         listState = listState,
                         onResultClick = { result ->
-                            // Open in external browser
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(result.url))
-                            context.startActivity(intent)
+                            // Result cards already open in-app playback by default
                         },
                         onDownload = { result ->
                             viewModel.downloadResult(result)
@@ -189,11 +189,30 @@ fun SearchScreen(
                 }
                 
                 else -> {
-                    EmptySearchState(
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .weight(1f)
-                    )
+                            .weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        if (uiState.searchSuggestions.isNotEmpty()) {
+                            SearchSuggestionsSection(
+                                prompt = "No exact matches found. Try one of these smarter search terms:",
+                                suggestions = uiState.searchSuggestions,
+                                onSuggestionClick = {
+                                    viewModel.updateQuery(it)
+                                    viewModel.search()
+                                },
+                                modifier = Modifier.padding(horizontal = 24.dp)
+                            )
+                        }
+                        EmptySearchState(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -297,6 +316,7 @@ fun StatItem(
 fun ProviderResultsList(
     providerResults: List<ProviderSearchResults>,
     topResults: List<SearchResult>,
+    relatedResults: List<SearchResult> = emptyList(),
     listState: LazyListState,
     onResultClick: (SearchResult) -> Unit,
     onDownload: (SearchResult) -> Unit = {},
@@ -421,6 +441,43 @@ fun ProviderResultsList(
                 }
                 
                 item(key = "top_divider") {
+                    HorizontalDivider(
+                        color = DarkSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                }
+            }
+
+            if (relatedResults.isNotEmpty()) {
+                item(key = "related_header") {
+                    Text(
+                        text = "✨ Suggested Similar Results",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = CyberCyan,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                
+                items(
+                    items = relatedResults.take(8),
+                    key = { "related_${it.url.hashCode()}" }
+                ) { result ->
+                    SearchResultCard(
+                        result = result,
+                        onClick = { onResultClick(result) },
+                        onDownload = { onDownload(result) },
+                        onOpenExternal = { onOpenExternal(result) },
+                        onLike = { onLike(result) },
+                        isLiked = result.url in likedUrls,
+                        showControls = true,
+                        onExtractVideoUrl = onExtractVideoUrl,
+                        onExtractVideoForPreview = onExtractVideoForPreview,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
+                
+                item(key = "related_divider") {
                     HorizontalDivider(
                         color = DarkSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
@@ -753,6 +810,48 @@ fun EmptySearchState(modifier: Modifier = Modifier) {
                 color = CyberPurple
             )
         }
+    }
+}
+
+@Composable
+fun SearchSuggestionsSection(
+    prompt: String,
+    suggestions: List<String>,
+    onSuggestionClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = prompt,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        FlowRow(
+            mainAxisSpacing = 8.dp,
+            crossAxisSpacing = 8.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            suggestions.forEach { suggestion ->
+                AssistChip(
+                    onClick = { onSuggestionClick(suggestion) },
+                    label = {
+                        Text(
+                            text = suggestion,
+                            color = DarkBackground,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = CyberCyan.copy(alpha = 0.18f),
+                        labelColor = CyberCyan
+                    )
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 

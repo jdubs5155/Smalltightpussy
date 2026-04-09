@@ -407,6 +407,7 @@ data class SearchUiState(
     val successfulProviders: Int = 0,
     val failedProviders: Int = 0,
     val recentSearches: List<SearchHistoryEntry> = emptyList(),
+    val searchSuggestions: List<String> = emptyList(),
     val error: String? = null
 )
 

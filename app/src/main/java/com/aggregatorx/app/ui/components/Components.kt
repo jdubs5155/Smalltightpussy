@@ -741,7 +741,7 @@ fun SearchResultCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onOpenExternal)
+            .clickable(onClick = openFullscreenPlayer)
             .border(
                 width = 1.dp,
                 brush = Brush.horizontalGradient(
